@@ -1,7 +1,7 @@
 # RF chain budget
 
-A receive chain's budget in closed form, and its transfer to test benches of circuitRF's own System blocks whose
-simulations check every number of it. The user-facing page is `docs/user/src/reference/chain-budget.md`; this note is
+A receive or transmit chain's budget in closed form, and its transfer to test benches of circuitRF's own System blocks
+whose simulations check every number of it. The user-facing page is `docs/user/src/reference/chain-budget.md`; this note is
 how it is built and how it was verified.
 
 ## 1. Architecture
@@ -12,6 +12,7 @@ flowchart LR
     io --> resolve["ChainDesign.Resolve<br/>expressions and tables at each<br/>stage's frequency; the link's Prx"]
     resolve --> calc["ChainBudget.Evaluate<br/>(closed form, pure)"]
     calc --> readouts["ChainCapacity, ChainLink<br/>noise, SNR, rate, DC power,<br/>NF allowance, ceiling"] --> ds
+    calc --> txr["ChainTransmit<br/>a transmitter's output: Pout, CW,<br/>back-offs, ACLR, noise, spurs"] --> ds
     io --> sweep["ChainBudget.Sweep<br/>the whole chain at every point"] --> ds
     parts["ChainParts<br/>each part's budget;<br/>System-block defaults from<br/>ComponentTypeRegistry"] --> calc
     calc --> ds["ChainBudget.ToDataSet<br/>per-stage cubes over a stage axis"]
@@ -34,6 +35,7 @@ flowchart LR
     write --> canc["Canceller bench<br/>envelope, real signals"]
     write --> demo["Demo bench (asked for)<br/>demodulated end to end"]
     write --> tx["TX bench (a link)<br/>the PA against its back-off"]
+    write --> txc["a transmit chain's benches<br/>1-Tone, 2-Tone, Envelope, PA"]
     calc --> levels["ChainLevels<br/>every node"] --> table
     levels --> diagram["ChainLevelDiagram (src/Render)<br/>the level plan, one figure"]
     diagram --> blocks
@@ -71,7 +73,9 @@ flowchart LR
   10^(−IL_k/20)·e^(j·Phase_k)/√N, every other entry zero. It is the splitter, the direct combiner, each 2:1 of a tree
   and, with an Amp after it, the active combiner; its thermal noise comes from its S like every passive block's.
 
-Nothing new in the engine. The benches are run by the analyses that already exist, and every check is a measurement row.
+The benches are run by the analyses that already exist, and every check is a measurement row. The one addition below
+the Design layer is the System Amplifier's bandpass laws (§2.4), which a transmit chain's PA needs and which every
+schematic can use.
 
 ### 1.1 How it lines up with `docs/design/plugins.md`
 
@@ -250,6 +254,55 @@ exist (a kept range of the node axis). The dB plot reaches 10 dB beyond its NF, 
 or a budget-only parameter), so a 1.8.2 reader refuses such a chain rather than dropping the fields on save, and a
 plain chain stays readable there.
 
+### 2.4 Transmit chains, the amplifier's laws and the IQ modulator
+
+**A direction, not a second budget.** `ChainDesign.Direction` is Receive or Transmit; the cascade is the same function
+and every row the same numbers. A transmit chain's readouts (`ChainTransmit`) are read from the result at the output:
+the linear Pout, the CW output through every stage's compression, the back-offs, the ACLR estimate, the noise floor and a
+receive band's noise, and an IQ modulator's image and LO. The ACLR relation is derived in the reference page: a cubic on
+the complex envelope, a complex Gaussian signal with a flat spectrum (Isserlis' theorem for its moments, the threefold
+convolution for where its distortion falls), the adjacent channel the signal's width one bandwidth away:
+ACLR = 2·(Pout − OIP3) − 10·log10 3.
+
+**Nothing a receive chain writes changes.** A parameter that has a value meaning "as before" says so
+(`ChainParam.Implied`: an Amplifier's `Law` = Tanh, `Psat`, `P`, `PhiSat`, `PhiMax` at their defaults, a Mixer's
+`Sideband` = Lower), and such a value is written nowhere: not into the stage by the window, not onto a bench's line.
+Format version 3 is written only for what version 2 does not have, so a version-2 reader refuses a transmit chain
+rather than budgeting it as a receiver; every shipped receive chain and bench is the same to the byte.
+
+**A converter's sideband** is one function, `ChainParts.OutputHz`, which every frequency walk now calls: the stage
+frequencies, the expressions' reading, the blockers' levels, the benches' product tracking (`Emitter.Convert`, the
+sum moving a product up by the LO).
+
+**The laws live in Core** (`AmplifierLaw`), shared by the Amplifier that simulates them and the budget that predicts
+them. A bandpass law acts on the envelope, so the amplifier applies it to the analytic signal: u = Re{F(s)·(x + j·x̂)},
+s = κ·(x² + x̂²), F(0) = 1, the gain staying in the block's own admittance. One tone has a constant envelope and comes
+out as the law at that drive and nothing else; the Jacobian is written with D = s·dF/ds, finite at s = 0 for every
+smoothness. x̂ is a third port of the amplifier on a net the Elaborator mints, held at the input's Hilbert transform by
+`AmplifierQuadratureModel`, a LINEAR companion: i_q = G·(v_q + j·sign(ω)·v_in). The quadrature had to be linear.
+The single-tone Newton carries a device's weighted terms (the H[w] buckets a hybrid's passive intermod uses), but the
+2-D and N-tone Newtons and the multi-fundamental envelope carry only conduction and charge, and drop the rest without
+a word; a linear stamp is made per frequency by every one of them. The companion's quadrature is zero below 1 kHz, so
+DC and the envelope's baseband product (stamped at 1 and 2 Hz) see none. The amplifier's line still binds four nets
+(`InstanceNetContract`), its noise is its NF through its two RF ports, and the companion is noiseless by definition.
+Measured in the envelope too: a Saleh amplifier driven by a 20 MHz NR carrier reads its instantaneous gain on the
+law to 5×10⁻⁵ dB and its phase to 1.4×10⁻⁴° over every sample above −20 dBm.
+
+**Rapp's intercept is the cubic's at its 1 dB point.** Rapp's law has no third-order term at p ≠ 1, and an intercept
+sum needs one. The cubic with the same 1 dB point is the textbook IP3 = P1dB + 9.64 dB; it is pessimistic away from
+compression for p = 2, which the 2-Tone bench shows, and close for an NR carrier whose peaks reach the 1 dB point.
+
+**The IQ modulator** is composed of library blocks: a 90° Hybrid splits the input into I and Q, a Combiner splits the
+LO into its quadrature (±90° plus the phase error), two Mixers convert (the Q one's gain plus the gain error) and a
+Combiner sums them (`IqModSpec`). The LO's split is a Combiner rather than a second hybrid because a hybrid set off
+quadrature is not passive, and a block that is not passive has no thermal noise in a noise run, which says so in a
+warning on every run of the bench.
+
+**The benches.** A transmit chain gets 1-Tone, 2-Tone, Envelope and PA benches (`ChainBenches.TxMeasurements`,
+`EmitPa`). A budget curve over a drive sweep is a Lagrange cube over the swept values (`SweepCube`), the Levels
+benches' node cube generalised, exact at the points. Every analysis goes through the same pre-write checks as a receive
+chain's (`Order`, `EnvelopeFits`); an IQ modulator's LO is a converter's tone like a mixer's.
+
 ## 3. The benches, and what was found building them
 
 **The mixer's image termination.** A mixer's SSB noise figure is stated with its image at T0. In a chain a filter in
@@ -373,6 +426,26 @@ at MaxMixOrder 5; a per-conversion
 0.08 dB off the output's IM3 (the first whole-chain 2-Tone's +0.038 dB); a 5th-order filter of 13.6 to 33.6 MHz keeps
 the Levels on the budget to 4×10⁻⁴ dB.
 
+**A transmit chain's benches.** Four things found building them:
+
+- *The sideband the composition selects.* The first IQ modulator split its LO with the Combiner's path at −90°, the
+  hybrid's convention, and the bench read the wanted sideband 35 dB down and the image up: the Combiner's path phase is
+  e^(+jφ). The bench tracks the wanted product, its image and its LO by index, so it read the swap at once.
+- *A node in front of a reflection.* The modulator's image and LO at its output read 5.4 and 2.6 dB off their closed
+  forms: the band filter after it reflects both, and a node's voltage there is the incident wave and the reflected one.
+  An isolator after the modulator, the bench's, puts both on their closed forms to 10⁻³ and 10⁻² dB.
+- *Bosma in the stopband.* The receive band's noise first read 2.3 dB under the budget, which took a filter's noise
+  figure as its loss at every frequency: in its stopband a lossless filter reflects, so the driver after it is fed
+  almost no noise, where the loss rule assumed T0. A filter now adds T0·(1 − |S21|² − |S22|²), and the budget reads
+  0.13 dB over the run.
+- *Noise under compression.* The noise floor reads 0.15 dB under the budget at the operating point, 0.05 dB into the
+  PA's compression: half of the noise is amplitude, and the PA's differential gain there is about five times its
+  compression, 0.25 dB down.
+
+The 2-Tone bench is the slowest: two baseband tones and the LO are three tones, and multi-tone harmonic balance at the
+order its IM3 needs takes minutes per level, so it runs three levels. The Envelope bench's two fundamentals, the carrier
+and the LO, take about two minutes per drive point.
+
 ## 4. Verification
 
 `testdata/chain/plot_chain_compare.py` runs the example's superhet and array, and an RF-only array, through the CLI
@@ -431,11 +504,24 @@ the PA 0.44 dB under Psat at 10 dB of overdrive. Two points of a frequency sweep
 Two quantities are not exact and are said to be: the cascaded compression point is a formula of the intercept's form
 and reads 0.02 to 0.06 dB early, and the envelope SNR is one record of noise, ±0.12 dB from seed to seed.
 
+**The linear transmitter.** A standard-library hand calculation reproduces its budget (Pout, the CW output, both
+back-offs, OIP3 and the ACLR, the noise floor and the receive band's noise, the image and the LO) to 10⁻⁶ dB, and each
+law's 1 dB point and saturation by root-finding its own AM-AM. Its benches: the output over 38 dB of drive on the
+budget's CW output to 5×10⁻⁴ dB (the Chebyshev ripple), the PA's AM-AM and AM-PM on Rapp's law to 10⁻⁹, the
+modulator's image and LO on their closed forms, the noise 0.13 to 0.15 dB under; the IM3 and the ACLR beside their
+estimates as the reference page's table states (`ChainBudgetExampleTests.LinearTx_*`, `ChainTransmitTests`,
+`AmplifierLawHbTests`).
+
 ## 5. References
 
 Friis 1944 (doi:10.1109/JRPROC.1944.232049); Pozar, *Microwave Engineering*, 4th ed., §10.1 and §10.3; Razavi,
 *RF Microelectronics*, 2nd ed., §2.2–2.3; Wilkinson 1960 (doi:10.1109/TMTT.1960.1124668); Van Trees, *Optimum Array
 Processing*, §2.2. The link: Friis 1946 (doi:10.1109/JRPROC.1946.234568), the free-space transmission formula;
-Shannon 1948 (doi:10.1002/j.1538-7305.1948.tb01338.x), the capacity of a band-limited channel in Gaussian noise. The
+Shannon 1948 (doi:10.1002/j.1538-7305.1948.tb01338.x), the capacity of a band-limited channel in Gaussian noise.
+The transmitter: C. Rapp, "Effects of HPA-nonlinearity on 4-DPSK/OFDM-signal for a digital sound broadcasting system",
+Proc. 2nd European Conference on Satellite Communications, 1991; A. A. M. Saleh, "Frequency-independent and
+frequency-dependent nonlinear models of TWT amplifiers", IEEE Trans. Communications 29(11), 1981; L. Isserlis, "On a
+formula for the product-moment coefficient of any order of a normal frequency distribution in any number of
+variables", Biometrika 12, 1918. The
 feature list of RxCalc (https://github.com/arhiv6/rxcalc, GPL-3) is the inspiration; only its
 README was read, and no code is taken from it.

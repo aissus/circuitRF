@@ -2342,10 +2342,15 @@ transmit, receive and total power and the energy per bit. The header's input is 
 there is one. Each <a href="chain-budget.html#sweeps">sweep</a> the <code>.cchain</code> asks for is a line of its range and its rate, and a
 group of the DataSet named after it (<code>Frequency.SNR_dB</code>, <code>TxElements.Rate_Gbps</code>, <code>RxElements.Pdc_W</code>), each cube over the
 sweep's own axis.</p>
+<p>A <a href="chain-budget.html#transmit">transmit chain</a> reports its output instead of a receiver's sensitivity: the output power
+and its CW compression, the back-off from OP1dB and from Psat, the ACLR, the noise floor and a receive band's noise,
+and an IQ modulator's image and LO; the DataSet carries them as scalars (<code>PoutCW_dBm</code>, <code>BackoffPsat_dB</code>, <code>ACLR_dBc</code>,
+<code>NoisePSD_dBmHz</code>, <code>RxNoise_dBm</code>, <code>Image_dBc</code>, <code>LoLeak_dBc</code>, …).</p>
 <p><code>--to-schematic</code> is the window's <strong>Transfer to Schematic</strong>: the chain's <code>1-Tone</code>, <code>2-Tone</code>, <code>Envelope</code> and <code>Levels</code>
 test benches; <code>Blockers</code> for a chain with blockers, <code>Canceller</code> for one with a canceller; an array's <code>Steering</code> and
 <code>Combiners</code> benches; and with <code>--demo</code> (or <code>&quot;Demo&quot;: true</code> in the <code>.cchain</code>) the <code>Demo</code> bench, the chain demodulated end
-to end; a chain with a link also its <code>TX</code> bench, the PA against its back-off. Each comes with its Data Display, beside
+to end; a chain with a link also its <code>TX</code> bench, the PA against its back-off. A transmit chain's are its own <code>1-Tone</code>,
+<code>2-Tone</code>, <code>Envelope</code> and <code>PA</code> benches. Each comes with its Data Display, beside
 the <code>.cchain</code> or in <code>dir</code>. A bench that already exists is a refusal naming it; <code>--replace</code> writes it again. Nothing is written when any
 bench is refused. Exit <strong>0</strong> when it budgeted (and
 transferred), <strong>1</strong> on a refusal.</p>

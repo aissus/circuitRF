@@ -284,6 +284,14 @@ every chain reads its input-referred noise, the array's NF, SNR, margin, Shannon
 the NF each stage leaves the rest; a sweep over the carrier or either array size budgets the whole chain at every
 point; and a TX bench shows the PA's EVM and ACPR against its back-off. A modelling tool, with no optimiser.
 
+**Transmit chains (2026-11).** A chain's direction may be Transmit: the same cascade read at its output, its power and
+CW compression through every stage's own law, its back-off from OP1dB and Psat, an ACLR estimated from its intercept
+(2·(Pout − OIP3) − 4.77 dB, derived for a Gaussian signal through a cubic), its noise floor and the noise in a stated
+receive band. A Mixer up-converts to its sum sideband when asked; an IQ modulator is composed of two Mixers, a 90°
+Hybrid and two Combiners, with its gain and phase imbalance and LO feedthrough; the System Amplifier has a `Law`, Tanh as
+before or Rapp's and Saleh's bandpass laws, in the budget and the simulation alike. A transmit chain transfers to its own
+1-Tone, 2-Tone, Envelope and PA benches. The example is a 3.5 GHz linear transmitter for a 100 MHz NR carrier.
+
 **Deferred:**
 
 - **Image noise from earlier stages.** The budget takes each mixer's image as filtered of the stages before it, and the
@@ -292,9 +300,12 @@ point; and a TX bench shows the PA's EVM and ACPR against its back-off. A modell
 - **A multi-conversion chain end to end.** Its 1-Tone, Levels, Blockers, Envelope and Demo benches are per conversion
   (a harmonic-balance noise run takes two tones, an envelope run two fundamentals); the window's Levels tab shows its
   budget alone, and its 2-Tone bench, whole at MaxMixOrder 5 under the 600-product cap, reads 3×10⁻³ dB high.
-- **Up-conversion and a transmit chain as a cascade.** A mixer stage down-converts to |f − Flo|; there is no
-  sum-frequency stage. The link's transmitter is closed form, one PA and a loss per element: no transmit cascade, no
-  up-conversion, sideband or LO leakage, and no transmit noise.
+- **A transmit chain's levels, and a transmit array.** A transmit chain's quantities are not on the level diagram
+  yet, and a transmit chain is one element: a splitter into elements and each element's PA is not a bench. The link's
+  transmitter is still closed form, one PA and a loss per element.
+- **Rapp's IM3 at the operating point.** The budget gives a Rapp stage the cubic's intercept at its 1 dB point, which is
+  pessimistic away from compression for p ≥ 2 (4 dB on the linear transmitter's two tones); the law's own IM3 at a
+  drive needs its two-tone describing function, an integral.
 - **A filter's roll-off in a frequency sweep.** The sweep exists, and every expression and table moves with it, but a
   Filter stage is still its passband IL at every point; a carrier outside its passband is noted, not attenuated.
 - **The PA's compression in the link budget.** The budget takes Pout = Psat − Backoff; the TX bench measures how far an

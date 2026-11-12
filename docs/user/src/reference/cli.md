@@ -1589,10 +1589,16 @@ there is one. Each [sweep](chain-budget.html#sweeps) the `.cchain` asks for is a
 group of the DataSet named after it (`Frequency.SNR_dB`, `TxElements.Rate_Gbps`, `RxElements.Pdc_W`), each cube over the
 sweep's own axis.
 
+A [transmit chain](chain-budget.html#transmit) reports its output instead of a receiver's sensitivity: the output power
+and its CW compression, the back-off from OP1dB and from Psat, the ACLR, the noise floor and a receive band's noise,
+and an IQ modulator's image and LO; the DataSet carries them as scalars (`PoutCW_dBm`, `BackoffPsat_dB`, `ACLR_dBc`,
+`NoisePSD_dBmHz`, `RxNoise_dBm`, `Image_dBc`, `LoLeak_dBc`, …).
+
 `--to-schematic` is the window's **Transfer to Schematic**: the chain's `1-Tone`, `2-Tone`, `Envelope` and `Levels`
 test benches; `Blockers` for a chain with blockers, `Canceller` for one with a canceller; an array's `Steering` and
 `Combiners` benches; and with `--demo` (or `"Demo": true` in the `.cchain`) the `Demo` bench, the chain demodulated end
-to end; a chain with a link also its `TX` bench, the PA against its back-off. Each comes with its Data Display, beside
+to end; a chain with a link also its `TX` bench, the PA against its back-off. A transmit chain's are its own `1-Tone`,
+`2-Tone`, `Envelope` and `PA` benches. Each comes with its Data Display, beside
 the `.cchain` or in `dir`. A bench that already exists is a refusal naming it; `--replace` writes it again. Nothing is written when any
 bench is refused. Exit **0** when it budgeted (and
 transferred), **1** on a refusal.

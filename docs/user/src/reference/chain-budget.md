@@ -3,8 +3,8 @@ title: RF Chain Budget
 slug: reference/chain-budget.html
 doc-kind: Reference Guide
 breadcrumb: Docs > Reference > RF Chain Budget
-lede: A receive chain stage by stage, each stage a System block with its own parameters - gain, noise figure, intercepts, compression, sensitivity and dynamic range in closed form, an N-way array included - and one action that writes the chain as test benches whose simulations put a number beside every one of them.
-keywords: chain budget, link budget, cascade, EIRP, free-space path loss, atmospheric attenuation, Shannon capacity, data rate, fractional bandwidth, energy per bit, DC power, PAE, back-off, frequency-scalable, frequency sweep, stage count, NF allowance, n258, receiver, Friis, noise figure, cascaded IP3, IIP3, OIP3, P1dB, sensitivity, MDS, noise floor, SFDR, SNR, phased array, array gain, array factor, beam steering, taper, combiner, combining tree, active combiner, Wilkinson, phase shifter, limiter, splitter, superhet, dual conversion, second IF, image rejection, levels, blocker, IM3, canceller, cancellation depth, EVM, constellation, demodulation, .cchain
+lede: A receive or transmit chain stage by stage, each stage a System block with its own parameters - gain, noise figure, intercepts, compression, sensitivity and dynamic range in closed form, an N-way array included, or a transmitter's output power, back-off, ACLR and noise floor - and one action that writes the chain as test benches whose simulations put a number beside every one of them.
+keywords: chain budget, link budget, cascade, EIRP, free-space path loss, atmospheric attenuation, Shannon capacity, data rate, fractional bandwidth, energy per bit, DC power, PAE, back-off, frequency-scalable, frequency sweep, stage count, NF allowance, n258, receiver, Friis, noise figure, cascaded IP3, IIP3, OIP3, P1dB, sensitivity, MDS, noise floor, SFDR, SNR, phased array, array gain, array factor, beam steering, taper, combiner, combining tree, active combiner, Wilkinson, phase shifter, limiter, splitter, superhet, dual conversion, second IF, image rejection, levels, blocker, IM3, canceller, cancellation depth, EVM, constellation, demodulation, transmit chain, transmitter, up-conversion, sideband, IQ modulator, LO feedthrough, power amplifier, PA, Psat, ACLR, ACPR, AM-AM, AM-PM, Rapp, Saleh, bandpass nonlinearity, receive band, .cchain
 ---
 
 <nav class="toc">
@@ -16,6 +16,9 @@ keywords: chain budget, link budget, cascade, EIRP, free-space path loss, atmosp
 <li><a href="#stages">The stages, and the parts a stage can be</a></li>
 <li><a href="#scaling">Values that follow the frequency</a></li>
 <li><a href="#cascade">What the cascade computes</a></li>
+<li><a href="#transmit">Transmit chains</a></li>
+<li><a href="#laws">The amplifier's laws</a></li>
+<li><a href="#iqmod">The IQ modulator</a></li>
 <li><a href="#array">Arrays: N elements into a combiner</a></li>
 <li><a href="#variants">The combiner's four variants</a></li>
 <li><a href="#link">A link in front of the chain</a></li>
@@ -27,6 +30,7 @@ keywords: chain budget, link budget, cascade, EIRP, free-space path loss, atmosp
 <li><a href="#levels">Levels at every node</a></li>
 <li><a href="#canceller">The canceller</a></li>
 <li><a href="#demo">The modulated-signal demo</a></li>
+<li><a href="#linear-tx">A linear transmitter</a></li>
 <li><a href="#agreement">How closely the simulation agrees</a></li>
 <li><a href="#format">The .cchain file</a></li>
 <li><a href="#cli">From the command line</a></li>
@@ -35,9 +39,9 @@ keywords: chain budget, link budget, cascade, EIRP, free-space path loss, atmosp
 
 ## What it is {#what}
 
-A **chain budget** is the spreadsheet every receiver starts as: an ordered list of stages, each with a gain, a noise
-figure and an intercept, and the cascade worked out stage by stage. The RF Chain Budget is that table, with two
-differences that matter here:
+A **chain budget** is the spreadsheet every receiver and transmitter starts as: an ordered list of stages, each with a
+gain, a noise figure and an intercept, and the cascade worked out stage by stage. The RF Chain Budget is that table, with
+two differences that matter here:
 
 - **Every stage is a part circuitRF already has.** An amplifier stage is the System [Amplifier](system-components.html#amp)
   with the Amplifier's own `Gain`, `NF`, `IP3` and `IP3Ref`; a filter stage is the [Filter](system-components.html#filter)
@@ -52,7 +56,8 @@ differences that matter here:
 - **Tools ▸ RF Chain Budget** opens a new chain: an LNA, a filter and a second amplifier.
 - A `.cchain` in the workspace tree opens on a double-click.
 - **File ▸ New ▸ Examples ▸ RF Chain Budget** has a 2.45 GHz superhet, a four-element steered array, a front end
-  with a canceller, a dual-conversion receiver and a 26 GHz link, each already transferred.
+  with a canceller, a dual-conversion receiver, a 26 GHz link and a 3.5 GHz linear transmitter, each already
+  transferred.
 
 {{ui: chain-budget}}
 
@@ -107,6 +112,8 @@ as a tree combiner whose N is not a power of 2, is not made, and the reason is s
 | Source temperature | The noise temperature of what drives the input, an antenna's for instance. 290 K is T0. |
 | Required SNR | What the demodulator needs: sensitivity is the MDS plus this. |
 | Blockers | Carriers at the input besides the signal: an offset from the frequency (MHz when bare) and a level, dBm, each pair separated by `;` (`150 MHz, -40; 20 MHz, -50`). See [Levels](#levels). |
+| Direction | `Receive`, the default, or `Transmit`: a chain driven at its input and read at its output. See [Transmit chains](#transmit). |
+| RxOffset, RxBandwidth | A transmit chain's receive band, where its output noise is read: its centre's offset from the carrier at the output and its width, MHz. Blank offset: none. |
 
 **Transfer to Schematic**'s drop-down has **include a modulated-signal demo**, which adds the [demo bench](#demo) to
 what it writes.
@@ -115,14 +122,15 @@ what it writes.
 
 A stage has a name (its instance name on the schematic), a part, and that part's parameters. Nine parts are System
 blocks — the splitter and the array combiner are the library's [Combiner](system-components.html#combiner), an
-active combiner that block with an Amplifier after each — and the library has no phase shifter, limiter or canceller,
-so three more are **composed** of parts it does have. Transfer places exactly that composition. One more is **data**:
-an [S-parameter data](#snp) stage is a Touchstone file.
+active combiner that block with an Amplifier after each — and the library has no phase shifter, limiter, canceller or
+IQ modulator, so four more are **composed** of parts it does have. Transfer places exactly that composition. One more
+is **data**: an [S-parameter data](#snp) stage is a Touchstone file.
 
 | Part | What it is | Budget |
 |---|---|---|
-| Amplifier (`Amp`) | The System Amplifier. Any gain, negative included: a block with a gain, an NF and an intercept is one. `GainPerStage` makes it ⌈`Gain`/`GainPerStage`⌉ amplifier stages, for its [DC power](#readouts). | G = `Gain`, NF = `NF` (blank: noiseless), IIP3 from `IP3` and `IP3Ref`, IP1dB = IIP3 − 8.96 dB |
-| Mixer | The System Mixer, down-converting to \|f − `Flo`\|. `Flo` is the LO the bench drives it with, at `Plo`. | G = `ConvGain`, NF = `NF` single-sideband (a DSB figure + 3.01 dB), IIP3 = `IIP3`, IP1dB = IIP3 − 8.96 dB |
+| Amplifier (`Amp`) | The System Amplifier. Any gain, negative included: a block with a gain, an NF and an intercept is one. `GainPerStage` makes it ⌈`Gain`/`GainPerStage`⌉ amplifier stages, for its [DC power](#readouts). `Law` picks its compression: `Tanh` on `IP3`, or `Rapp` or `Saleh` on `Psat` ([the laws](#laws)). | G = `Gain`, NF = `NF` (blank: noiseless), IIP3 from `IP3` and `IP3Ref`, IP1dB = IIP3 − 8.96 dB; a Rapp or Saleh law's own |
+| Mixer | The System Mixer, down-converting to \|f − `Flo`\|, or with `Sideband` = Upper up-converting to f + `Flo`. `Flo` is the LO the bench drives it with, at `Plo`. | G = `ConvGain`, NF = `NF` single-sideband (a DSB figure + 3.01 dB), IIP3 = `IIP3`, IP1dB = IIP3 − 8.96 dB |
+| IQ modulator (`IQMod`, composed) | Two Mixers fed in quadrature by a 90° Hybrid at the input, their LO split into its quadrature by a Combiner, summed by a second: an image-reject up-converter to `Flo` + f (`Sideband` Upper) or `Flo` − f, with `GainImb`, `PhaseImb` and each mixer's `IsoLO_IF`. See [The IQ modulator](#iqmod). | G = `ConvGain` + 20·log10(\|1 + g·e^(jφ)\|/2), NF a mixer's, IIP3 = `IIP3` + 3.01 dB |
 | Attenuator (`Atten`) | A matched pad. | G = −`Loss`, NF = `Loss` |
 | Filter | The synthesised Filter, in its passband. | G = −`IL`, NF = `IL`; a Chebyshev's ripple is not in the budget |
 | Switch | A closed SPST switch. | G = −`IL`, NF = `IL` |
@@ -139,8 +147,9 @@ Every part also takes a `Pdc`, its DC power (W, or with its unit: `5 mW`), which
 reads; on an Amplifier with `GainPerStage` it is each amplifier stage's. Neither is written onto a bench.
 
 **P1dB follows from the intercept** for every part that compresses, because an ideal Amplifier and Mixer have one
-nonlinearity, a tanh limiter, whose 1 dB compression point is IIP3 − 8.9625 dB. The budget uses the part's own law, so
-the simulation it is checked against compresses where the budget says.
+nonlinearity, a tanh limiter, whose 1 dB compression point is IIP3 − 8.9625 dB. An Amplifier with a Rapp or Saleh law
+compresses as its law does instead. The budget uses the part's own law, so the simulation it is checked against
+compresses where the budget says.
 
 ### S-parameter data {#snp}
 
@@ -235,6 +244,118 @@ holds when the image filter is right in front of the mixer: a stage between them
 at the image, which the budget does not have. **To see how much of an image a chain rejects**, give it a blocker at the
 image's offset: the [levels](#levels) carry it through each filter's own response and each mixer, and its level at the
 output, against the signal's, is the chain's rejection of that image.
+
+## Transmit chains {#transmit}
+
+**Direction ▸ Transmit** reads the same cascade from its other end. The input is the drive — the complex IF a DAC
+delivers, say — and the chain ends at the antenna. Every stage, every row and every number of the cascade is the same
+as a receive chain's; the totals add the transmitter's own, and leave out a receiver's sensitivity and range:
+
+| Readout | Formula |
+|---|---|
+| Output power | Pout = Pin + G, the linear budget's |
+| Output, CW | the carrier through every stage's compression in turn: a Rapp or Saleh stage its law's AM-AM, every other stage that compresses its tanh limiter's describing function, N(u) = (2/πu)·∫₀^π tanh(u·cos θ)·cos θ dθ at u = 2·√(P/IIP3) |
+| Back-off from OP1dB | OP1dB − Pout, the cascade's OP1dB |
+| Psat, and the back-off from it | the output's ceiling, P_k = min(P_(k−1) + g_k, Psat_k) through the stages, Psat_k a stage's own (a tanh stage's OIP3 − 10·log10(π²/4), 3.92 dB under it); Psat − Pout |
+| ACLR | 2·(Pout − OIP3) − 10·log10 3, dBc: below |
+| Noise floor | 10·log10(k·(Ts + Te)·G) + 30, dBm/Hz at the output |
+| Noise in the receive band | the same sum with every stage's gain at the band's frequency, a filter passing \|S21\|² there and adding T0·(1 − \|S21\|² − \|S22\|²): dBm/Hz, and dBm in the band |
+| Image, LO | an [IQ modulator's](#iqmod), each carried to the output through every stage at its own frequency, dBc |
+
+**The ACLR relation, and what it assumes.** Take a memoryless nonlinearity to third order on the complex envelope,
+y = a₁x + a₃x\|x\|², driven by a signal x that is complex Gaussian with power P and a flat spectrum of width B — OFDM
+is close to one, by the central limit theorem. By Isserlis' theorem (L. Isserlis, "On a formula for the product-moment
+coefficient of any order of a normal frequency distribution in any number of variables", Biometrika, 1918), E\|x\|⁴ = 2P² and E\|x\|⁶ = 6P³, so the
+third-order output's part correlated with x is a gain change, 2a₃P·x, and the rest, of power 2\|a₃\|²P³, spreads as the
+threefold convolution of the flat spectrum over 3B: two thirds of it in the channel and a sixth in each neighbour of
+the same width, one bandwidth away. The two-tone intercept of the same nonlinearity is IIP3 = \|a₁/a₃\| per tone, so the
+neighbour holds \|a₃\|²P³/3 against \|a₁\|²P in the channel:
+
+```
+ACLR = (P/IIP3)² / 3      →      ACLR = 2·(Pout − OIP3) − 4.77 dB
+```
+
+It assumes third order dominates, a back-off well under compression; a noise-like signal; the neighbour the signal's
+width at one bandwidth's offset (an NR carrier is measured over its occupied bandwidth at the channel spacing, 98.28 MHz
+at 100 MHz for a 100 MHz carrier, which moves the sixth to 0.158, 0.23 dB); and every stage's IM3 in phase, as the
+cascade's intercept takes them. Two equal tones at the same total power put each IM3 product at 2·(Pout − 3.01 − OIP3),
+1.25 dB under the relation's ACLR. The relation is an estimate: the [linear transmitter](#linear-tx) shows how far it
+holds with a real PA law.
+
+**The receive band.** A transmitter's own noise at a receiver's frequency — a duplex offset, a receiver beside it — is
+what its band filter must remove. Give the band's offset from the carrier at the output, and its width: the noise there
+is the Friis sum again with each stage's gain at that frequency. A filter's is its own response, and its noise is
+Bosma's: it passes \|S21\|² of what arrives and adds T0·(1 − \|S21\|² − \|S22\|² ), its loss in its passband but almost
+nothing in its stopband, where it reflects rather than dissipates; a reflected wave is the stage before's to absorb.
+
+**A converter's sideband.** A Mixer goes on at its difference, \|f − `Flo`\|, by default; `Sideband` = Upper takes its
+sum, f + `Flo`, as an up-converter does. The budget's numbers are the same either way, since an ideal multiplier puts the
+same conversion gain into both; the frequency the chain goes on at, every stage after it reads, and the bench tracks,
+moves. The bench's filter after a mixer is what removes the other sideband.
+
+A transmit chain has no [link](#link) in front of it: a link's transmitter feeds a receive chain.
+
+## The amplifier's laws {#laws}
+
+An Amplifier's `Law` picks how it compresses, in the budget and in the simulation alike:
+
+| `Law` | Gain against the input power s | IP1dB | Psat | IIP3 the budget uses |
+|---|---|---|---|---|
+| `Tanh` (the default) | the soft limiter on the instantaneous input | IIP3 − 8.9625 dB | OIP3 − 3.92 dB | `IP3`'s, its own third-order term |
+| `Rapp` | (1 + (s/P0)^`P`)^(−1/(2`P`)), P0 = `Psat`/G | P0 + (10/`P`)·log10(10^(`P`/10) − 1) | `Psat`, its asymptote | the cubic's with its 1 dB point: IP1dB + 9.64 dB |
+| `Saleh` | e^(jΦ(v)) / (1 + v), Φ(v) = a·v/(1 + b·v), v = s/s_sat, s_sat = 4·`Psat`/G | s_sat + 10·log10(10^(1/20) − 1), `Psat` − G − 3.12 dB | `Psat`, the AM-AM's peak, 6.02 dB into compression | its own third-order term, AM-PM in it: s_sat − 5·log10(1 + a²) |
+
+`P` is Rapp's smoothness: at 1 the 1 dB point is 5.87 dB under the saturated input, at 2 1.16 dB, at 3 0.01 dB, a
+hard clip's. Saleh's phase is stated by its value at the drive that saturates it, `PhiSat`, and its limit, `PhiMax`,
+beyond it on the same side of zero: b = `PhiSat`/(`PhiMax` − `PhiSat`), a = `PhiMax`·b; both 0 is no AM-PM. The laws are
+C. Rapp, "Effects of HPA-nonlinearity on 4-DPSK/OFDM-signal for a digital sound broadcasting system", Proceedings of
+the 2nd European Conference on Satellite Communications, 1991, and A. A. M. Saleh, "Frequency-independent and
+frequency-dependent nonlinear models of TWT amplifiers", IEEE Transactions on Communications, 1981, here with the
+amplifier's own gain and a saturated power in place of their normalised constants.
+
+**What Rapp's intercept is.** Rapp's law has no third-order term unless `P` is 1: at small drive its IM3 rises 2`P` + 1 dB
+for every dB, and no intercept describes it. The budget gives it the cubic's with the same small-signal gain and the same
+1 dB point — the textbook IP3 = P1dB + 9.64 dB — which is what an intercept sum and an ACLR estimate can take. At `P` = 1
+its own third-order term is 0.76 dB lower. For `P` = 2 the cubic is pessimistic away from compression: two tones at the
+linear transmitter's operating point read their IM3 4.1 dB under it, and 20 dB further down the PA's products
+fall at five times the drive.
+
+**How the simulation does it.** A Rapp or Saleh law is a bandpass law, stated for a narrowband signal's envelope, so the
+amplifier applies it to its input's analytic signal: the input voltage and its quadrature, which a linear companion
+holds on a net of its own at the input's Hilbert transform (see
+[System Components ▸ Amplifier](system-components.html#amp)). One tone's envelope is constant, so a one-tone run reads
+the law at that drive exactly, and nothing at the harmonics; two tones beat, and their products are the law's own.
+Every analysis carries it: single- and multi-tone harmonic balance, the envelope, and an S-parameter run, where the law
+is its gain. A transmit chain's [PA bench](#tx-benches) reads its AM-AM and AM-PM over the drive against the closed
+forms: 6.5×10⁻¹⁰ dB and 10⁻¹⁵°, and its 1 dB point to the three-point interpolation's 0.01 dB.
+
+## The IQ modulator {#iqmod}
+
+An `IQMod` stage is an image-reject up-converter of library blocks, placed as Transfer places every composed stage:
+
+| Part | Placed as |
+|---|---|
+| The input's quadrature | a [90° Hybrid](system-components.html#hybrid90) (a Coupler of 3.01 dB at 90°), its fourth port terminated: the I arm and the Q arm |
+| The LO | a P1Tone at `Flo`, 3.01 dB over `Plo` so each mixer is driven at its stated `Plo`, split by a 2-way [Combiner](system-components.html#combiner) whose second path is at +90° (the upper sideband) or −90°, plus `PhaseImb` |
+| The mixers | two Mixers of `ConvGain`, `NF`, `IIP3` and `IsoLO_IF`, the Q one's gain `ConvGain` + `GainImb` |
+| The sum | a 2-way Combiner |
+
+The LO's split is a Combiner rather than a second hybrid because its path phase is flat and it stays passive at any
+phase; a hybrid set off quadrature does not. With g = 10^(`GainImb`/20) and φ = `PhaseImb`, against one balanced
+mixer the wanted sideband comes out at \|1 + g·e^(jφ)\|²/4 and its image at \|1 − g·e^(jφ)\|²/4:
+
+| Quantity | Closed form |
+|---|---|
+| Gain | `ConvGain` + 20·log10(\|1 + g·e^(jφ)\|/2): `ConvGain` when balanced |
+| Image rejection | \|1 + g·e^(jφ)\|² / \|1 − g·e^(jφ)\|²: 35.17 dB at 0.2 dB and 1.5°, which is what an uncalibrated modulator achieves |
+| LO at its output | `Plo` − `IsoLO_IF` + 10·log10(1 ∓ sin φ), each mixer's feedthrough, the two in quadrature, summed at half each |
+| IIP3, IP1dB | a mixer's, 3.01 dB up: each mixer takes half the input |
+| NF | a mixer's single-sideband figure |
+
+The image is at `Flo` ∓ f and the LO at `Flo`; the readouts carry each through the stages after the modulator at its own
+frequency, so a band filter's rejection of them is in the numbers at the output. Its input is the chain's frequency, the
+IF the modulator up-converts — high enough, for a wide carrier, that the LO and the image clear the adjacent channels:
+the linear transmitter's 200 MHz puts them 200 and 400 MHz below a 100 MHz carrier.
 
 ## Arrays: N elements into a combiner {#array}
 
@@ -441,6 +562,29 @@ its prediction beside it is computed in that bandwidth.
 An array's 1-Tone bench has N + 1 ports. Its gain is |Σₖ S(N+1, k)|², which is the budget's only if every phase shifter
 removes its element's steering, and its NF is one element's: F = 1 + (F₁ − 1)·|S(N+1, 1)|²/Σₖ|S(N+1, k)|², where F₁ is
 the noise factor from port 1 with the other elements' terminations noiseless — F = 1 + (F₁ − 1)/N for equal paths.
+
+### A transmit chain's benches {#tx-benches}
+
+A [transmit chain](#transmit) is driven at its input and read at its output, so its benches are its own:
+
+| Bench | Source | Analyses | Measures |
+|---|---|---|---|
+| `<chain> 1-Tone` | a P1Tone at the input (port 1), a Port at the output | harmonic balance swept over the drive from 20 dB under the input power to 10 dB past the back-off from Psat, with the predicted IP1dB ± 0.25 dB in it; harmonic-balance noise at the input power, 1 MHz off the carrier and in the receive band | the output against the drive beside the budget's CW output; the 1 dB point; the noise floor and the receive band's; an IQ modulator's image and LO at its own output and at the chain's |
+| `<chain> 2-Tone` | a PnTone of two tones 1 MHz apart, their total the input power | multi-tone harmonic balance at three levels: 20 dB and 6 dB under, and at, the input power | the IM3 against the level beside the intercept's 2·(P + G − OIP3); the intercept 20 dB down |
+| `<chain> Envelope` | a MOD_Source at the input: an NR 64-QAM carrier, noiseless | envelope at the input power and 3 dB either side | the output power beside the linear budget, the ACLR beside the budget's estimate, the EVM, the spectrum |
+| `<chain> PA` | the PA stage alone, from a MOD_Source at its own input and frequency | harmonic balance swept over its drive (a MOD_Source is a CW carrier there), and an envelope run at its input power | AM-AM and AM-PM beside its law's closed forms, its 1 dB point and saturation, its efficiency; the NR carrier's ACLR and EVM through it |
+
+The PA is the chain's last Amplifier with a Rapp or Saleh law, else its last that compresses. An ideal amplifier draws
+its stated `Pdc` at every drive, so its efficiency is the power it adds over that: class A's shape, 50 % at saturation
+for a `Pdc` of twice `Psat`. The NR carrier is the 15 kHz-spacing channel nearest the chain's bandwidth up to 50 MHz, as
+a receive chain's, and the 30 kHz one above it (up to 100 MHz, 273 resource blocks).
+
+The 1-Tone bench puts an isolator after an IQ modulator, the bench's and not the chain's: the filter after it reflects
+the image and the LO, and a node in front of a reflection reads the incident wave plus the reflected one; behind the
+isolator the modulator's output reads the wave going forward, as the Blockers bench's nodes do. Every bench is checked
+before it is written, as a receive chain's are: an IQ modulator's LO is a tone, so the 1-Tone run has two tones, the
+2-Tone run three, each at the order its numbers converge at or the highest under the 600-product cap; the envelope run
+has two fundamentals, the carrier's and the LO's, the LO more than three bandwidths from it.
 
 ### The TX bench {#tx}
 
@@ -670,6 +814,55 @@ input P1dB. Its display:
   past compression;
 - the SNR in the carrier's channel, simulated and the budget's.
 
+## A linear transmitter {#linear-tx}
+
+The example's `Linear TX.cchain` is a 3.5 GHz transmitter for a 100 MHz NR carrier at 30 kHz subcarrier spacing, from a
+200 MHz IF to the antenna:
+
+| Stage | Part | Gain | NF | Compression |
+|---|---|---|---|---|
+| IQ | `IQMod`, LO 3.3 GHz at 7 dBm, upper sideband, 0.2 dB and 1.5° of imbalance, `IsoLO_IF` 50 dB | −5.90 dB | 12 dB | IIP3 18.01 dBm (each mixer 15 dBm) |
+| BPF1 | `Filter`, 5th-order Butterworth, 3.4 to 3.6 GHz | −1.5 dB | 1.5 dB | |
+| DRV | `Amp` | 20 dB | 4 dB | OIP3 32 dBm (tanh) |
+| PA | `Amp`, `Law` = Rapp, `Psat` 37 dBm, `P` 2, `Pdc` 10 W | 30 dB | 6 dB | IP1dB 5.84 dBm, cubic IIP3 15.47 dBm |
+| BPF2 | `Filter`, 5th-order 0.1 dB Chebyshev, 3.4 to 3.6 GHz | −0.6 dB | 0.6 dB | |
+
+Driven at −14 dBm, its budget, every number of which a hand calculation reproduces from the formulas above (the PA's
+1 dB point and saturation by root-finding Rapp's own AM-AM, the tanh stages' compression by integrating the describing
+function):
+
+| Readout | Value |
+|---|---|
+| Gain, NF | 42.00 dB, 14.14 dB |
+| Output power | 28.00 dBm; as a CW carrier 27.95 dBm, 0.05 dB compressed |
+| OP1dB, back-off | 34.04 dBm, 6.04 dB |
+| Psat, back-off | 36.40 dBm, 8.40 dB |
+| OIP3, ACLR | 44.65 dBm, −38.07 dBc |
+| Noise floor | −117.84 dBm/Hz |
+| Noise in a 20 MHz band 200 MHz above the carrier | −156.50 dBm/Hz, −83.49 dBm: both filters' rejection, 30.7 and 34.4 dB there |
+| Image, LO | 35.17 dB rejected at the modulator, −167.82 dBc at the output; −23.22 dBc at the modulator, −90.27 dBc at the output |
+
+And its benches against it:
+
+| Quantity | Budget | Simulated | Why it differs |
+|---|---|---|---|
+| Output over the drive, −34 to +4 dBm in | the CW output | 5×10⁻⁴ dB under at every drive | the Chebyshev filter's 0.1 dB ripple at 3.5 GHz, which the budget leaves out |
+| Output 18 dB past the operating point | 36.3665 dBm | 36.3659 dBm | as above |
+| IP1dB | −6.96 dBm | −6.86 dBm | the cascaded-P1dB formula, as a receive chain's |
+| Image, LO at the modulator | −35.17, −23.22 dBc | −35.17, −23.21 dBc | |
+| Image, LO at the output | −167.82, −90.27 dBc | −166.3, −90.36 dBc | the image 167 dB down, where the run's own resolution is |
+| Noise floor, 1 MHz off the carrier | −117.84 dBm/Hz | −117.98 dBm/Hz | half the noise is amplitude, and at its operating point the PA's differential gain is 0.25 dB under its gain |
+| Noise in the receive band | −156.50 dBm/Hz | −156.63 dBm/Hz | as above |
+| PA: AM-AM, AM-PM | Rapp's law | 6.5×10⁻¹⁰ dB, 10⁻¹⁵° | |
+| PA: IP1dB | 5.835 dBm | 5.826 dBm | the bench's three-point interpolation |
+| IM3 at the operating point | −39.32 dBc | −43.41 dBc | the cubic with the PA's 1 dB point is pessimistic for `P` = 2 away from compression |
+| ACLR at the operating point | −38.07 dBc | −39.07 dBc | the third-order estimate with the PA's cubic intercept, 1.0 dB on the pessimistic side; the carrier's peaks reach the PA's 1 dB point, where Rapp's law is close to the cubic |
+| Output, NR carrier | 28.00 dBm | 27.65 dBm | the carrier's peaks, up to the PA's 1 dB point, compress |
+| EVM, NR carrier | — | 4.09 % | the PA's compression of the peaks |
+
+The PA alone, driven by the same NR carrier at its operating point (its own bench), puts out 28.38 dBm with
+−37.73 and −37.86 dBc of ACLR and 2.53 % EVM, at 6.88 % efficiency on its 10 W.
+
 ## How closely the simulation agrees {#agreement}
 
 Measured on the example's superhet and array, the budget against the simulation of the benches it writes:
@@ -733,6 +926,11 @@ to 10⁻⁶ dB down to −60 dB, and its gain, NF and array gain at each peak on
 reads each variant's gain and NF to 10⁻¹⁴ dB; each variant's intercepts and compression point, transferred on its own,
 read as the table above does.
 
+The linear transmitter's benches are tabled with it, in [A linear transmitter](#linear-tx): its output over 38 dB of
+drive on the budget's CW output to 5×10⁻⁴ dB, its PA's AM-AM and AM-PM on Rapp's law to 10⁻⁹, its modulator's image and
+LO on their closed forms, its noise 0.13 to 0.15 dB under the budget, and its IM3 and ACLR 4.1 and 1.0 dB on the
+pessimistic side of the estimates.
+
 ## The .cchain file {#format}
 
 A `.cchain` is JSON. The system inputs are numbers whose names carry their unit; a stage's parameters are text, exactly
@@ -756,10 +954,12 @@ as the part's netlist line carries them.
 
 | Key | Meaning |
 |---|---|
-| `FormatVersion` | 1, or 2 for a chain that uses a value of the frequency, a budget-only parameter, a `Levels` combiner, a link, a sweep or a readout input. A file from a newer circuitRF is refused, not read in part. |
+| `FormatVersion` | 1; 2 for a chain that uses a value of the frequency, a budget-only parameter, a `Levels` combiner, a link, a sweep or a readout input; 3 for a transmit chain, an IQ modulator, an Amplifier's `Law`, `Psat`, `P`, `PhiSat` or `PhiMax`, or a converter's `Sideband`. A file from a newer circuitRF is refused, not read in part. |
+| `Direction` | Optional: `"Transmit"` for a [transmit chain](#transmit). Absent: a receive chain. |
+| `RxBandOffsetHz`, `RxBandHz` | Optional: a transmit chain's receive band, its centre's offset from the carrier at the output and its width. |
 | `FrequencyHz`, `BandwidthHz`, `InputPowerDbm`, `TemperatureK`, `RequiredSnrDb` | The [system inputs](#inputs). Absent: 2.45 GHz, 1 MHz, −70 dBm, 290 K, 10 dB. |
 | `Stages` | In signal order. `Name` follows the instance-name rule (a letter, then letters, digits and `_`). |
-| `Part` | `Amp`, `Mixer`, `Atten`, `Filter`, `Switch`, `Circulator`, `Coupler`, `PhaseShifter`, `Limiter`, `Canceller`, `Splitter`, `SnP` or `Combiner`. |
+| `Part` | `Amp`, `Mixer`, `IQMod`, `Atten`, `Filter`, `Switch`, `Circulator`, `Coupler`, `PhaseShifter`, `Limiter`, `Canceller`, `Splitter`, `SnP` or `Combiner`. |
 | `Parameters` | The part's parameters by their own names. An absent one takes the part's default (a System block's own placement default); one the part does not list is carried onto the schematic unchanged and not read by the budget. |
 | `Blockers` | Optional: `[{"OffsetHz": 150000000, "LevelDbm": -40}, …]`, each an offset from `FrequencyHz` and a level at the input. |
 | `Demo` | Optional: `true` to write the [demo bench](#demo) too. |
@@ -780,6 +980,10 @@ circuitrf chain Superhet.cchain --level-diagram levels.svg   the level diagram, 
 circuitrf chain Superhet.cchain --to-schematic       the benches and their displays, beside the .cchain
 circuitrf hb "Superhet 2-Tone/schematic/Superhet 2-Tone.csch"
 ```
+
+A transmit chain's report reads its output in place of a receiver's sensitivity: the output power and its CW
+compression, the back-off from OP1dB and from Psat, the ACLR, the noise floor and the receive band's noise, and an IQ
+modulator's image and LO.
 
 `--to-schematic [dir]` writes into another folder, `--name` names the benches, `--demo` adds the demo bench, and an
 existing bench is a refusal unless `--replace` is given. `circuitrf check` reads a `.cchain` through the same budget and reports its refusals. Over the MCP
