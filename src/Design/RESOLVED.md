@@ -30872,3 +30872,88 @@ drawn; a port across the cut is drawn as before.
 
 **A single-port field plot naming `Port: 1` found nothing.** Palace writes a single-excitation run's fields with no
 excitation index, so the plot's solution must omit `Port`; the Loop Sensor's plots do.
+
+## LP-3 — a stand-in sampled from a device circuitRF already runs (2026-11-12)
+
+`model sample` (`Modeling/StandInSampling.cs`, `docs/design/model-composer.md` §26) builds a quasi-static `.cmodel` of
+tables from DC and S that circuitRF computes for a device it already runs. Measured on 1.8.2, Release, on a shared machine
+under load (load average 40–70); every time is the shortest of two to five runs of `circuitrf lp`, process start
+included (0.33 s for `--version`), over the 20 Hero-3 loads (`testdata/Hero3/hero3_load.gam`) driven to 3 dB of Gt
+compression.
+
+**Where the speed is.** It is in the device's own cost per evaluation, not in the worker round trip:
+
+| Device | Device | Stand-in | Bare core | With LP-1's parallel grid: device / stand-in |
+|---|---|---|---|---|
+| The shipped GaN as compiled Verilog-A (its network, traps at their DC values, ANN constituents) | 4.14 s | 1.81 s | 1.45 s | 3.91 / 0.92 s |
+| The same model as its own `ComposedFET` | 3.78 s | | | 2.42 s |
+| `crf_fet`, a closed-form FET in `tools/fake-osdi-model` | 0.81 s | 1.81 s | 1.49 s | 0.77 / 0.93 s |
+| Hero-2's SDD with its capacitances, in-process | 0.83 s | 2.00 s | 1.83 s | 0.60 / 1.02 s |
+
+- Against the compiled GaN the stand-in is **2.3× faster** serially and **4.3×** with LP-1 (`perf/loadpull-parallel`,
+  cherry-picked into a scratch build only), which runs the stand-in's loads side by side and keeps the compiled model on
+  one worker. The compiled module and the `ComposedFET` it came from cost about the same: the module's own ANNs and nine
+  internal nodes are the cost, and the worker's round trip is small beside them.
+- Against a model that costs nothing per evaluation (a closed form, compiled or SDD) the stand-in is **slower**, about
+  2× serially, and level or slower with LP-1. Its five table constituents, their guided extrapolation and its core's
+  unknowns cost more than the formula. A stand-in pays where the device is expensive.
+- "Bare core" places the same `.cmodel` as a `ComposedCore`, without the empty network's three 1 µΩ links: 10–20 %
+  faster (50 % on the GaN). A `ComposedFET` whose network is empty could elaborate as its core; it does not yet, because
+  validation and the report read the intrinsic nodes `X1.gi`, `X1.di`, `X1.si` by name.
+
+**Accuracy at compression**, stand-in minus device, RMS (largest) over the loads both reach it at:
+
+| Device | Loads | Pout | Gt | PAE | AM–PM |
+|---|---|---|---|---|---|
+| `crf_fet`, 141 × 73 grid | 20 | 0.005 (0.010) dB | 0.0004 (0.002) dB | 0.04 (0.09) pp | 0.07 (0.21)° |
+| Hero-2 SDD, 65 × 61 (`testdata/StandInComposed`) | 20 | 0.17 (0.45) dB | 0.17 (0.38) dB | 0.92 (1.99) pp | 0.08 (0.20)° |
+| GaN Verilog-A, 81 × 65, charges refitted as an ANN | 20 | 0.62 (2.1) dB | 0.08 (0.29) dB | 1.8 (5.7) pp | 0.90 (2.2)° |
+| A VBIC 1.3 HBT, compiled, a generic parameter set, 421 × 76 (`Vbe` in 5 mV), table charges | 13 | 0.11 (0.17) dB | 1.0 (1.3) dB | 1.7 (2.4) pp | 5.6 (6.5)° |
+
+No HBT is in this repository's fixtures, so the last row is a local check, not a test: the VBIC module built from its
+Verilog-A source by an external compiler, placed `d g 0 0 t` (collector, base, emitter, substrate to the emitter, `dt`),
+13 loads about 200 Ω at 2 GHz, `Vbe` 0.82 V, `Vce` 3 V. Sampling took 45 s for 31,996 points, `Rth` read back 300 K/W, the
+parameter's own. The b/c/e mapping needs nothing of its own. Its Gt and AM–PM misses are the charges: with `RB`, `RC`
+and `RE` inside the module, the Charge step's paths disagree by 8 % (base) and 33 % (collector). The stand-in ran the 13
+loads in 1.24 s against 1.73 s, 0.82 s with LP-1.
+
+The GaN's error is the quasi-static collapse of its own network: `rg` and the gate charge, `Lg`, `Ld` and the pad
+capacitances are inside the module, so the stand-in reads them as one two-port at 200 MHz and loses their phase at 2 GHz
+and its harmonics. Its DC and 2 GHz S21 are within 0.22 % and 1.03 % of the `ComposedFET` it was exported from
+(`StandInBenchmarkTests`). Typing the network into the document keeps it outside the core; see the last item.
+
+**Sampling is cheap, once.** Serial through the worker: 10,293 points of `crf_fet` in 8.7 s, 5,265 of the GaN module in
+16.6 s (3 ms a point for DC and S). Hero-2's SDD in parallel: 3,965 points in 2.6 s. Table currents and charges fit in
+about a second; the GaN's charges refitted as an ANN took 4 min 16 s.
+
+**The RF swing is wider than the DC range.** Hero-2's gate is a 50 Ω resistor with no diode to clamp it, and at
+compression it swings from about −15 to +8 V. Sampled over its DC range (`vgs` −8…2 V), 41 % of the stand-in's
+evaluations in the loadpull fall outside the table and it misses at compression (Pout 0.51 dB, Zin VSWR 1.72); over
+−20…12 V it passes (0.10 dB, 1.02). Hence the stand-in's warning, and validation repeating it beside the item. A Newton
+iterate that strays outside counts too; the share in the message tells that from a swing that lives there. The warning
+needed `CircuitEvaluation` to drain the models after the run: the engines drain as they stamp, which is before any
+nonlinear evaluation, so nothing a model queued during a solve had ever reached a run's warnings.
+
+**Rth on the terminals' power.** The GaN module heats with its core's power and reads 25 K/W there; a stand-in whose core
+is the whole device heats with the terminals' power, which includes what `rg`, `rd` and `rs` dissipate. At its hottest
+sample the module reads 22.8 K/W on the terminals, and that is the value the stand-in must carry (its DC with
+self-heating is then within 0.22 % of the original's). Reading it needs the thermal pin wired: circuitRF holds an
+unwired compiled-model thermal terminal at the ambient's value itself, so the read goes through 1 TΩ to ground.
+
+**Found, not fixed here.**
+- That hold is 25, the ambient in °C, written onto a pin whose potential this repository's own exported modules (and a
+  VBIC `dt`) read as the rise. The GaN module placed with `t` drawn and unwired therefore runs 25 K hot: 6.26 mA against
+  the `ComposedFET`'s 6.87 mA at −0.8 V, 8 V. The Verilog-A export reference says an unwired `t` heats on the module's
+  own network, which is what a pin left off the instance does.
+- A table charge from the Y of a device whose series resistances are inside it is not a charge function of the terminal
+  voltages (`gm·Rs`-type terms in Im Y): on the GaN module the Charge step's two paths differ by 5 %, and S21 between the
+  grid lines by up to 16 %. The ANN fits the nearest conserving charge (1 %). `sample` keeps Table (seconds, exact for a
+  device whose charges are charges) and the reference says when to refit.
+- With several temperatures an ANN charge in `T` over 3,843 points took ten minutes; `sample` gives the charges a set of
+  their own at the first temperature, as a table, and says so.
+- Typing the GaN's own network into the document (device plane, every value locked) moves the points off the grid, and
+  the Current step's RBF re-grid then gives `IgGd` an infinite `G_x` at the forward gate, which the record cannot write
+  (`.NET number values such as positive and negative infinity cannot be written as valid JSON`). The ANN re-grid writes
+  7.5e14 S there. Not a stand-in path; recorded for the Current step.
+- `DataHygiene`'s `|S12| > |S21|` port-swap warning fires on half the points of a sampled grid that reaches pinch-off, where
+  the feedback capacitance is all the device transmits.

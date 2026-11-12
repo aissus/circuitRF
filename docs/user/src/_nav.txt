@@ -116,3 +116,4 @@ app-notes/an01-ports-and-coupling.html  | AN-01: how to EM-simulate coupled line
 app-notes/an02-gerber-import.html       | AN-02: a Gerber file set imported, its stackup checked, and its copper read back as a schematic that simulates without an EM run.
 app-notes/an03-extracting-capacitance.html | AN-03: when an electrostatic solve is the right way to get a capacitance, which metal is ground and which floats, the Maxwell matrix against the circuit one, and the answer in a schematic.
 app-notes/an04-model-from-a-reference-kit.html | AN-04: a nonlinear FET model from another simulator's design kit - what to sample, at which plane, what each Model Composer step does with it, and how to check the model against the kit.
+app-notes/an05-stand-in.html | AN-05: a table stand-in for a device that is slow to simulate, sampled by circuitRF itself - how wide to sample, what it keeps and loses, and how much faster and how close it is.

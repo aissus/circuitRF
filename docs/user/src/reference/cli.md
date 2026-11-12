@@ -1138,6 +1138,7 @@ what it is about), progress on stderr. The formats are in [File Formats](file-fo
 | `explain <doc.cmc>` | The data sets and their planes, the intrinsic ranges, N0 and W0, the temperature mode, each step as fresh, stale or absent, every network value with its error and whether it is poorly determined, and the levels each trap state was trained from, or the shift coupling's strengths. Fits nothing. |
 | `export <doc.cmc> -o <out>` | Writes the model in the format `-o`'s extension names: `.cmodel`, with `--symbol` naming the symbol, or `.va` (also `.vams`), [Verilog-A source](model-composer.html#veriloga) for another simulator, with `--module` naming the module (default: the file name). A `.cmodel` exports to `.va` too, with no document. A table constituent is refused, naming each. `--created` sets a `.cmodel`'s timestamp; a `.va` records the model's own. A passive document exports as a cell: `--cell <workspace> <name>`. |
 | `validate <doc.cmc>` | Compares the document's current model — or `--model x.cmodel` (or a `.cmodel` with `--cmc doc.cmc`) — with its data, at the measurement plane. `--against set,set`, `--tolerance S95=0.02` (also `SMedian`, `IvRelative`, `PowerDb`, `EfficiencyPoints`, `AmPmDegrees`, `ImpedanceVswr`), `--compression dB` for the compression a loadpull is compared at. Exit **3** when a tolerance is missed. |
+| `sample <doc.cmc>` | Samples a device circuitRF already runs into a [stand-in](model-composer.html#stand-in): `--from x.charm` (its DUT, bias, fundamental and terminations) or `--device "<instance on g d 0>"`, over `--vgs start,stop,step` and `--vds start,stop,step` volts, at `--temps t,t` (default 25 °C), with S at `--freq` (default a tenth of the `.charm`'s). Writes `sampled/tables.npy` as a Simulated tables set and, with `--from`, the device's own loadpull over `--disc radius,rings,spokes` (default `0.2,1,4`) about the `.charm`'s load as a Large signal set; sets Current and Charge to tables. A new document has `N0 = 1` unless `--fingers`/`--unit-width` say otherwise. Then `fit --step all`, `export` and `validate`. |
 | `report <doc.cmc>` | Writes the Model Validation Report folder (`-o`, default `<name>-report` beside the document): `report.npy`, `summary.txt` and every testbench it ran — and its Data Display document, `<folder>.cdd`, beside the folder. `--pdf out.pdf` also draws every tab of it, one page each: the same file the window's Export PDF writes. `--model`, `--sections`, `--classes B,J,F,FInverse`, `--freq`, `--bias vgs,vds`, `--source-2f0 re,im`, `--ropt`, `--disc radius,rings,spokes`, `--pin start,step,max` and `--compression` override the options the document stores. |
 
 A choice the window would ask you for is refused, naming the flag that answers it: a Touchstone import with no
@@ -1149,6 +1150,13 @@ A choice the window would ask you for is refused, naming the flag that answers i
 <span class="prompt">$ </span>circuitrf model fit fet.cmc --step all --seed 1
 <span class="prompt">$ </span>circuitrf model export fet.cmc -o fet.cmodel
 <span class="prompt">$ </span>circuitrf model export fet.cmodel -o fet.va</code></pre>
+
+A stand-in for a device that is slow to simulate, validated against that device's own loadpull:
+
+<pre><code class="cmd"><span class="prompt">$ </span>circuitrf model sample pa.cmc --from pa.charm --vgs -20,12,0.5 --vds -4,116,2
+<span class="prompt">$ </span>circuitrf model fit pa.cmc --step all
+<span class="prompt">$ </span>circuitrf model export pa.cmc -o pa.cmodel
+<span class="prompt">$ </span>circuitrf model validate pa.cmc --model pa.cmodel</code></pre>
 
 Then place it — `ComposedFET:X1 g d 0 File=fet.cmodel` — and run it like any device. `fet.va` is the same model for
 another simulator; `--json` adds `result.model.verilogA`: the path, the module, its parameter count and the switches

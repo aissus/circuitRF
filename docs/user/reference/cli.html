@@ -1598,6 +1598,10 @@ what it is about), progress on stderr. The formats are in <a href="file-formats.
 <td>Compares the document's current model — or <code>--model x.cmodel</code> (or a <code>.cmodel</code> with <code>--cmc doc.cmc</code>) — with its data, at the measurement plane. <code>--against set,set</code>, <code>--tolerance S95=0.02</code> (also <code>SMedian</code>, <code>IvRelative</code>, <code>PowerDb</code>, <code>EfficiencyPoints</code>, <code>AmPmDegrees</code>, <code>ImpedanceVswr</code>), <code>--compression dB</code> for the compression a loadpull is compared at. Exit <strong>3</strong> when a tolerance is missed.</td>
 </tr>
 <tr>
+<td><code>sample &lt;doc.cmc&gt;</code></td>
+<td>Samples a device circuitRF already runs into a <a href="model-composer.html#stand-in">stand-in</a>: <code>--from x.charm</code> (its DUT, bias, fundamental and terminations) or <code>--device &quot;&lt;instance on g d 0&gt;&quot;</code>, over <code>--vgs start,stop,step</code> and <code>--vds start,stop,step</code> volts, at <code>--temps t,t</code> (default 25 °C), with S at <code>--freq</code> (default a tenth of the <code>.charm</code>'s). Writes <code>sampled/tables.npy</code> as a Simulated tables set and, with <code>--from</code>, the device's own loadpull over <code>--disc radius,rings,spokes</code> (default <code>0.2,1,4</code>) about the <code>.charm</code>'s load as a Large signal set; sets Current and Charge to tables. A new document has <code>N0 = 1</code> unless <code>--fingers</code>/<code>--unit-width</code> say otherwise. Then <code>fit --step all</code>, <code>export</code> and <code>validate</code>.</td>
+</tr>
+<tr>
 <td><code>report &lt;doc.cmc&gt;</code></td>
 <td>Writes the Model Validation Report folder (<code>-o</code>, default <code>&lt;name&gt;-report</code> beside the document): <code>report.npy</code>, <code>summary.txt</code> and every testbench it ran — and its Data Display document, <code>&lt;folder&gt;.cdd</code>, beside the folder. <code>--pdf out.pdf</code> also draws every tab of it, one page each: the same file the window's Export PDF writes. <code>--model</code>, <code>--sections</code>, <code>--classes B,J,F,FInverse</code>, <code>--freq</code>, <code>--bias vgs,vds</code>, <code>--source-2f0 re,im</code>, <code>--ropt</code>, <code>--disc radius,rings,spokes</code>, <code>--pin start,step,max</code> and <code>--compression</code> override the options the document stores.</td>
 </tr>
@@ -1611,6 +1615,11 @@ what it is about), progress on stderr. The formats are in <a href="file-formats.
 <span class="prompt">$ </span>circuitrf model fit fet.cmc --step all --seed 1
 <span class="prompt">$ </span>circuitrf model export fet.cmc -o fet.cmodel
 <span class="prompt">$ </span>circuitrf model export fet.cmodel -o fet.va</code></pre>
+<p>A stand-in for a device that is slow to simulate, validated against that device's own loadpull:</p>
+<pre><code class="cmd"><span class="prompt">$ </span>circuitrf model sample pa.cmc --from pa.charm --vgs -20,12,0.5 --vds -4,116,2
+<span class="prompt">$ </span>circuitrf model fit pa.cmc --step all
+<span class="prompt">$ </span>circuitrf model export pa.cmc -o pa.cmodel
+<span class="prompt">$ </span>circuitrf model validate pa.cmc --model pa.cmodel</code></pre>
 <p>Then place it — <code>ComposedFET:X1 g d 0 File=fet.cmodel</code> — and run it like any device. <code>fet.va</code> is the same model for
 another simulator; <code>--json</code> adds <code>result.model.verilogA</code>: the path, the module, its parameter count and the switches
 that change nothing for this model.</p>

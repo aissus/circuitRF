@@ -4473,7 +4473,7 @@ Gate: `tests/Ui.Tests/SchematicImport/SchematicImportEntryPointTests.cs` — the
 ## 31. `model` — the Model Composer, headless (brief-modelcomposer-13)
 
 ```
-circuitrf model new|import|deembed|fit|check-charge|explain|export|validate|report <doc.cmc> [flags]
+circuitrf model new|import|deembed|fit|check-charge|explain|export|validate|report|sample <doc.cmc> [flags]
 ```
 
 The Model Composer with no display — **one verb with nouns** (the `new`/`history` rule: `new` is a noun of `model`,
@@ -4483,7 +4483,7 @@ never a verb). `src/Cli/Model.cs` owns argument parsing, refusals and reporting 
 
 Every noun calls the `src/Design/Modeling` function the window's command calls: `ModelCommands.New`, `.Import`,
 `.Deembed`, `.Fit`, `.Explain` and `.ExportCell` (written for this phase, because no single step function was the
-whole operation), and the steps' own `CmodelExport.Export`, `ModelValidation.RunFile`, `ModelValidationReport.Generate`/
+whole operation) and `.Sample` (LP-3, `model-composer.md` §26), and the steps' own `CmodelExport.Export`, `ModelValidation.RunFile`, `ModelValidationReport.Generate`/
 `.Write`, `ConservationCheck.RunFile`/`.RunDevice`. Each reads the `.cmc` from disk and writes it back, so the verb and
 the window produce the same bytes from the same file. Flag values the documents spell (a data set's conditions, a
 validation tolerance, a report option) are turned into the document's own JSON and parsed by the document's own reader
@@ -4496,7 +4496,9 @@ calls a flow is made of.
 A choice the window would ask for is a refusal naming the flag that answers it (`cli.model.missing`): `--kind` for
 `new`; `--as` for `import`, and `--pattern` for a Touchstone set or `--map` for a CSV or array set; `--step` for `fit`,
 and `--fingers` for an Active document with no N0; `-o` for an Active export and `--cell` for a passive one; `--cmc` to
-validate a bare `.cmodel`; `--device` and `--bias` to check a device in a `.cnl`. A folder source is every importable
+validate a bare `.cmodel`; `--device` and `--bias` to check a device in a `.cnl`; `--from` (or `--device`), `--vgs` and
+`--vds` for `sample`, which creates its `.cmc` (`N0 = 1`, `W0 = 1 um` unless `--fingers`/`--unit-width` say) or fills one
+that holds no data yet. A folder source is every importable
 file directly in it, in ordinal order; a data set is named after its first source unless `--name` says. `--method`,
 `--seed`, `--topology` and `--fingers`/`--unit-width` on `fit` are written into the document's settings first, as the
 window's step panel writes them, and put back if the fit is refused or cancelled before a step finishes.
@@ -4543,7 +4545,8 @@ the same `output`, `module` and a `.cmodel` `path`. Gates: `ModelExportVerilogAC
 byte, for `new`, `import`, `fit --step all --seed 1`, `export` and `check-charge` on `SyntheticFetData`'s raw files; exit
 3 on a planted non-conservative device; 130 on a cancel, nothing written), `ModelCliNoLogicTests`,
 `ModelAgentEndToEndTests` (raw files to a `circuitrf hb` run of the exported model, held within 1 dB of the truth's
-output) and `ModelMcpToolTests` (the tool's export is the CLI's bytes; `reference cmodel` serves the field table).
+output), `ModelMcpToolTests` (the tool's export is the CLI's bytes; `reference cmodel` serves the field table) and
+`StandInSamplingTests` (`sample` as a process writes the in-process call's bytes, every stdout line but its timing).
 
 ## 32. `review` — the Layout Review, headless (brief-review-2)
 

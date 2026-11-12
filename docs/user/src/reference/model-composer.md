@@ -41,6 +41,7 @@ keywords: model extraction, device modeling, FET model, GaN HEMT, extrinsic netw
 <li><a href="#report">The Model Validation Report</a></li>
 <li><a href="#export">The Export step</a></li>
 <li><a href="#veriloga">Verilog-A export</a></li>
+<li><a href="#stand-in">A stand-in from a device circuitRF already runs</a></li>
 <li><a href="#plots">Plots</a></li>
 <li><a href="#passive">Passive documents: Data and Topology</a></li>
 <li><a href="#undo">Undo</a></li>
@@ -1357,6 +1358,79 @@ simulator's own operating point of the placed module: the same differences acros
 
 A `ComposedFET` finds the bias point itself, from the circuit's DC solution; the `.va` takes it as given. Nothing else
 differs.
+
+## A stand-in from a device circuitRF already runs {#stand-in}
+
+A device circuitRF can already simulate (an SDD, a compiled Verilog-A model, a kit part behind its worker, a harmonicaRF
+document's DUT) can be sampled into a **stand-in**: a `.cmodel` of tables, built by the steps above from data that
+circuitRF produces itself. At one bias region, one set of model parameters and one frequency, the stand-in answers for
+any source and load. It runs inside circuitRF's own process, so a loadpull grid can solve its loads in parallel. A compiled
+model is solved one call at a time through its worker, and that is where the stand-in gains most.
+
+The stand-in is a device-level model, a `ComposedFET` with currents, charges and (when stated) a thermal network, not a
+behavioural one. Loadpull, harmonic balance and harmonicaRF run it as they run any composed model.
+
+```
+circuitrf model sample pa.cmc --from pa.charm --vgs -20,12,0.5 --vds -4,116,2
+circuitrf model fit pa.cmc --step all
+circuitrf model export pa.cmc -o pa.cmodel
+circuitrf model validate pa.cmc --model pa.cmodel
+```
+
+**What `model sample` does.**
+
+| | |
+|---|---|
+| Samples | DC and S-parameters at every point of the `--vgs` × `--vds` grid (× `--temps`), the device on its own terminals with the source grounded. The S frequency (`--freq`) defaults to a tenth of the `.charm`'s fundamental. A device that can be elaborated in parallel is sampled in parallel. A compiled model is not, and runs one point at a time (seconds to a minute, once). |
+| Writes | `sampled/tables.npy` beside the `.cmc`, imported as a **Simulated tables** set at the intrinsic plane. |
+| Load-pulls | With `--from`, the device itself over a small disc about the `.charm`'s load (`--disc radius,rings,spokes`, default `0.2,1,4`, five loads), at its bias, terminations and harmonics, each load driven a decibel past the `.charm`'s compression. This is `sampled/loadpull.spl`, imported as a **Large signal** set: what Validate compares the stand-in with. |
+| Sets the steps | Current and Charge as **Table** on the data's own grid, with nothing held out. With several temperatures the charges stay an ANN, which takes `T`. The network: none, so the whole device is the core. Validate is set to the `.charm`'s harmonics and compression. |
+| Records | What was sampled: the device's text (a model file by its name), the SHA-256 of that text and of the file, the bias region and grid, the frequency, the temperatures. Export copies it into the `.cmodel`'s `Provenance.StandIn`. |
+
+**The device.** `--from x.charm` takes the DUT, bias, fundamental and terminations of a [harmonicaRF](harmonicarf.html)
+document; the package and embedding stay in the document, outside the stand-in. `--device "<line>"` takes an instance
+on the nets `g`, `d` and `0`, written as a `.cnl` line: `--device 'VerilogA:X1 g d 0 File="fet.osdi" Model=fet Pins=3'`.
+A relative `File=` is relative to the `.cmc`. To keep a network outside the core instead, create the document with one
+(`model new … --network`) and type its values. `sample` then locks every value, and the samples are at the device plane.
+
+**Three-terminal devices other than a FET.** The line maps the device onto the FET's terminals: an HBT's base on `g`,
+collector on `d` and emitter on `0` (`VerilogA:Q1 d g 0 …` for a `c b e` module). `vgs` is then `Vbe`, `vds` is `Vce`,
+`Id` is `Ic`, `Ig` is `Ib`, and `Qg` and `Qd` are the base and collector charges. Guided extrapolation's branch voltages
+become `Vce`, `Vbe` and `Vbc`. Drain–source symmetry stays off and the equation templates do not apply: use Table or
+ANN. An exponential I–V needs a fine `Vbe` grid, about 5 mV, where the device conducts.
+
+**Self-heating.** A fourth net named `t` is the device's thermal node. It is held at 0 K rise while sampling, so the tables
+are isothermal. It is then left to the device's own thermal network at the bias (the `.charm`'s, or the hottest sample),
+and the rise over the power gives `Rth`. Read on the terminals' power, that is the thermal resistance a stand-in whose
+core is the whole device must carry. With two or more `--temps`, the Thermal step is set to self-heating with that `Rth`
+typed. Type `Cth` (or `τth`) there before fitting. A device whose thermal node is not reachable is sampled as it heats
+itself, and its tables include that static heating.
+
+**It is one instance.** A stand-in does not scale: a `ComposedFET` placing it with `N` other than `N0` is refused. Sample
+the device at the size the circuit uses.
+
+**Outside the sampled region it says so.** Inside, the stand-in is the tables. Outside, it is continued linearly, as
+every table is ([Guided extrapolation](cmodel.html)), and a stand-in is the one model that warns about it: one warning
+per run, naming the region, when any evaluation falls outside it. Validate repeats it beside the item it happened in.
+An RF swing is wider than the DC range a device is usually biased over: a gate with no diode to clamp it swings several
+volts past both ends. Sample wider than you expect, and widen the grid when the warning appears.
+
+**What it cannot do.**
+
+- It is **quasi-static**: currents and charges are functions of the instantaneous voltages. Internal nodes the device has
+  (`b′`, `c′`, `e′`, a non-quasi-static network, a distributed base, a transit-time phase) collapse into the two-port,
+  so what they do at a high fraction of `fT` is lost. Validate at the frequency you will use shows how much.
+- Its **charges come from low-frequency Y**, `Im Y / ω` at `--freq`. A device whose own charges do not conserve charge
+  gives a table that cannot be integrated without loss: the Charge step reports the difference between its two paths,
+  and Check reports the model.
+- A table is C² and **cannot predict high-order distortion at very low drive** ([Tables](cmodel.html)). Refit that
+  constituent as an ANN where low-level IM matters.
+- **Traps** are only in it when they were sampled as [the reference describes](#trap-data). A quasi-static sample of a
+  trapped device gives its DC trap state at each bias.
+- A table does not export to Verilog-A.
+
+[AN-05 — A fast stand-in for a slow device](../app-notes/an05-stand-in.html) works an example end to end, with the
+speed and the accuracy measured.
 
 ## Plots {#plots}
 

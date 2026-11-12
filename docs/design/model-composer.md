@@ -7,7 +7,7 @@ charges and Check Charge Conservation (MC-8); temperature and self-heating (MC-9
 the Model Validation Report (MC-11); passive models (MC-12); the `model` verb and its MCP tool (MC-13); the window
 (MC-14); the steps and their plots (MC-15); the example, the user pages and the series acceptance (MC-16); the later
 phases (MC-17 … MC-25) in their own sections; the Verilog-A export, its Export step button, verb, MCP path and example
-bench (MC-26 … MC-28, §25). §20 records
+bench (MC-26 … MC-28, §25); a stand-in sampled from a device circuitRF already runs (LP-3, §26). §20 records
 every deviation from the series as built, §21 the open items and §22 the example and the acceptance ·
 **Source:** `docs/sonnet-briefs/brief-modelcomposer-0-overview.md` (decisions D1–D16) and the phase briefs
 `brief-modelcomposer-1` … `-28` · **Primary reference:** [P1] J. C. Pedro, D. E. Root, J. Xu, L. C. Nunes,
@@ -87,7 +87,9 @@ line can carry.
   },
   "Symbol": "symbols/gan.csym",
   "Provenance": { "Created": "…", "CircuitRfVersion": "…", "Sources": [ { "Path": "…", "Sha256": "…" } ], "SettingsDigest": "…",
-                  "Charges": "…" }                       // only with linear (MC-17) or typed (MC-18) charges
+                  "Charges": "…",                        // only with linear (MC-17) or typed (MC-18) charges
+                  "StandIn": { "Device": "…", "Sha256": "…", "Vgs": [lo, hi], "Vds": [lo, hi], "Grid": [nVgs, nVds],
+                               "FrequencyHz": …, "Temperatures": [ … ], "Isothermal": false } }   // only a stand-in (§26)
 }
 ```
 
@@ -2208,3 +2210,125 @@ The DC probe currents agree to 1e-9 relative at every `VGS`. The HB differences 
   as it ships — except the writer's version on the first line, so a release does not fail it before a re-export.
   **`ExampleWorkspaceLoadsTests`**: the bench checks clean, with or without a compiler.
 - **`ModelCliNoLogicTests`**, **`ModelComposerNoLogicTests`**: both reach the export through `CmodelVerilogA.Export(`.
+
+## 26. A stand-in for a device circuitRF already runs (LP-3)
+
+AN-04's flow — sample a reference model, fit what it gives, validate against it — with circuitRF as the source simulator.
+The point is speed: a compiled model is evaluated in a worker process, one call at a time, so a loadpull grid of one
+cannot run its loads in parallel, and every Newton step pays the round trip and the module's own internal nodes. A
+stand-in is a `ComposedFET` of tables, evaluated in-process, with the core's two or three unknowns. It is a device-level
+`.cmodel`, not a behavioural model: currents, charges and a thermal network, which DC, S, HB, loadpull and harmonicaRF run
+as they run any composed model. A poly-harmonic stand-in is a separate, later piece of work.
+
+### 26.1 `ModelCommands.Sample` (`src/Design/Modeling/StandInSampling.cs`)
+
+`model sample <doc.cmc>` calls it and holds no logic (`ModelCliNoLogicTests`). It does six things:
+
+1. **Samples** DC and S at one frequency over the `vgs × vds (× T)` grid, through `ValidationBench.Dc`/`SParams`' own
+   bench (ideal tees, 50 Ω ports), each point a fresh elaboration, at a DC residual of 1e-12 A. Points run in parallel only
+   where `SParameterEngine.CanElaborateInParallel` allows, the rule the S engine and the WSProbe already share (made
+   public for this). It is false for a worker-backed device, which therefore runs one point at a time.
+2. **Writes** `sampled/tables.npy` through `DataSetExporter`: `vgs`, `vds`, `T` (several temperatures), `freq`, `id`,
+   `ig` on the grid, `S` on `[grid…, freq, i, j]`, a point that did not converge NaN and counted.
+3. **Imports** it through `ModelCommands.Import` as a `SimulatedTables` set at `ReferencePlane=device`. With no network
+   in the document that is the whole device as the core (the empty network's 1 µΩ links), and validation then places
+   the stand-in as a `ComposedFET`, which is what a circuit places (an intrinsic-plane set validates through a bare
+   `ComposedCore`, and a self-heating core refuses three nets, §21). A network typed into the document first is locked,
+   value by value, and removed from the samples like any device-plane data. With several temperatures a second set,
+   `charges`, holds the first temperature alone and the Charge step reads only it: a table charge takes no `T`, and an
+   ANN in `T` took ten minutes where the table takes seconds.
+4. **Load-pulls the device** (with `--from x.charm`) over `ModelValidationReport.Disc` about the `.charm`'s band-1 load,
+   at its bias, source and harmonic terminations, `PinStart`/`PinStep`/`PinMax` and `HarmonicCount`, to a decibel past its
+   `CompressionDb` (so the measured side always crosses the compression validation compares at), through
+   `ValidationBench.Loadpull` and the run service; `SplWriter` writes `sampled/loadpull.spl`, imported as a `LargeSignal`
+   `Loadpull` set with those conditions. The bench is written beside it (`loadpull.cnl`).
+5. **Sets the steps**: Current and Charge `Table` with `HeldOutFraction = 0` — on a complete grid the table is the samples
+   splined (MC-30 D1), and a held-out line would be a line of the device the stand-in no longer passes through; Validate's
+   `MaxHarmonic` and `Compression` from the `.charm`. Thermal: below.
+6. **Records** `Steps.StandIn` — `StandInProvenance` serialised — which `CmodelExport.Provenance` copies into the
+   `.cmodel`.
+
+The `.charm`'s DUT text is `HarmonicaNetlist.DutText` — `AppendDut`, the code every harmonicaRF netlist is built by, so
+an SDD's scope variables, its equations with their whitespace stripped and its own Cgs/Cdg/Cds come out exactly as
+harmonicaRF solves them. The package and the embedding stay in the `.charm`, outside the stand-in.
+
+### 26.2 Three-terminal devices that are not FETs
+
+Nothing is special-cased: the instance line maps the terminals. An HBT's base on `g`, collector on `d`, emitter on `0`
+makes `IgGs`/`IgGd` the base–emitter and base–collector currents, `Id` the collector current, `Qg`/`Qd` the base and
+collector charges, and guided extrapolation's own-branch voltages (`vds`, `vgs`, `vgs − vds`) `Vce`, `Vbe`, `Vbc`.
+`Core.Symmetry` is off by default (MC-2), the templates are FET laws, and an exponential I–V wants a `Vbe` step of a few
+millivolts or an ANN with a log floor; the user's grid says which. Internal nodes (`b′`, `c′`, `e′`, an NQS network)
+collapse into the quasi-static two-port: a distributed base and a transit-time excess phase are lost at a high fraction
+of `fT`, which validation at the working frequency shows. A local check on a VBIC 1.3 module (no HBT is among the
+fixtures; `src/Design/RESOLVED.md`, LP-3) mapped as `d g 0 0 t` sampled and fitted with nothing special: Pout within
+0.11 dB at compression, Gt within 1.0 dB and AM–PM within 5.6°, the last two from table charges whose two paths disagree
+by up to 33 % with the module's base and collector resistances inside the core.
+
+### 26.3 Self-heating
+
+A net named `t` in the elaborated bench is the thermal node. While sampling it is held at 0 V — 0 K rise for a
+rise-type thermal terminal, as a circuitRF-exported module's and a VBIC `dt` are — so the tables are isothermal. Then one
+DC solve at the `.charm`'s bias (or the sample of largest power) leaves it to the device's own network through 1 TΩ —
+not floating, because circuitRF holds an unwired compiled-model thermal terminal itself — and `Rth = ΔT / P` with the
+terminals' power. That is not the module's own `Rth`, which heats with its core's power: the network's resistances
+dissipate the rest, and a stand-in whose core is the whole device heats with the terminals' power, so this is the value
+it must carry. On the shipped GaN at its hottest sample it reads 22.8 K/W for the module's 25. With two or more
+temperatures the Thermal step is set `SelfHeating` with that `Rth` typed; `Cth` is the user's to type. A device whose
+thermal node is not reachable is sampled as it heats itself, and its tables carry that static heating; the provenance's
+`Isothermal` says which.
+
+### 26.4 The domain-exit warning
+
+`GuidedExtrapolation` counts evaluations outside the training domain in a `[ThreadStatic]` counter, so it costs nothing on
+the inside path and no synchronisation on the outside one. `ComposedCoreModel` reads it before and after each of its own
+`EvaluateInto`/`EvaluateGrid` calls and, when `Provenance.StandIn` is set, implements `IReportsWarnings` with one keyed
+warning naming the region and the share of evaluations outside it. Every other model extrapolates silently, as MC-2
+designed. The engines drain a model's queue as they stamp it, before any nonlinear evaluation, so a warning queued
+during a solve never reached the run; `CircuitEvaluation.DrainWarnings` now drains every component once the run is over.
+`ModelValidation` keeps those warnings per run (`Context.StandInWarnings`) and adds them as notes beside the set whose
+run raised them. A Newton iterate outside the region counts too: the share in the message tells an iterate's excursion
+from a swing that lives there.
+
+### 26.5 One instance
+
+`Elaborator` refuses `N ≠ N0` on a stand-in: the samples are of one device, and the periphery rules have nothing to scale.
+`sample` writes `N0 = 1`, `W0 = 1 um` unless told otherwise.
+
+### 26.6 Measured
+
+`circuitrf lp` over the 20 Hero-3 loads to 3 dB of Gt compression, Release, the shortest of several runs on a shared
+machine, process start (0.33 s) included; the detail is in `src/Design/RESOLVED.md` (LP-3).
+
+| Device | Device | Stand-in | With LP-1's parallel grid: device / stand-in |
+|---|---|---|---|
+| The shipped GaN as compiled Verilog-A | 4.14 s | 1.81 s | 3.91 / 0.92 s |
+| `crf_fet` (closed form, compiled) | 0.81 s | 1.81 s | 0.77 / 0.93 s |
+| Hero-2 SDD with capacitances | 0.83 s | 2.00 s | 0.60 / 1.02 s |
+
+2.3× against the compiled GaN serially, 4.3× with the parallel grid; slower than a closed form, compiled or not. The
+compiled GaN and its own `ComposedFET` cost about the same (3.78 s), so the gain is the device's evaluation cost — ANN
+constituents and a network of internal nodes against a table — far more than the worker's round trip. The empty
+network's three 1 µΩ links cost 10–20 % (a `ComposedCore` placement of the same model).
+
+At compression, stand-in minus device, RMS over the loads: `crf_fet` Pout 0.005 dB, Gt 0.0004 dB, PAE 0.04 pp, AM–PM
+0.07°; Hero-2 0.17 dB, 0.17 dB, 0.92 pp, 0.08°; the GaN module 0.62 dB, 0.08 dB, 1.8 pp, 0.90°, which is its own
+network's phase at 2 GHz collapsed into the quasi-static core. Sampling: 3 ms a point for DC and S through the worker
+(5,265 GaN points in 17 s); 0.7 ms in parallel for the SDD.
+
+### 26.7 Gates
+
+- **`StandInSamplingTests`** (routine, ~2 s each): Hero-2's SDD FET, with a nonlinear Cgs and linear Cdg and Cds, from a
+  `.charm`, on a 33 × 25 grid → fit → export → validate against its own loadpull on five loads: passes the default
+  tolerances (Pout 0.10 dB, Gt 0.10 dB, PAE 1.07 pp, AM/PM 0.81°, Zin VSWR 1.02 RMS at 3 dB compression); the same device
+  on its DC range alone (`vgs` −8…2 V) fails at compression, with the warning beside the loadpull (41 % of evaluations
+  outside — its gate is a resistor and swings from about −15 to +8 V); the warning fires once outside and not inside,
+  never for the same model without `StandIn`; `N = 2` is refused; the verb as a process writes the in-process bytes,
+  every line but the one stating the sampling time.
+- **`StandInBenchmarkTests.TheHero2Sdd…`** (`Category=Benchmark`, ~20 s): the same device on 65 × 61 against the 20
+  Hero-3 loads; the tables, the sampled document and the per-load comparison at compression frozen in
+  `testdata/StandInComposed` (`CRF_WRITE_STANDIN_GOLDENS=1` rewrites them).
+- **`StandInBenchmarkTests.TheGanModel…`** (`[CompilerFact]`, `Category=Benchmark`, ~3.5 min): the shipped GaN `.va`
+  (traps at their DC values) compiled, sampled at 25, 75 and 125 °C with its thermal pin held, fitted with the charges
+  refitted as an ANN, `Cth` typed: DC with self-heating within 0.22 % and S21 at 2 GHz within 1.03 % of the `ComposedFET`
+  it was exported from, at five biases between the grid lines; `Rth` read within its range.

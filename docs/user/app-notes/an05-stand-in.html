@@ -1,0 +1,291 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>circuitRF — AN-05 — A fast stand-in for a slow device</title>
+<link rel="icon" href="../assets/img/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="../assets/css/circuitrf-docs.css">
+<!--
+  GENERATED FILE - do not edit. Edit the Markdown source named below and re-run:
+      dotnet run [project tools/DocGen] [flag out] docs/user
+  (XML comments cannot contain a double hyphen; the flags are ordinary ones.)
+  Source: docs/user/src/app-notes/an05-stand-in.md
+-->
+</head>
+<body>
+
+<header class="doc-header">
+  <a class="brand" href="../index.html"><img class="logo" src="../assets/img/favicon.svg" alt="circuitRF"><span class="wordmark">circuitRF</span></a>
+  <a class="doc-kind" href="index.html">Application Note</a>
+  <div class="doc-search" data-crf-search data-root="../" hidden>
+    <input type="search" class="search-input" autocomplete="off" spellcheck="false"
+           aria-label="Search the documentation" placeholder="Search docs"
+           role="combobox" aria-expanded="false" aria-autocomplete="list">
+    <div class="search-panel" role="listbox" hidden></div>
+  </div>
+</header>
+<hr class="doc-headrule">
+
+<main class="page">
+  <div class="page-top">
+    <p class="breadcrumb"><a href="../index.html">Docs</a> › <a href="index.html">App Notes</a> › AN-05 A fast stand-in for a slow device</p>
+    <nav class="page-nav-top" aria-label="Previous and next page">
+      <a class="prev" href="an04-model-from-a-reference-kit.html" title="Previous: AN-04 — A nonlinear FET model from a reference kit"><span class="arrow">‹</span><span class="name">AN-04 — A nonlinear FET model from a reference kit</span></a>
+    </nav>
+  </div>
+
+  <h1>AN-05 — A fast stand-in for a slow device</h1>
+  <p class="lede">A compiled transistor model can be the slowest part of a loadpull. At one bias region, one parameter set and one frequency, circuitRF can sample it into a table model of itself, a stand-in that runs in-process and in parallel and answers for any source and load. How to make one, how wide to sample, what it keeps and loses, and how much faster and how close it is on four devices.</p>
+
+<nav class="toc">
+<h2>On this page</h2>
+<ol>
+<li><a href="#when">When this note applies</a></li>
+<li><a href="#flow">The flow</a></li>
+<li><a href="#grid">How wide, and how fine</a></li>
+<li><a href="#keeps">What it keeps and what it loses</a></li>
+<li><a href="#thermal">Self-heating</a></li>
+<li><a href="#hbt">A device that is not a FET</a></li>
+<li><a href="#speed">How much faster</a></li>
+<li><a href="#accuracy">How close</a></li>
+<li><a href="#checklist">Checklist</a></li>
+</ol>
+</nav>
+<h2 id="when">When this note applies</h2>
+<p>A loadpull asks the same transistor the same questions thousands of times: a grid of loads, each driven up step by step
+into compression, each step a harmonic-balance solve of several Newton iterations. When the transistor is a compiled
+compact model, every one of those evaluations runs in a separate worker process, one call at a time, through a module
+with internal nodes of its own. That is often where the time goes.</p>
+<p>A <strong>stand-in</strong> replaces the device with a table model of itself: currents and charges sampled by circuitRF from the
+device it already runs, fitted by <a href="../reference/model-composer.html#stand-in">Model Composer</a>, exported as a <code>.cmodel</code>
+and placed as a <code>ComposedFET</code>. It runs inside circuitRF, so a loadpull grid can solve its loads in parallel, and it has
+two or three unknowns where a compiled module has many. It is valid at the bias region, the model parameters and the
+frequency it was sampled at. Inside that region it answers for any source and load, which is what loadpull and
+<a href="../reference/harmonicarf.html">harmonicaRF</a> ask.</p>
+<p>It is a <strong>device-level model</strong>, a <code>.cmodel</code> with currents, charges and optionally a thermal network, not a behavioural
+model of the amplifier. Everything that runs a <code>ComposedFET</code> runs it unchanged.</p>
+<h2 id="flow">The flow</h2>
+<table>
+<thead>
+<tr>
+<th>Step</th>
+<th>Command</th>
+<th>What happens</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Sample</td>
+<td><code>model sample pa.cmc --from pa.charm --vgs -20,12,0.5 --vds -4,116,2</code></td>
+<td>DC and S at every bias of the grid, on the device's own terminals. Written as <code>sampled/tables.npy</code> and imported as a Simulated tables set. With a <code>.charm</code>, the device is also load-pulled over five loads about the document's load, into a Large signal set. Current and Charge are set to tables.</td>
+</tr>
+<tr>
+<td>Fit</td>
+<td><code>model fit pa.cmc --step all</code></td>
+<td>The tables, splined through the samples themselves.</td>
+</tr>
+<tr>
+<td>Export</td>
+<td><code>model export pa.cmc -o pa.cmodel</code></td>
+<td>The stand-in, with what it was sampled from in its provenance.</td>
+</tr>
+<tr>
+<td>Validate</td>
+<td><code>model validate pa.cmc --model pa.cmodel</code></td>
+<td>The stand-in load-pulled over the device's own loads and compared at compression: Pout, Gt, PAE, drain efficiency, AM–PM and Zin.</td>
+</tr>
+</tbody>
+</table>
+<p>The <code>.charm</code> supplies the device (its DUT; the package stays in the document), the bias, the fundamental and the
+terminations, so the loadpull the stand-in is judged by is the one harmonicaRF would run. Without one, <code>--device</code> takes
+an instance line on the nets <code>g</code>, <code>d</code> and <code>0</code> and <code>--freq</code> the small-signal frequency. Then there is no loadpull to
+validate against, so run the device's own <code>lp</code> and import its <code>.spl</code> as a Large signal set.</p>
+<p>Then place it where the device was: in a schematic as <code>ComposedFET:X1 g d s File=&quot;pa.cmodel&quot;</code>, or in harmonicaRF with
+<strong>Set DUT ▸ Model Composer</strong>.</p>
+<h2 id="grid">How wide, and how fine</h2>
+<p><strong>Sample the swing, not the bias.</strong> Inside its grid the stand-in is the samples; outside, it is continued linearly, as any
+table is. The drain swings to about twice its supply, and, unless a diode clamps it, the gate swings both ways by
+several volts. The routine gate of this feature is the Hero-2 GaN-like FET: a gate that is a 50 Ω resistor, at
+−3.05 V and 48 V. Sampled over its DC range, <code>vgs</code> −8 to 2 V, 41 % of the stand-in's evaluations in a loadpull fall
+outside the table, and at compression it misses by 0.51 dB in Pout and a Zin VSWR of 1.72. Sampled from −20 to 12 V,
+the same 1 V step gives 0.10 dB and 1.02.</p>
+<p>A run that leaves the sampled region <strong>warns once</strong>, naming the region and the share of evaluations outside it, and
+<code>model validate</code> repeats it beside the loadpull it happened in. A share of a few per cent is Newton iterates straying
+on their way to a solution. Tens of per cent is a swing that lives out there: widen the grid.</p>
+<p><strong>Fine where the device bends.</strong> A table is a cubic spline through the samples, so it follows a curve as well as the
+samples resolve it. A FET's knee and pinch-off want a few tenths of a volt; an exponential diode or junction wants a few
+millivolts where it conducts. The Current step reports the step it sees and the swing below which low-level
+intermodulation is unreliable. Points cost little: sampling is seconds for an in-process device, and a few seconds to
+a minute for a compiled one, done once.</p>
+<h2 id="keeps">What it keeps and what it loses</h2>
+<p>It keeps the device's DC currents at every sampled point exactly, its small-signal behaviour at the sampled frequency,
+and its large-signal behaviour wherever the device is quasi-static: currents and charges that are functions of the
+instantaneous terminal voltages.</p>
+<p>It loses:</p>
+<ul>
+<li><strong>Everything that is not quasi-static.</strong> Internal nodes collapse into the two-port: a gate resistance with its
+charge, an inductance, a distributed base, a transit-time excess phase, a non-quasi-static network. Their phase at the
+working frequency and its harmonics is gone. On the shipped GaN example, whose network is inside the compiled
+module, this is the largest error below. To keep a known network, create the document with it first
+(<code>model new pa.cmc --kind active --network …</code>) and type its values; <code>sample</code> locks them and the samples are then
+de-embedded through it.</li>
+<li><strong>Charges that are not charges.</strong> The charges come from the low-frequency Y, <code>Im Y / ω</code>. When series resistances are
+inside the sampled device those are not exactly derivatives of two charge functions, and the Charge step's two
+integration paths disagree: it reports by how much. A few per cent is worth refitting the charges as an ANN, which
+finds the nearest charges that conserve charge: <code>model fit pa.cmc --step charge --method ANN</code>.</li>
+<li><strong>Low-level distortion from a table.</strong> A cubic table has a piecewise-constant third derivative, so it cannot predict
+high-order intermodulation at very low drive. Refit that constituent as an ANN where it matters.</li>
+<li><strong>Traps</strong>, unless they are sampled as the <a href="../reference/model-composer.html#trap-data">reference describes</a>. A
+quasi-static sample gives each bias its DC trap state.</li>
+<li><strong>Scaling.</strong> A stand-in is one instance. Placing it with <code>N</code> other than <code>N0</code> is refused; sample the size you use.</li>
+</ul>
+<h2 id="thermal">Self-heating</h2>
+<p>When the device's instance line names a fourth net <code>t</code> (its thermal node), <code>sample</code> holds it at 0 K rise while it
+samples, so the tables are isothermal. It then lets it go to the device's own thermal network at the bias and reads
+<code>Rth</code> as the rise over the power at the terminals. With two or more <code>--temps</code> that <code>Rth</code> is typed on the Thermal step,
+self-heating on. Type <code>Cth</code> (or the time constant) there yourself before fitting.</p>
+<p>The stand-in's <code>Rth</code> is not quite the module's. A compact model heats with its core's power; the stand-in's core is the
+whole device, so it heats with the terminals' power, which also includes what the series resistances dissipate. On the
+GaN module the module's own 25 K/W reads 22.8 K/W at its hottest sample, and with that value the stand-in's DC with
+self-heating is within 0.22 % of the original's.</p>
+<p>A device whose thermal node is not reachable is sampled as it heats itself; its tables then carry its static heating,
+and the stand-in's provenance says it was not isothermal.</p>
+<h2 id="hbt">A device that is not a FET</h2>
+<p>The instance line maps the terminals. For an HBT whose module is <code>c b e</code>, <code>--device 'VerilogA:Q1 d g 0 File=…'</code> puts the
+base on <code>g</code>, the collector on <code>d</code> and the emitter on <code>0</code>. In the stand-in, <code>vgs</code> is then <code>Vbe</code>, <code>vds</code> is <code>Vce</code>, the
+drain current is the collector current, the gate current is the base current, and the two charges are the base and
+collector charges. Drain–source symmetry stays off, and the equation templates, which are FET laws, do not apply. The
+base–emitter junction is exponential, so sample <code>Vbe</code> in steps of about 5 mV where it conducts.</p>
+<p>Tried on a VBIC 1.3 model compiled from Verilog-A, with a generic parameter set (<code>IS</code> 1e-16 A, β 100, <code>RBX</code> 10 Ω,
+<code>RBI</code> 20 Ω, <code>RCX</code> 5 Ω, <code>RCI</code> 10 Ω, <code>RE</code> 2 Ω, <code>CJE</code> 50 fF, <code>CJC</code> 20 fF, <code>TF</code> 2 ps). Its five terminals were placed
+<code>d g 0 0 t</code>, so the substrate went to the emitter and <code>dt</code> to the thermal node. <code>Vbe</code> ran from −1 to 1.1 V in 5 mV steps
+and <code>Vce</code> from −0.5 to 7 V in 0.1 V, 31,996 points sampled isothermally in 45 s; <code>Rth</code> read back as the model's own
+300 K/W. Load-pulled at 2 GHz, <code>Vbe</code> 0.82 V and <code>Vce</code> 3 V over 13 loads about 200 Ω, at 3 dB compression the stand-in
+was within 0.11 dB of the device in Pout (0.17 at worst) and 1.7 points in PAE, but 1.0 dB in Gt and 5.6° in AM–PM. The
+miss is on the input side, in the charges. With the base and collector resistances inside the module, the two
+integration paths of the Charge step disagree by 8 % for the base charge and 33 % for the collector charge, and the
+table takes their mean. That is the case for refitting the charges as an ANN, or for typing the resistances into the
+document so the core is the junctions alone. The stand-in ran the 13 loads in 1.24 s against the device's 1.73 s, and
+in 0.82 s on the parallel grid.</p>
+<h2 id="speed">How much faster</h2>
+<p>Each device was load-pulled with <code>circuitrf lp</code> over the 20 loads of the Hero-3 grid at 2 GHz, each driven to 3 dB of Gt
+compression, with the stand-in placed on the same bench. The times include starting the process (0.33 s). They are the
+shortest of several runs on a shared machine, so read the ratios rather than the seconds. The last column has the
+parallel loadpull grid: it runs a stand-in's loads side by side and keeps a compiled model on its one worker.</p>
+<table>
+<thead>
+<tr>
+<th>Device</th>
+<th>Device</th>
+<th>Stand-in</th>
+<th>Parallel grid: device / stand-in</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>The GaN example as compiled Verilog-A (its network, traps at their DC values, ANN constituents)</td>
+<td>4.14 s</td>
+<td>1.81 s</td>
+<td>3.91 / 0.92 s</td>
+</tr>
+<tr>
+<td>The same model as its own <code>ComposedFET</code></td>
+<td>3.78 s</td>
+<td></td>
+<td>2.42 s</td>
+</tr>
+<tr>
+<td>A closed-form FET, compiled</td>
+<td>0.81 s</td>
+<td>1.81 s</td>
+<td>0.77 / 0.93 s</td>
+</tr>
+<tr>
+<td>Hero-2's SDD FET, in-process</td>
+<td>0.83 s</td>
+<td>2.00 s</td>
+<td>0.60 / 1.02 s</td>
+</tr>
+</tbody>
+</table>
+<p>Against the compiled GaN the stand-in is <strong>2.3× faster</strong>, and <strong>4.3×</strong> on the parallel grid. Against a model that costs
+next to nothing per evaluation, a closed form whether compiled or in-process, it is <strong>slower</strong>: its tables and their
+extrapolation cost more than the formula. Most of the gain comes from the device's own cost per evaluation, not from the
+worker's round trip; the compiled GaN and its <code>ComposedFET</code> twin cost about the same. <strong>Make a stand-in for a device that
+is expensive to evaluate</strong>: a compact model with many internal nodes, or one built from networks.</p>
+<p>Sampling the compiled GaN took 17 s for 5,265 points, one at a time, once.</p>
+<h2 id="accuracy">How close</h2>
+<p>The same loadpulls, compared at 3 dB of Gt compression at every load both reach it at: the stand-in minus the device,
+RMS over the loads, the largest in brackets.</p>
+<table>
+<thead>
+<tr>
+<th>Device</th>
+<th>Grid</th>
+<th>Pout</th>
+<th>Gt</th>
+<th>PAE</th>
+<th>AM–PM</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Closed-form FET, compiled</td>
+<td>141 × 73</td>
+<td>0.005 (0.010) dB</td>
+<td>0.0004 (0.002) dB</td>
+<td>0.04 (0.09) pp</td>
+<td>0.07 (0.21)°</td>
+</tr>
+<tr>
+<td>Hero-2's SDD FET</td>
+<td>65 × 61</td>
+<td>0.17 (0.45) dB</td>
+<td>0.17 (0.38) dB</td>
+<td>0.92 (2.0) pp</td>
+<td>0.08 (0.20)°</td>
+</tr>
+<tr>
+<td>The GaN example, compiled, charges refitted as an ANN</td>
+<td>81 × 65</td>
+<td>0.62 (2.1) dB</td>
+<td>0.08 (0.29) dB</td>
+<td>1.8 (5.7) pp</td>
+<td>0.90 (2.2)°</td>
+</tr>
+</tbody>
+</table>
+<p>The first two devices are quasi-static by construction, and the stand-in reproduces them to within the drive step. The
+GaN module carries its own network inside, which the stand-in collapses: its error is the phase of that network at
+2 GHz and its harmonics, not the tables. <code>model validate</code> runs exactly this comparison against the device's own
+loadpull, so you see which case you are in before you use the stand-in.</p>
+<h2 id="checklist">Checklist</h2>
+<ul>
+<li>The device is expensive to evaluate; a closed-form model is faster as it is.</li>
+<li>The bias, model parameters and frequency are the ones the circuit uses.</li>
+<li>The grid spans the RF swing at compression, not only the DC bias range, and no run warns that it left the region.</li>
+<li>The grid is fine where the device bends: tenths of a volt at a FET's knee, millivolts across a junction.</li>
+<li>A thermal node, when there is one, is wired as <code>t</code>, and <code>Cth</code> is typed before fitting.</li>
+<li>A network the device carries inside is typed into the document when its phase matters at the working frequency.</li>
+<li>The Charge step's two paths agree; when they do not, the charges are refitted as an ANN.</li>
+<li><code>model validate</code> passes against the device's own loadpull.</li>
+</ul>
+
+<nav class="page-nav">
+  <a class="prev" href="an04-model-from-a-reference-kit.html"><span class="dir">Previous</span><span class="name">AN-04 — A nonlinear FET model from a reference kit</span></a>
+  <span></span>
+</nav>
+</main>
+
+<footer class="doc-footer">
+  <img src="../assets/img/circuitRF-mark.svg" alt="">
+  <span>circuitRF — RF circuit simulator</span>
+  <span class="spacer"></span>
+  <a href="../index.html">Documentation home</a>
+</footer>
+
+<script src="../assets/js/search-index.js" defer></script>
+<script src="../assets/js/docs-search.js" defer></script>
+</body>
+</html>

@@ -32,6 +32,7 @@
     <p class="breadcrumb"><a href="../index.html">Docs</a> › <a href="index.html">App Notes</a> › AN-04 A model from a reference kit</p>
     <nav class="page-nav-top" aria-label="Previous and next page">
       <a class="prev" href="an03-extracting-capacitance.html" title="Previous: AN-03 — Extracting capacitance"><span class="arrow">‹</span><span class="name">AN-03 — Extracting capacitance</span></a>
+      <a class="next" href="an05-stand-in.html" title="Next: AN-05 — A fast stand-in for a slow device"><span class="name">AN-05 — A fast stand-in for a slow device</span><span class="arrow">›</span></a>
     </nav>
   </div>
 
@@ -70,6 +71,9 @@ compared point for point.</li>
 </ul>
 <p>The work that takes longest is not the fit. It is deciding what to export from the source simulator and getting it
 out in a form the composer reads. Most of this note is about that.</p>
+<p><strong>When circuitRF itself runs the reference</strong> (an SDD, a compiled Verilog-A model, a harmonicaRF document's DUT), all
+of that is one command: <code>circuitrf model sample</code> does the sampling, the import and the device's own loadpull.
+<a href="an05-stand-in.html">AN-05 — A fast stand-in for a slow device</a> works that case.</p>
 <h2 id="flow">The flow</h2>
 <figure class="fig">
 <svg viewBox="0 0 560 290" role="img" aria-label="The flow: the reference kit is sampled into tables, Model Composer fits them into a .cmodel, and the model is validated against large-signal runs of the kit, with a refit loop back to the composer" style="width:100%;height:auto">
@@ -636,7 +640,7 @@ network in the composer.</li>
 
 <nav class="page-nav">
   <a class="prev" href="an03-extracting-capacitance.html"><span class="dir">Previous</span><span class="name">AN-03 — Extracting capacitance</span></a>
-  <span></span>
+  <a class="next" href="an05-stand-in.html"><span class="dir">Next</span><span class="name">AN-05 — A fast stand-in for a slow device</span></a>
 </nav>
 </main>
 

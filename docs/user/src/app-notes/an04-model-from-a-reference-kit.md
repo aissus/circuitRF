@@ -43,6 +43,10 @@ Sampled data is better than measured data in three ways, and the flow below is b
 The work that takes longest is not the fit. It is deciding what to export from the source simulator and getting it
 out in a form the composer reads. Most of this note is about that.
 
+**When circuitRF itself runs the reference** (an SDD, a compiled Verilog-A model, a harmonicaRF document's DUT), all
+of that is one command: `circuitrf model sample` does the sampling, the import and the device's own loadpull.
+[AN-05 — A fast stand-in for a slow device](an05-stand-in.html) works that case.
+
 ## The flow {#flow}
 
 <figure class="fig">
