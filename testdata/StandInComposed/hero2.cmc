@@ -1,0 +1,139 @@
+{
+  "FormatVersion": 1,
+  "Kind": "Active",
+  "BasePeriphery": {
+    "Fingers": 1,
+    "UnitWidth": "1 um"
+  },
+  "DataSets": [
+    {
+      "Name": "sampled",
+      "Kind": "SimulatedTables",
+      "Sources": [
+        "hero2_sampled.npy"
+      ],
+      "Conditions": {
+        "AmbientC": 25,
+        "ReferencePlane": "device",
+        "Note": "sampled by circuitRF from hero2.charm DUT (Sdd)"
+      },
+      "Import": {
+        "Format": "npy",
+        "Arrays": {
+          "S": "S",
+          "freq": "freq",
+          "id": "id",
+          "ig": "ig",
+          "vds": "vds",
+          "vgs": "vgs"
+        },
+        "Z0": 50
+      }
+    },
+    {
+      "Name": "loadpull",
+      "Kind": "LargeSignal",
+      "Sources": [
+        "hero2_loadpull.spl"
+      ],
+      "Conditions": {
+        "AmbientC": 25,
+        "LargeSignal": {
+          "Measurement": "Loadpull",
+          "FrequencyHz": 2000000000,
+          "Vgs": -3.05,
+          "Vds": 48,
+          "SourceZ": [
+            25,
+            0
+          ],
+          "LoadZ": [
+            80,
+            10
+          ],
+          "SourceHarmonics": [
+            [
+              1E-06,
+              0
+            ],
+            [
+              1E-06,
+              0
+            ],
+            [
+              1E-06,
+              0
+            ]
+          ],
+          "LoadHarmonics": [
+            [
+              1,
+              0
+            ],
+            [
+              1E-06,
+              0
+            ],
+            [
+              1E-06,
+              0
+            ]
+          ]
+        }
+      },
+      "Import": {
+        "Format": "loadpull"
+      }
+    }
+  ],
+  "Steps": {
+    "Current": {
+      "Settings": {
+        "Id": {
+          "Method": "Table"
+        },
+        "Ig": {
+          "Method": "Table"
+        },
+        "HeldOutFraction": 0
+      }
+    },
+    "Charge": {
+      "Settings": {
+        "Qg": {
+          "Method": "Table"
+        },
+        "Qd": {
+          "Method": "Table"
+        },
+        "HeldOutFraction": 0
+      }
+    },
+    "Validate": {
+      "Settings": {
+        "MaxHarmonic": 4
+      }
+    },
+    "StandIn": {
+      "Device": "Sv = -0.837\nSc = 0.71\nTV0 = 4.268\nTC = 1.507\nth = 0.001\na = 0.176\ng = 0.089\nlam = 0.0012\nB = 1130\n\nSDD:DUT  g 0  d 0  I[1,0]=_v1/50  I[2,0]=(B*TC*tanh(_v2*a*(tanh(g*(TV0-_v1\u002B_v2*th\u002BSc*ln(exp(-(Sv-_v1)/Sc)\u002B1)))\u002B1))*ln(exp(-(2*TV0-2*_v1\u002B2*_v2*th\u002B2*Sc*ln(exp(-(Sv-_v1)/Sc)\u002B1))/TC)\u002B1)*(_v2*lam\u002B1))/2\n\nNonlinearC:CGS  g 0  C0=2E-12  C1=1E-13\nC:CDG  d g  C=2.0000000000000001E-13\nC:CDS  d 0  C=4.9999999999999999E-13",
+      "Sha256": "6b005be89ca6169dcedb51fb3f88c1e680061003148ec4c8f4a4e363bb54639f",
+      "Vgs": [
+        -20,
+        12
+      ],
+      "Vds": [
+        -4,
+        116
+      ],
+      "Grid": [
+        65,
+        61
+      ],
+      "FrequencyHz": 200000000,
+      "Temperatures": [
+        25
+      ],
+      "Isothermal": false
+    }
+  }
+}
