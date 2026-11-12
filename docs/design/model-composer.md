@@ -88,8 +88,9 @@ line can carry.
   "Symbol": "symbols/gan.csym",
   "Provenance": { "Created": "…", "CircuitRfVersion": "…", "Sources": [ { "Path": "…", "Sha256": "…" } ], "SettingsDigest": "…",
                   "Charges": "…",                        // only with linear (MC-17) or typed (MC-18) charges
-                  "StandIn": { "Device": "…", "Sha256": "…", "Vgs": [lo, hi], "Vds": [lo, hi], "Grid": [nVgs, nVds],
-                               "FrequencyHz": …, "Temperatures": [ … ], "Isothermal": false } }   // only a stand-in (§26)
+                  "StandIn": { "Device": "…", "TextSha256": "…", "FileSha256": "…", "Vgs": [lo, hi], "Vds": [lo, hi],
+                               "Grid": [nVgs, nVds], "FrequencyHz": …, "Temperatures": [ … ], "ThermalNodeHeld": true,
+                               "DcFallbacks": 0 } }       // only a stand-in (§26); FileSha256, ThermalNodeHeld when they apply
 }
 ```
 
@@ -2225,10 +2226,13 @@ as they run any composed model. A poly-harmonic stand-in is a separate, later pi
 `model sample <doc.cmc>` calls it and holds no logic (`ModelCliNoLogicTests`). It does six things:
 
 1. **Samples** DC and S at one frequency over the `vgs × vds (× T)` grid, through `ValidationBench.Dc`/`SParams`' own
-   bench (ideal tees, 50 Ω ports), each point a fresh elaboration, at a DC residual of 1e-12 A. Points run in parallel only
+   bench (ideal tees, 50 Ω ports), each point a fresh elaboration, at a DC residual of 1e-12 A; a point that cannot reach
+   it (an ampere-scale point of a compiled model with its own limiting) is solved again, and its S taken, at the default
+   1e-6 A, counted on the sample line and in the record (`DcFallbacks`). Points run in parallel only
    where `SParameterEngine.CanElaborateInParallel` allows, the rule the S engine and the WSProbe already share (made
    public for this). It is false for a worker-backed device, which therefore runs one point at a time.
-2. **Writes** `sampled/tables.npy` through `DataSetExporter`: `vgs`, `vds`, `T` (several temperatures), `freq`, `id`,
+2. **Writes** `sampled/<name>/tables.npy` through `DataSetExporter`, a folder for each document (two stand-ins in one
+   folder used to share `sampled/tables.npy`, the second overwriting the first's data under the first's record): `vgs`, `vds`, `T` (several temperatures), `freq`, `id`,
    `ig` on the grid, `S` on `[grid…, freq, i, j]`, a point that did not converge NaN and counted.
 3. **Imports** it through `ModelCommands.Import` as a `SimulatedTables` set at `ReferencePlane=device`. With no network
    in the document that is the whole device as the core (the empty network's 1 µΩ links), and validation then places
@@ -2240,13 +2244,22 @@ as they run any composed model. A poly-harmonic stand-in is a separate, later pi
 4. **Load-pulls the device** (with `--from x.charm`) over `ModelValidationReport.Disc` about the `.charm`'s band-1 load,
    at its bias, source and harmonic terminations, `PinStart`/`PinStep`/`PinMax` and `HarmonicCount`, to a decibel past its
    `CompressionDb` (so the measured side always crosses the compression validation compares at), through
-   `ValidationBench.Loadpull` and the run service; `SplWriter` writes `sampled/loadpull.spl`, imported as a `LargeSignal`
+   `ValidationBench.Loadpull` and the run service; `SplWriter` writes `sampled/<name>/loadpull.spl`, imported as a `LargeSignal`
    `Loadpull` set with those conditions. The bench is written beside it (`loadpull.cnl`).
 5. **Sets the steps**: Current and Charge `Table` with `HeldOutFraction = 0` — on a complete grid the table is the samples
    splined (MC-30 D1), and a held-out line would be a line of the device the stand-in no longer passes through; Validate's
    `MaxHarmonic` and `Compression` from the `.charm`. Thermal: below.
 6. **Records** `Steps.StandIn` — `StandInProvenance` serialised — which `CmodelExport.Provenance` copies into the
-   `.cmodel`.
+   `.cmodel`. `Device` is the device's text with every model file by its name only: a `File=` quoted or not, and a
+   compiled model's provider name (`VerilogA|<path>`), so no path reaches a `.cmodel`. `TextSha256` is SHA-256 of that
+   text with `\n` line ends, recomputable from it; `FileSha256` is SHA-256 of the model file's bytes (of each in the
+   order the text names them). A model file that is not there is refused, and so is a worker provider that names no
+   model file (a kit part), whose bytes could not be recorded.
+
+Before any of this `Resolve` elaborates the device in the DC bench: a line that does not parse or elaborate is a
+`ModelingException` naming it, and one whose components (other than the bench's `VG`, `IPG`, `IPD`, `VD`) touch no net
+`g` or no net `d` is refused, so a mistyped line never becomes an empty stand-in. An axis whose step does not divide its
+span is refused rather than overshot.
 
 The `.charm`'s DUT text is `HarmonicaNetlist.DutText` — `AppendDut`, the code every harmonicaRF netlist is built by, so
 an SDD's scope variables, its equations with their whitespace stripped and its own Cgs/Cdg/Cds come out exactly as
@@ -2276,29 +2289,44 @@ dissipate the rest, and a stand-in whose core is the whole device heats with the
 it must carry. On the shipped GaN at its hottest sample it reads 22.8 K/W for the module's 25. With two or more
 temperatures the Thermal step is set `SelfHeating` with that `Rth` typed; `Cth` is the user's to type. A device whose
 thermal node is not reachable is sampled as it heats itself, and its tables carry that static heating; the provenance's
-`Isothermal` says which.
+`ThermalNodeHeld` is written only when there was a node to hold.
 
 ### 26.4 The domain-exit warning
 
-`GuidedExtrapolation` counts evaluations outside the training domain in a `[ThreadStatic]` counter, so it costs nothing on
-the inside path and no synchronisation on the outside one. `ComposedCoreModel` reads it before and after each of its own
-`EvaluateInto`/`EvaluateGrid` calls and, when `Provenance.StandIn` is set, implements `IReportsWarnings` with one keyed
-warning naming the region and the share of evaluations outside it. Every other model extrapolates silently, as MC-2
-designed. The engines drain a model's queue as they stamp it, before any nonlinear evaluation, so a warning queued
-during a solve never reached the run; `CircuitEvaluation.DrainWarnings` now drains every component once the run is over.
-`ModelValidation` keeps those warnings per run (`Context.StandInWarnings`) and adds them as notes beside the set whose
-run raised them. A Newton iterate outside the region counts too: the share in the message tells an iterate's excursion
-from a swing that lives there.
+`GuidedExtrapolation` counts constituent evaluations outside the training domain in a `[ThreadStatic]` counter, so it costs
+nothing on the inside path and no synchronisation on the outside one. `ComposedCoreModel` reads it around each operating
+point it evaluates (`EvaluateInto`, and each sample of `EvaluateGrid`) and counts the POINT once, however many of its five
+constituents left: an earlier version added constituents to points and printed "15 of 4". When `Provenance.StandIn` is set
+it reports one keyed warning, naming the region and how many of the run's operating points fell outside it, through
+`IReportsRunWarnings`: a separate interface, read only by `ElaboratedNetlist.DrainAllModelWarnings`, because the engines
+drain `IReportsWarnings` as they stamp — before any nonlinear evaluation, and in harmonic balance again at every solve — so
+a count read there was a snapshot of part of the run, and the first one won the key. Each drain returns and clears what
+accrued since the last, with the run's totals so far. Every other model extrapolates silently, as MC-2 designed.
+
+`DrainAllModelWarnings` is called by `CircuitEvaluation.DrainWarnings` (the GUI's runs, validation's runs), by the CLI's
+`PrintWarnings` (`dc`, `hb`, `lp`, `sparam`, and MCP `run`, which goes through it), and on the other netlist at the top
+of `MergeDiagnosticsFrom`, so each point of a parametric sweep, run on a netlist of its own, reports. harmonicaRF shows
+no run warnings, so a stand-in there says nothing. **LP-1's parallel loadpull** (`perf/loadpull-parallel`) replays each
+load's copy through `TakeRunDiagnostics`, not `MergeDiagnosticsFrom`: whichever of the two lands second must call
+`copy.DrainAllModelWarnings()` immediately before `copy.TakeRunDiagnostics()` in `LoadpullEngine`'s per-load `finally`,
+or a parallel grid loses the warning.
+
+`ModelValidation` keeps those warnings per run (`Context.StandInWarnings`) and adds them as notes beside the set whose run
+raised them. Every operating point counts, every drive step and Newton iterate, so a swing that leaves the table only
+near compression is a small share of the run: Hero-2 sampled over its DC range missed by 0.51 dB with 8.3 % of its
+55,476 operating points outside (4,609). Any warning in a loadpull is worth widening the grid for.
 
 ### 26.5 One instance
 
-`Elaborator` refuses `N ≠ N0` on a stand-in: the samples are of one device, and the periphery rules have nothing to scale.
-`sample` writes `N0 = 1`, `W0 = 1 um` unless told otherwise.
+`ComponentModelFactory.CreateComposedCoreModel` refuses `N ≠ N0` on a stand-in: the samples are of one device, and the
+periphery rules have nothing to scale. Both placements go through it — a `ComposedFET`'s core and a `ComposedCore` placed
+directly, which an earlier guard in the `ComposedFET` elaboration let through. `M` multiplies whole devices and is
+untouched. `sample` writes `N0 = 1`, `W0 = 1 um` unless told otherwise.
 
 ### 26.6 Measured
 
-`circuitrf lp` over the 20 Hero-3 loads to 3 dB of Gt compression, Release, the shortest of several runs on a shared
-machine, process start (0.33 s) included; the detail is in `src/Design/RESOLVED.md` (LP-3).
+Hand runs, not tests: `circuitrf lp` over the 20 Hero-3 loads to 3 dB of Gt compression, Release, the shortest of several
+runs on a shared machine, process start (0.33 s) included; the detail is in `src/Design/RESOLVED.md` (LP-3).
 
 | Device | Device | Stand-in | With LP-1's parallel grid: device / stand-in |
 |---|---|---|---|
@@ -2311,9 +2339,10 @@ compiled GaN and its own `ComposedFET` cost about the same (3.78 s), so the gain
 constituents and a network of internal nodes against a table — far more than the worker's round trip. The empty
 network's three 1 µΩ links cost 10–20 % (a `ComposedCore` placement of the same model).
 
-At compression, stand-in minus device, RMS over the loads: `crf_fet` Pout 0.005 dB, Gt 0.0004 dB, PAE 0.04 pp, AM–PM
-0.07°; Hero-2 0.17 dB, 0.17 dB, 0.92 pp, 0.08°; the GaN module 0.62 dB, 0.08 dB, 1.8 pp, 0.90°, which is its own
-network's phase at 2 GHz collapsed into the quasi-static core. Sampling: 3 ms a point for DC and S through the worker
+At compression, stand-in minus device, RMS over the loads: `crf_fet` (hand run, 141 × 73) Pout 0.005 dB, Gt 0.0004 dB,
+PAE 0.04 pp, AM–PM 0.07°; Hero-2 (the frozen benchmark, 65 × 61) 0.17 dB, 0.17 dB, 0.92 pp, 0.08°; the GaN module (hand
+run, 81 × 65 at 25 °C, isothermal) 0.62 dB, 0.08 dB, 1.8 pp, 0.90°, which is its own network's phase at 2 GHz collapsed
+into the quasi-static core. Sampling: 3 ms a point for DC and S through the worker
 (5,265 GaN points in 17 s); 0.7 ms in parallel for the SDD.
 
 ### 26.7 Gates
@@ -2321,14 +2350,21 @@ network's phase at 2 GHz collapsed into the quasi-static core. Sampling: 3 ms a 
 - **`StandInSamplingTests`** (routine, ~2 s each): Hero-2's SDD FET, with a nonlinear Cgs and linear Cdg and Cds, from a
   `.charm`, on a 33 × 25 grid → fit → export → validate against its own loadpull on five loads: passes the default
   tolerances (Pout 0.10 dB, Gt 0.10 dB, PAE 1.07 pp, AM/PM 0.81°, Zin VSWR 1.02 RMS at 3 dB compression); the same device
-  on its DC range alone (`vgs` −8…2 V) fails at compression, with the warning beside the loadpull (41 % of evaluations
-  outside — its gate is a resistor and swings from about −15 to +8 V); the warning fires once outside and not inside,
-  never for the same model without `StandIn`; `N = 2` is refused; the verb as a process writes the in-process bytes,
-  every line but the one stating the sampling time.
-- **`StandInBenchmarkTests.TheHero2Sdd…`** (`Category=Benchmark`, ~20 s): the same device on 65 × 61 against the 20
+  on its DC range alone (`vgs` −8…2 V) fails at compression, with the warning beside the loadpull (8.3 % of the run's
+  operating points outside — its gate is a resistor and swings from about −15 to +8 V); the warning fires once outside and
+  not inside, counts operating points, and never fires for the same model without `StandIn`; it reaches `circuitrf dc` and
+  a parametric sweep; `N = 2` is refused as a `ComposedFET` and as a `ComposedCore`, `m = 2` runs; two documents in one
+  folder keep their samples; three bad `--device` lines, an overshooting axis and a bad `--disc` are refused; the verb
+  as a process writes the in-process bytes, every line but the one stating the sampling time.
+- **`StandInProvenanceTests`** (needs the built worker): the same model bytes in two folders, one named by an unquoted
+  absolute path with CRLF line ends, record the same `Device`, `TextSha256` and `FileSha256`, with no path; a missing
+  model file and a provider with no file are refused.
+- **`StandInBenchmarkTests.TheHero2Sdd…`** (`Category=Benchmark`, about 9 s): the same device on 65 × 61 against the 20
   Hero-3 loads; the tables, the sampled document and the per-load comparison at compression frozen in
-  `testdata/StandInComposed` (`CRF_WRITE_STANDIN_GOLDENS=1` rewrites them).
+  `testdata/StandInComposed`, 327 KB (`CRF_WRITE_STANDIN_GOLDENS=1` rewrites them).
 - **`StandInBenchmarkTests.TheGanModel…`** (`[CompilerFact]`, `Category=Benchmark`, ~3.5 min): the shipped GaN `.va`
   (traps at their DC values) compiled, sampled at 25, 75 and 125 °C with its thermal pin held, fitted with the charges
-  refitted as an ANN, `Cth` typed: DC with self-heating within 0.22 % and S21 at 2 GHz within 1.03 % of the `ComposedFET`
-  it was exported from, at five biases between the grid lines; `Rth` read within its range.
+  refitted as an ANN, `Cth` typed, on 61 × 21 × 3: DC with self-heating within 0.22 % and S21 at 2 GHz within 1.03 % of
+  the `ComposedFET` it was exported from, at five biases between the grid lines, the S21 metric being |ΔS21| / max(|S21|, 1).
+  Where the device conducts that is the relative error (0.9–1.0 %); near pinch-off, where |S21| is 0.015–0.02, it is an
+  absolute one, and the relative error there is 30 % at `vgs` −2.6 V and 25 % at −1.85 V. `Rth` read within its range.

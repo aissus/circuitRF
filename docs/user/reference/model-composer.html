@@ -3567,15 +3567,15 @@ circuitrf model validate pa.cmc --model pa.cmodel
 <tbody>
 <tr>
 <td>Samples</td>
-<td>DC and S-parameters at every point of the <code>--vgs</code> × <code>--vds</code> grid (× <code>--temps</code>), the device on its own terminals with the source grounded. The S frequency (<code>--freq</code>) defaults to a tenth of the <code>.charm</code>'s fundamental. A device that can be elaborated in parallel is sampled in parallel. A compiled model is not, and runs one point at a time (seconds to a minute, once).</td>
+<td>DC and S-parameters at every point of the <code>--vgs</code> × <code>--vds</code> grid (× <code>--temps</code>), the device on its own terminals with the source grounded. The S frequency (<code>--freq</code>) defaults to a tenth of the <code>.charm</code>'s fundamental. A device that can be elaborated in parallel is sampled in parallel. A compiled model is not, and runs one point at a time (seconds to a minute, once). A point whose DC solve does not reach 1e-12 A is solved to 1e-6 A, and the sample line counts those.</td>
 </tr>
 <tr>
 <td>Writes</td>
-<td><code>sampled/tables.npy</code> beside the <code>.cmc</code>, imported as a <strong>Simulated tables</strong> set at the device plane: the device's own terminals.</td>
+<td><code>sampled/&lt;name&gt;/tables.npy</code> beside the <code>.cmc</code>, a folder for each document, imported as a <strong>Simulated tables</strong> set at the device plane: the device's own terminals.</td>
 </tr>
 <tr>
 <td>Load-pulls</td>
-<td>With <code>--from</code>, the device itself over a small disc about the <code>.charm</code>'s load (<code>--disc radius,rings,spokes</code>, default <code>0.2,1,4</code>, five loads), at its bias, terminations and harmonics, each load driven a decibel past the <code>.charm</code>'s compression. This is <code>sampled/loadpull.spl</code>, imported as a <strong>Large signal</strong> set: what Validate compares the stand-in with.</td>
+<td>With <code>--from</code>, the device itself over a small disc about the <code>.charm</code>'s load (<code>--disc radius,rings,spokes</code>, default <code>0.2,1,4</code>, five loads), at its bias, terminations and harmonics, each load driven a decibel past the <code>.charm</code>'s compression. This is <code>sampled/&lt;name&gt;/loadpull.spl</code>, imported as a <strong>Large signal</strong> set: what Validate compares the stand-in with.</td>
 </tr>
 <tr>
 <td>Sets the steps</td>
@@ -3583,14 +3583,16 @@ circuitrf model validate pa.cmc --model pa.cmodel
 </tr>
 <tr>
 <td>Records</td>
-<td>What was sampled: the device's text (a model file by its name), the SHA-256 of that text and of the file, the bias region and grid, the frequency, the temperatures. Export copies it into the <code>.cmodel</code>'s <code>Provenance.StandIn</code>.</td>
+<td>What was sampled, which export copies into the <code>.cmodel</code>'s <code>Provenance.StandIn</code>: <code>Device</code>, the device's text with every model file by its name and never its path; <code>TextSha256</code>, the SHA-256 of that text with <code>\n</code> line ends, which anyone can recompute from it; <code>FileSha256</code>, the SHA-256 of the model file's bytes; the bias region and grid, the frequency, the temperatures; <code>ThermalNodeHeld</code> when the device has a thermal node; <code>DcFallbacks</code>, the points solved to 1e-6 A.</td>
 </tr>
 </tbody>
 </table>
 <p><strong>The device.</strong> <code>--from x.charm</code> takes the DUT, bias, fundamental and terminations of a <a href="harmonicarf.html">harmonicaRF</a>
 document; the package and embedding stay in the document, outside the stand-in. <code>--device &quot;&lt;line&gt;&quot;</code> takes an instance
 on the nets <code>g</code>, <code>d</code> and <code>0</code>, written as a <code>.cnl</code> line: <code>--device 'VerilogA:X1 g d 0 File=&quot;fet.osdi&quot; Model=fet Pins=3'</code>.
-A relative <code>File=</code> is relative to the <code>.cmc</code>. To keep a network outside the core instead, create the document with one
+A relative <code>File=</code> is relative to the <code>.cmc</code>. A model file that is not there is refused, and so is a kit part whose worker
+provider names no model file, since its bytes could not be recorded. A line that does not elaborate, or that touches
+neither <code>g</code> nor <code>d</code> (the nets are lower case), is refused by name. To keep a network outside the core instead, create the document with one
 (<code>model new … --network</code>) and type its values. <code>sample</code> then locks every value, and the samples are at the device plane.</p>
 <p><strong>Three-terminal devices other than a FET.</strong> The line maps the device onto the FET's terminals: an HBT's base on <code>g</code>,
 collector on <code>d</code> and emitter on <code>0</code> (<code>VerilogA:Q1 d g 0 …</code> for a <code>c b e</code> module). <code>vgs</code> is then <code>Vbe</code>, <code>vds</code> is <code>Vce</code>,
@@ -3603,11 +3605,14 @@ and the rise over the power gives <code>Rth</code>. Read on the terminals' power
 core is the whole device must carry. With two or more <code>--temps</code>, the Thermal step is set to self-heating with that <code>Rth</code>
 typed. Type <code>Cth</code> (or <code>τth</code>) there before fitting. A device whose thermal node is not reachable is sampled as it heats
 itself, and its tables include that static heating.</p>
-<p><strong>It is one instance.</strong> A stand-in does not scale: a <code>ComposedFET</code> placing it with <code>N</code> other than <code>N0</code> is refused. Sample
-the device at the size the circuit uses.</p>
+<p><strong>It is one instance.</strong> A stand-in does not scale: placing it with <code>N</code> other than <code>N0</code> is refused, as a <code>ComposedFET</code> and as
+a bare <code>ComposedCore</code>. <code>M</code>, the simulator's multiplier of whole devices, works as on any device. Sample the device at the
+size the circuit uses.</p>
 <p><strong>Outside the sampled region it says so.</strong> Inside, the stand-in is the tables. Outside, it is continued linearly, as
-every table is (<a href="cmodel.html">Guided extrapolation</a>), and a stand-in is the one model that warns about it: one warning
-per run, naming the region, when any evaluation falls outside it. Validate repeats it beside the item it happened in.
+every table is (<a href="cmodel.html">Guided extrapolation</a>), and a stand-in is the one model that warns about it: once the run is
+over, one warning naming the region and how many of the run's operating points fell outside it, every drive step and
+Newton iterate counted. Validate repeats it beside the item it happened in. The warning reaches a run's messages, the
+CLI's run verbs and the <code>run</code> tool, and a parametric sweep's; harmonicaRF shows no run warnings, so there it is not seen.
 An RF swing is wider than the DC range a device is usually biased over: a gate with no diode to clamp it swings several
 volts past both ends. Sample wider than you expect, and widen the grid when the warning appears.</p>
 <p><strong>What it cannot do.</strong></p>

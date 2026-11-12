@@ -266,10 +266,10 @@ convention behind both.</p>
 <td>Per goal, the values that move it most and their shares, to stdout; the steps to <code>&lt;design&gt;.sens.npy</code>; <strong>nothing</strong> in the design</td>
 </tr>
 <tr>
-<td><code>model new</code>, <code>import</code>, <code>deembed</code>, <code>fit</code>, <code>check-charge</code>, <code>explain</code>, <code>export</code>, <code>validate</code>, <code>report</code></td>
+<td><code>model new</code>, <code>import</code>, <code>deembed</code>, <code>fit</code>, <code>check-charge</code>, <code>explain</code>, <code>export</code>, <code>validate</code>, <code>report</code>, <code>sample</code></td>
 <td>a <code>.cmc</code></td>
 <td>The <a href="#model">Model Composer</a>'s steps — the same functions its window calls</td>
-<td>The <code>.cmc</code>, its cache, a <code>.cmodel</code> or a cell, a report folder — as the noun says</td>
+<td>The <code>.cmc</code>, its cache, a <code>.cmodel</code> or a cell, a report folder, a stand-in's samples in <code>sampled/&lt;name&gt;/</code> — as the noun says</td>
 </tr>
 <tr>
 <td><code>rail</code></td>
@@ -1599,7 +1599,7 @@ what it is about), progress on stderr. The formats are in <a href="file-formats.
 </tr>
 <tr>
 <td><code>sample &lt;doc.cmc&gt;</code></td>
-<td>Samples a device circuitRF already runs into a <a href="model-composer.html#stand-in">stand-in</a>: <code>--from x.charm</code> (its DUT, bias, fundamental and terminations) or <code>--device &quot;&lt;instance on g d 0&gt;&quot;</code>, over <code>--vgs start,stop,step</code> and <code>--vds start,stop,step</code> volts, at <code>--temps t,t</code> (default 25 °C), with S at <code>--freq</code> (default a tenth of the <code>.charm</code>'s). Writes <code>sampled/tables.npy</code> as a Simulated tables set and, with <code>--from</code>, the device's own loadpull over <code>--disc radius,rings,spokes</code> (default <code>0.2,1,4</code>) about the <code>.charm</code>'s load as a Large signal set; sets Current and Charge to tables. A new document has <code>N0 = 1</code> unless <code>--fingers</code>/<code>--unit-width</code> say otherwise. Then <code>fit --step all</code>, <code>export</code> and <code>validate</code>.</td>
+<td>Samples a device circuitRF already runs into a <a href="model-composer.html#stand-in">stand-in</a>: <code>--from x.charm</code> (its DUT, bias, fundamental and terminations) or <code>--device &quot;&lt;instance on g d 0&gt;&quot;</code>, over <code>--vgs start,stop,step</code> and <code>--vds start,stop,step</code> volts, at <code>--temps t,t</code> (default 25 °C), with S at <code>--freq</code> (default a tenth of the <code>.charm</code>'s). Writes <code>sampled/&lt;name&gt;/tables.npy</code> (a folder for each document) as a Simulated tables set and, with <code>--from</code>, the device's own loadpull over <code>--disc radius,rings,spokes</code> (default <code>0.2,1,4</code>) about the <code>.charm</code>'s load as a Large signal set; sets Current and Charge to tables. A new document has <code>N0 = 1</code> unless <code>--fingers</code>/<code>--unit-width</code> say otherwise. Then <code>fit --step all</code>, <code>export</code> and <code>validate</code>.</td>
 </tr>
 <tr>
 <td><code>report &lt;doc.cmc&gt;</code></td>

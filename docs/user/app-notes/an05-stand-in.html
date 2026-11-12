@@ -78,7 +78,7 @@ model of the amplifier. Everything that runs a <code>ComposedFET</code> runs it 
 <tr>
 <td>Sample</td>
 <td><code>model sample pa.cmc --from pa.charm --vgs -20,12,0.5 --vds -4,116,2</code></td>
-<td>DC and S at every bias of the grid, on the device's own terminals. Written as <code>sampled/tables.npy</code> and imported as a Simulated tables set. With a <code>.charm</code>, the device is also load-pulled over five loads about the document's load, into a Large signal set. Current and Charge are set to tables.</td>
+<td>DC and S at every bias of the grid, on the device's own terminals. Written as <code>sampled/pa/tables.npy</code> (each document has a folder of its own) and imported as a Simulated tables set. With a <code>.charm</code>, the device is also load-pulled over five loads about the document's load, into a Large signal set. Current and Charge are set to tables.</td>
 </tr>
 <tr>
 <td>Fit</td>
@@ -107,12 +107,14 @@ validate against, so run the device's own <code>lp</code> and import its <code>.
 <p><strong>Sample the swing, not the bias.</strong> Inside its grid the stand-in is the samples; outside, it is continued linearly, as any
 table is. The drain swings to about twice its supply, and, unless a diode clamps it, the gate swings both ways by
 several volts. The routine gate of this feature is the Hero-2 GaN-like FET: a gate that is a 50 Ω resistor, at
-−3.05 V and 48 V. Sampled over its DC range, <code>vgs</code> −8 to 2 V, 41 % of the stand-in's evaluations in a loadpull fall
-outside the table, and at compression it misses by 0.51 dB in Pout and a Zin VSWR of 1.72. Sampled from −20 to 12 V,
-the same 1 V step gives 0.10 dB and 1.02.</p>
-<p>A run that leaves the sampled region <strong>warns once</strong>, naming the region and the share of evaluations outside it, and
-<code>model validate</code> repeats it beside the loadpull it happened in. A share of a few per cent is Newton iterates straying
-on their way to a solution. Tens of per cent is a swing that lives out there: widen the grid.</p>
+−3.05 V and 48 V. Sampled over its DC range, <code>vgs</code> −8 to 2 V, at compression it misses by 0.51 dB in Pout and a Zin
+VSWR of 1.72. Sampled from −20 to 12 V, the same 1 V step gives 0.10 dB and 1.02.</p>
+<p>A run that leaves the sampled region <strong>warns once</strong>, when the run is over, naming the region and how many of the run's
+operating points fell outside it, and <code>model validate</code> repeats it beside the loadpull it happened in. The count is
+of every operating point the run evaluated: every drive step of every load, every Newton iterate. A swing that leaves
+the table only as it nears compression is therefore a small share of the whole. On Hero-2's DC-range grid it was 8 %
+(4,609 of 55,476 over five loads), and that was enough to miss by half a decibel. <strong>Treat any warning in a loadpull as a
+reason to widen the grid</strong>, then validate again; a run that never warns needs nothing.</p>
 <p><strong>Fine where the device bends.</strong> A table is a cubic spline through the samples, so it follows a curve as well as the
 samples resolve it. A FET's knee and pinch-off want a few tenths of a volt; an exponential diode or junction wants a few
 millivolts where it conducts. The Current step reports the step it sees and the swing below which low-level
@@ -157,7 +159,7 @@ base on <code>g</code>, the collector on <code>d</code> and the emitter on <code
 drain current is the collector current, the gate current is the base current, and the two charges are the base and
 collector charges. Drain–source symmetry stays off, and the equation templates, which are FET laws, do not apply. The
 base–emitter junction is exponential, so sample <code>Vbe</code> in steps of about 5 mV where it conducts.</p>
-<p>Tried on a VBIC 1.3 model compiled from Verilog-A, with a generic parameter set (<code>IS</code> 1e-16 A, β 100, <code>RBX</code> 10 Ω,
+<p>Tried by hand, not in a test, on a VBIC 1.3 model compiled from Verilog-A, with a generic parameter set (<code>IS</code> 1e-16 A, β 100, <code>RBX</code> 10 Ω,
 <code>RBI</code> 20 Ω, <code>RCX</code> 5 Ω, <code>RCI</code> 10 Ω, <code>RE</code> 2 Ω, <code>CJE</code> 50 fF, <code>CJC</code> 20 fF, <code>TF</code> 2 ps). Its five terminals were placed
 <code>d g 0 0 t</code>, so the substrate went to the emitter and <code>dt</code> to the thermal node. <code>Vbe</code> ran from −1 to 1.1 V in 5 mV steps
 and <code>Vce</code> from −0.5 to 7 V in 0.1 V, 31,996 points sampled isothermally in 45 s; <code>Rth</code> read back as the model's own
@@ -169,9 +171,9 @@ table takes their mean. That is the case for refitting the charges as an ANN, or
 document so the core is the junctions alone. The stand-in ran the 13 loads in 1.24 s against the device's 1.73 s, and
 in 0.82 s on the parallel grid.</p>
 <h2 id="speed">How much faster</h2>
-<p>Each device was load-pulled with <code>circuitrf lp</code> over the 20 loads of the Hero-3 grid at 2 GHz, each driven to 3 dB of Gt
-compression, with the stand-in placed on the same bench. The times include starting the process (0.33 s). They are the
-shortest of several runs on a shared machine, so read the ratios rather than the seconds. The last column has the
+<p>These are hand runs, not tests: each device was load-pulled with <code>circuitrf lp</code> over the 20 loads of the Hero-3 grid at
+2 GHz, each driven to 3 dB of Gt compression, with the stand-in placed on the same bench. The times include starting the
+process (0.33 s). They are the shortest of several runs on a shared machine, so read the ratios rather than the seconds. The last column has the
 parallel loadpull grid: it runs a stand-in's loads side by side and keeps a compiled model on its one worker.</p>
 <table>
 <thead>
@@ -217,7 +219,9 @@ is expensive to evaluate</strong>: a compact model with many internal nodes, or 
 <p>Sampling the compiled GaN took 17 s for 5,265 points, one at a time, once.</p>
 <h2 id="accuracy">How close</h2>
 <p>The same loadpulls, compared at 3 dB of Gt compression at every load both reach it at: the stand-in minus the device,
-RMS over the loads, the largest in brackets.</p>
+RMS over the loads, the largest in brackets. Hero-2's row is a test (<code>StandInBenchmarkTests</code>, frozen); the other two are
+the hand runs above, each with the grid it was sampled on (the GaN at 25 °C only, isothermal; the GaN test samples it on
+61 × 21 × 3 at three temperatures instead).</p>
 <table>
 <thead>
 <tr>
@@ -231,7 +235,7 @@ RMS over the loads, the largest in brackets.</p>
 </thead>
 <tbody>
 <tr>
-<td>Closed-form FET, compiled</td>
+<td>Closed-form FET, compiled (hand run)</td>
 <td>141 × 73</td>
 <td>0.005 (0.010) dB</td>
 <td>0.0004 (0.002) dB</td>
@@ -247,7 +251,7 @@ RMS over the loads, the largest in brackets.</p>
 <td>0.08 (0.20)°</td>
 </tr>
 <tr>
-<td>The GaN example, compiled, charges refitted as an ANN</td>
+<td>The GaN example, compiled, charges refitted as an ANN (hand run)</td>
 <td>81 × 65</td>
 <td>0.62 (2.1) dB</td>
 <td>0.08 (0.29) dB</td>

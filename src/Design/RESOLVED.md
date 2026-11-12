@@ -30876,10 +30876,11 @@ excitation index, so the plot's solution must omit `Port`; the Loop Sensor's plo
 ## LP-3 — a stand-in sampled from a device circuitRF already runs (2026-11-12)
 
 `model sample` (`Modeling/StandInSampling.cs`, `docs/design/model-composer.md` §26) builds a quasi-static `.cmodel` of
-tables from DC and S that circuitRF computes for a device it already runs. Measured on 1.8.2, Release, on a shared machine
-under load (load average 40–70); every time is the shortest of two to five runs of `circuitrf lp`, process start
-included (0.33 s for `--version`), over the 20 Hero-3 loads (`testdata/Hero3/hero3_load.gam`) driven to 3 dB of Gt
-compression.
+tables from DC and S that circuitRF computes for a device it already runs. The speed and the `crf_fet`, GaN and HBT
+accuracy below are hand runs, not tests (Hero-2's accuracy is the frozen benchmark): measured on 1.8.2, Release, on a
+shared machine under load (load average 40–70); every time is the shortest of two to five runs of `circuitrf lp`,
+process start included (0.33 s for `--version`), over the 20 Hero-3 loads (`testdata/Hero3/hero3_load.gam`) driven to
+3 dB of Gt compression.
 
 **Where the speed is.** It is in the device's own cost per evaluation, not in the worker round trip:
 
@@ -30907,7 +30908,7 @@ compression.
 |---|---|---|---|---|---|
 | `crf_fet`, 141 × 73 grid | 20 | 0.005 (0.010) dB | 0.0004 (0.002) dB | 0.04 (0.09) pp | 0.07 (0.21)° |
 | Hero-2 SDD, 65 × 61 (`testdata/StandInComposed`) | 20 | 0.17 (0.45) dB | 0.17 (0.38) dB | 0.92 (1.99) pp | 0.08 (0.20)° |
-| GaN Verilog-A, 81 × 65, charges refitted as an ANN | 20 | 0.62 (2.1) dB | 0.08 (0.29) dB | 1.8 (5.7) pp | 0.90 (2.2)° |
+| GaN Verilog-A, 81 × 65 at 25 °C (isothermal), charges refitted as an ANN | 20 | 0.62 (2.1) dB | 0.08 (0.29) dB | 1.8 (5.7) pp | 0.90 (2.2)° |
 | A VBIC 1.3 HBT, compiled, a generic parameter set, 421 × 76 (`Vbe` in 5 mV), table charges | 13 | 0.11 (0.17) dB | 1.0 (1.3) dB | 1.7 (2.4) pp | 5.6 (6.5)° |
 
 No HBT is in this repository's fixtures, so the last row is a local check, not a test: the VBIC module built from its
@@ -30919,20 +30920,39 @@ loads in 1.24 s against 1.73 s, 0.82 s with LP-1.
 
 The GaN's error is the quasi-static collapse of its own network: `rg` and the gate charge, `Lg`, `Ld` and the pad
 capacitances are inside the module, so the stand-in reads them as one two-port at 200 MHz and loses their phase at 2 GHz
-and its harmonics. Its DC and 2 GHz S21 are within 0.22 % and 1.03 % of the `ComposedFET` it was exported from
-(`StandInBenchmarkTests`). Typing the network into the document keeps it outside the core; see the last item.
+and its harmonics. In the test (`StandInBenchmarkTests`, sampled on 61 × 21 × 3 at 25, 75 and 125 °C), its DC with
+self-heating is within 0.22 % and its 2 GHz S21 within 1.03 % of the `ComposedFET` it was exported from, S21 measured as
+|ΔS21| / max(|S21|, 1): the relative error where the device conducts (0.9–1.0 %), an absolute one near pinch-off, where
+|S21| is 0.015–0.02 and the relative error is 30 % at `vgs` −2.6 V and 25 % at −1.85 V. Typing the network into the document keeps it outside the core; see the last item.
 
 **Sampling is cheap, once.** Serial through the worker: 10,293 points of `crf_fet` in 8.7 s, 5,265 of the GaN module in
 16.6 s (3 ms a point for DC and S). Hero-2's SDD in parallel: 3,965 points in 2.6 s. Table currents and charges fit in
 about a second; the GaN's charges refitted as an ANN took 4 min 16 s.
 
 **The RF swing is wider than the DC range.** Hero-2's gate is a 50 Ω resistor with no diode to clamp it, and at
-compression it swings from about −15 to +8 V. Sampled over its DC range (`vgs` −8…2 V), 41 % of the stand-in's
-evaluations in the loadpull fall outside the table and it misses at compression (Pout 0.51 dB, Zin VSWR 1.72); over
-−20…12 V it passes (0.10 dB, 1.02). Hence the stand-in's warning, and validation repeating it beside the item. A Newton
-iterate that strays outside counts too; the share in the message tells that from a swing that lives there. The warning
-needed `CircuitEvaluation` to drain the models after the run: the engines drain as they stamp, which is before any
-nonlinear evaluation, so nothing a model queued during a solve had ever reached a run's warnings.
+compression it swings from about −15 to +8 V. Sampled over its DC range (`vgs` −8…2 V), 4,609 of the 55,476 operating
+points the validation's loadpull evaluated (8.3 %) fall outside the table, and it misses at compression (Pout 0.51 dB,
+Zin VSWR 1.72); over −20…12 V it passes (0.10 dB, 1.02). Hence the stand-in's warning, and validation repeating it beside
+the item. Every operating point counts, every drive step and Newton iterate, so a swing that leaves the table only near
+compression is a small share: any warning in a loadpull is worth widening the grid for. (A first version counted
+constituents that left their domains, five to a point, against points, and read 41 %.)
+
+**The warning's plumbing.** The engines drain a model's warnings as they stamp it, which is before any nonlinear
+evaluation, and harmonic balance stamps again at every solve; so nothing a model queued during a solve had reached a
+run, and a count read at a stamp was a snapshot of part of the run whose first copy won the key. The stand-in's warning
+is therefore an `IReportsRunWarnings`, read only by `ElaboratedNetlist.DrainAllModelWarnings` once the run is over:
+`CircuitEvaluation`, the CLI's `PrintWarnings` (every run verb and MCP `run`), and `MergeDiagnosticsFrom` on the netlist
+it folds in (a parametric sweep's points). Before the review the CLI and sweeps lost it. LP-1's parallel loadpull
+replays each copy through `TakeRunDiagnostics` instead, so whichever lands second calls `DrainAllModelWarnings` on the
+copy first. harmonicaRF shows no run warnings at all.
+
+**Review fixes (2026-11-12).** Two stand-ins in one folder shared `sampled/tables.npy`, the second silently replacing the
+first's data under the first's record: each document now has `sampled/<name>/`. `N ≠ N0` was refused only in the
+`ComposedFET` elaboration, and `ComposedCore:X1 … N=2` ran; the guard is in the core's factory now. The record had kept
+an unquoted `File=/abs/…` path, hashed a missing file by leaving it out, and hashed the text with its original line
+ends; it now keeps names only, refuses a missing file or a provider with no file, and hashes the `\n` text
+(`TextSha256`) apart from the file's bytes (`FileSha256`). A line touching neither `g` nor `d`, or one that did not
+parse, became an empty stand-in or a crash; both are refusals. An axis step that does not divide its span overshot.
 
 **Rth on the terminals' power.** The GaN module heats with its core's power and reads 25 K/W there; a stand-in whose core
 is the whole device heats with the terminals' power, which includes what `rg`, `rd` and `rs` dissipate. At its hottest
