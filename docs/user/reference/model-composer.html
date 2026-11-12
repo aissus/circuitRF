@@ -3571,7 +3571,7 @@ circuitrf model validate pa.cmc --model pa.cmodel
 </tr>
 <tr>
 <td>Writes</td>
-<td><code>sampled/tables.npy</code> beside the <code>.cmc</code>, imported as a <strong>Simulated tables</strong> set at the intrinsic plane.</td>
+<td><code>sampled/tables.npy</code> beside the <code>.cmc</code>, imported as a <strong>Simulated tables</strong> set at the device plane: the device's own terminals.</td>
 </tr>
 <tr>
 <td>Load-pulls</td>
@@ -3579,7 +3579,7 @@ circuitrf model validate pa.cmc --model pa.cmodel
 </tr>
 <tr>
 <td>Sets the steps</td>
-<td>Current and Charge as <strong>Table</strong> on the data's own grid, with nothing held out. With several temperatures the charges stay an ANN, which takes <code>T</code>. The network: none, so the whole device is the core. Validate is set to the <code>.charm</code>'s harmonics and compression.</td>
+<td>Current and Charge as <strong>Table</strong> on the data's own grid, with nothing held out. A table charge takes no <code>T</code>, so with several temperatures the charges come from a second set, <code>charges</code>, at the first one. The network: none, so the whole device is the core. Validate is set to the <code>.charm</code>'s harmonics and compression.</td>
 </tr>
 <tr>
 <td>Records</td>

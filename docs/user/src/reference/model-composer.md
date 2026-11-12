@@ -1382,9 +1382,9 @@ circuitrf model validate pa.cmc --model pa.cmodel
 | | |
 |---|---|
 | Samples | DC and S-parameters at every point of the `--vgs` × `--vds` grid (× `--temps`), the device on its own terminals with the source grounded. The S frequency (`--freq`) defaults to a tenth of the `.charm`'s fundamental. A device that can be elaborated in parallel is sampled in parallel. A compiled model is not, and runs one point at a time (seconds to a minute, once). |
-| Writes | `sampled/tables.npy` beside the `.cmc`, imported as a **Simulated tables** set at the intrinsic plane. |
+| Writes | `sampled/tables.npy` beside the `.cmc`, imported as a **Simulated tables** set at the device plane: the device's own terminals. |
 | Load-pulls | With `--from`, the device itself over a small disc about the `.charm`'s load (`--disc radius,rings,spokes`, default `0.2,1,4`, five loads), at its bias, terminations and harmonics, each load driven a decibel past the `.charm`'s compression. This is `sampled/loadpull.spl`, imported as a **Large signal** set: what Validate compares the stand-in with. |
-| Sets the steps | Current and Charge as **Table** on the data's own grid, with nothing held out. With several temperatures the charges stay an ANN, which takes `T`. The network: none, so the whole device is the core. Validate is set to the `.charm`'s harmonics and compression. |
+| Sets the steps | Current and Charge as **Table** on the data's own grid, with nothing held out. A table charge takes no `T`, so with several temperatures the charges come from a second set, `charges`, at the first one. The network: none, so the whole device is the core. Validate is set to the `.charm`'s harmonics and compression. |
 | Records | What was sampled: the device's text (a model file by its name), the SHA-256 of that text and of the file, the bias region and grid, the frequency, the temperatures. Export copies it into the `.cmodel`'s `Provenance.StandIn`. |
 
 **The device.** `--from x.charm` takes the DUT, bias, fundamental and terminations of a [harmonicaRF](harmonicarf.html)
