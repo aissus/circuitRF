@@ -70,8 +70,8 @@ public static partial class ModelCommands
 
     /// <summary>
     /// Samples a device into <paramref name="cmcPath"/> (a new document, or one holding no data yet — a network typed into
-    /// it is locked and removed from the samples, which are then at the device plane): <c>sampled/tables.npy</c> imported
-    /// as a <c>SimulatedTables</c> set, and with a <c>.charm</c> the device's own loadpull over a small disc about its load,
+    /// it is locked and removed from the samples): <c>sampled/tables.npy</c> imported as a <c>SimulatedTables</c> set at the
+    /// device plane, its terminals — with no network the whole device is the core — and with a <c>.charm</c> the device's own loadpull over a small disc about its load,
     /// <c>sampled/loadpull.spl</c>, imported as a <c>LargeSignal</c> set; then the steps for a stand-in (Current and Charge
     /// tables on the data's own grid, nothing held out; the network locked; Validate at the <c>.charm</c>'s harmonics and
     /// compression) and the record of what was sampled. The DC and small-signal solves run in parallel only where the
@@ -123,12 +123,16 @@ public static partial class ModelCommands
             int t = k % nT, d = k / nT % nD, g = k / (nT * nD);
             var (lib, tb) = new CnlReader().Read(Bench(spec.Temperatures[t], spec.Vgs[g], spec.Vds[d]));
             using var nl = Elaborate(lib, tb, dir);
-            var dc = NonlinearDcEngine.Run(nl, settings);
+            // 1e-12 A resolves a pinched-off or reverse-biased junction; where a device's own round-off and limiting keep
+            // an ampere-scale point above it, the run's default 1e-6 A is the answer rather than a hole in the grid.
+            var used = settings;
+            var dc = NonlinearDcEngine.Run(nl, used);
+            if (!dc.Converged) dc = NonlinearDcEngine.Run(nl, used = AnalysisSettings.Default);
             if (!dc.Converged) { (id[k], ig[k]) = (double.NaN, double.NaN); Interlocked.Increment(ref failed); }
             else
             {
                 (ig[k], id[k]) = (dc.ProbeCurrents["IPG"], dc.ProbeCurrents["IPD"]);
-                var cube = SParameterEngine.Run(nl, [f], settings)["S"];
+                var cube = SParameterEngine.Run(nl, [f], used)["S"];
                 for (int i = 0; i < 2; i++)
                     for (int j = 0; j < 2; j++) s[k * 4 + i * 2 + j] = (Complex)cube[0, i, j];
             }
@@ -144,7 +148,7 @@ public static partial class ModelCommands
         lines.Add(new ModelLine("sample", device.Label,
             $"{device.Label}: {nG} × {nD}{(nT > 1 ? $" × {nT}" : "")} point(s), DC and S at {G(f / 1e9)} GHz, " +
             $"{(parallel ? "in parallel" : "one at a time (the device cannot be elaborated in parallel)")}, {G(started.Elapsed.TotalSeconds)} s" +
-            (failed > 0 ? $"; {failed} point(s) did not converge and are left out." : ".")));
+            (failed > 0 ? $"; {failed} point(s) did not converge and are left out, so the tables are re-gridded: narrow the grid to where the device converges." : ".")));
         if (device.Thermal) lines.Add(new ModelLine("sample", device.Label, $"{device.Label}: thermal node t held at 0 K rise, so the tables are isothermal."));
 
         // ── 2. The tables, and 3. the SimulatedTables sets ──────────────────────────
@@ -154,7 +158,8 @@ public static partial class ModelCommands
         var vdsAx = new Axis("vds", [.. spec.Vds], "V");
         var fAx = new Axis("freq", [f], "Hz");
         var nan = new Complex(double.NaN, double.NaN);
-        // One set at the temperatures ts: its own .npy, imported at the intrinsic plane (the device plane behind a network).
+        // One set at the temperatures ts: its own .npy, imported at the device plane. With no network that is the core's own,
+        // and validation places the stand-in as the ComposedFET a circuit places (an intrinsic set validates a bare core).
         IReadOnlyList<ModelLine> Tables(string set, string file, int[] ts)
         {
             int m = ts.Length;
@@ -189,7 +194,7 @@ public static partial class ModelCommands
                 Sources = [$"{SampledFolder}/{file}"],
                 Conditions = new DataConditions
                 {
-                    ReferencePlane = network ? ReferencePlane.Device : ReferencePlane.Intrinsic,
+                    ReferencePlane = ReferencePlane.Device,
                     AmbientC = m == 1 ? spec.Temperatures[ts[0]] : null,
                     Note = $"sampled by circuitRF from {device.Label}",
                 },
