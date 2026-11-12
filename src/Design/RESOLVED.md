@@ -30963,3 +30963,40 @@ Findings, each now in the code and stated in `docs/design/chain-budget.md` §2.3
 
 Gates: `tests/Ui.Tests/Chain/ChainLinkBudgetTests.cs`, against `testdata/chain/link_reference.json` (an independent
 standard-library calculation, `link_reference.py`), and `tests/Ui.Tests/Examples/ChainBudgetExampleTests.cs`.
+
+## The chain's levels: why they were scaled wrongly, and the level diagram (CH-LV, 2026-11-12)
+
+The window's Levels plots read as squeezed and unreadable. Measured on the superhet at 1300 × 960 and 1800 × 1300
+(UiSnapshot), it came down to four things, each now fixed and stated in `docs/design/chain-budget.md` §2.4:
+
+- **The window's plots were never windowed.** `ChainBudgetViewModel.Refill` copied a plot's traces, titles and labels
+  from its config but not its `Axes`, so every plot the window refills autoscaled to 10 % beyond whatever it held, and
+  a stated window (the Canceller tab's) was dropped too. It now restores the stated axes through
+  `PlotConfigLoader.RestoreAxes`, the call the S-Parameter Viewer's refilled plots use, and the Levels tab states one.
+- **Their pane was a fixed 280 px.** The Data Display scales its text and lines with a plot's smaller side
+  (min(W, H)/200), so a plot half the window wide and 240 px tall had 6 to 7 px tick labels and a legend nobody could
+  read, at every window size: the stage list took all the extra height. The results pane is now a 1.5* row beside the
+  stage list's *, so its plots grow with the window.
+- **A stand-in is not a level.** Three reach a level plot: the −300 a bench writes where a quantity does not exist
+  (`IM3_calc` at the input, `Int_calc` before the canceller) and the +300 of a margin that never compresses; the −300 dB
+  `ChainLevels.GainAt` gives a filter's exact zero (a blocker a mixer puts at 0 Hz in front of a band-pass); and a dB of
+  nothing in a measurement, −3000. The bench's Levels display framed only finite levels but drew its IM3 line up from
+  the −300 at node 0, a line falling out of the window. Its IM3, interference and margin traces are now sliced to the
+  nodes where they exist (a kept range of the node axis), and every level plot, the window's, the bench's and the level
+  diagram, takes one rule (`ChainBudgetDisplay.LevelWindow`): finite levels under ±299, 10 dB beyond, rounded out to 10.
+- **The dB plot's floor was −5 dB**, so a node past compression (a negative margin) fell out of it; it takes the rule too.
+
+Building the diagram:
+- **An unset `Width` is NaN.** A "set it when it changed" guard written `Math.Abs(Width − w) > 0.5` is false against
+  NaN, so the strip's width was never set, it was arranged 0 wide, and nothing drew. The guard is `!(… <= 0.5)`.
+- **An SVG page drops a stroke that carries a path effect.** The first SVG of the diagram (the docs' figure) had no
+  dashed line and no hatch: the sensitivity, the blockers, the link's path, the ceiling and the mixers' dividers were
+  simply absent, while the PNG had them. The Data Display draws its dashed spec lines as segments for this reason; the
+  diagram applies the dash with `GetFillPath` and fills the outline, and hatches with plain lines under a clip.
+- **The strip follows the lineup's `LayoutUpdated`, not the window's**: the docs' figure fixture hosts the window's
+  content without the window, whose event then never fires.
+- **`src/Cli`'s own project has no native Skia**; the application gets it through Avalonia.Skia. So `--level-diagram`
+  runs from the application's executable, the installed `circuitrf`, and from the test host, while
+  `dotnet run --project src/Cli` stops at loading `libSkiaSharp`.
+
+Gate: `tests/Ui.Tests/Chain/ChainLevelDiagramTests.cs`.

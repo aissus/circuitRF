@@ -237,9 +237,9 @@
 
         <!-- The three panes share the height, and the gaps between them drag: the Match Designer's and railRF's grippers,
              a 4 px transparent GridSplitter in an Auto row, with no line of its own because the panes already have
-             edges. The blocks open at a fixed height; the stage list and the results share the rest, two to three, so
-             the results' plots grow with the window. Nothing is remembered. Each row keeps a floor, so a drag cannot
-             squeeze a pane to nothing. -->
+             edges. The blocks open at a fixed height (taller with their Levels strip); the stage list and the results
+             share the rest, two to three, so the results' plots grow with the window. Nothing is remembered. Each row
+             keeps a floor, so a drag cannot squeeze a pane to nothing. -->
         <Grid Name="Panes">
             <Grid.RowDefinitions>
                 <RowDefinition Height="290" MinHeight="120"/>
@@ -254,8 +254,9 @@
                  schematic renderer with the same numbers over each stage; wheel to zoom, middle-drag to pan,
                  double-click to fit. A click on a block or a part selects its stage, in both and in the stage list. -->
             <Border Classes="pane" Grid.Row="0">
+                <Grid>
                 <TabControl Padding="0,4,0,0">
-                    <TabItem Header="Blocks" FontSize="13">
+                    <TabItem Name="BlocksTab" Header="Blocks" FontSize="13">
                         <!-- Right-click ▸ Copy: the whole lineup on the clipboard as a picture, for a slide or a document
                              (ChainBlocksGraphicExport, on the stackup copy's pipeline). Transparent so a right-click on the
                              space around the blocks reaches the menu too. -->
@@ -269,7 +270,11 @@
                             <ScrollViewer.ContextMenu>
                                 <ContextMenu Name="BlocksMenu" Opening="OnBlocksMenuOpening"/>
                             </ScrollViewer.ContextMenu>
-                            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                            <!-- The lineup, and under it, with Levels on, the level diagram with each node on a gap between two
+                                 blocks (ChainLevelStrip; the window measures the gaps). The lineup moves right by the strip's
+                                 dB scale and the link's slot, so node 0 stays on the gap before the first block. -->
+                            <StackPanel VerticalAlignment="Center" HorizontalAlignment="Left">
+                            <StackPanel Name="BlocksRow" Orientation="Horizontal">
                                 <TextBlock Text="IN" FontWeight="SemiBold" VerticalAlignment="Center" Margin="2,0,0,0"/>
                                 <!-- Drag a block left or right to move its stage: the line shows where it will land, and the move is made on
                                      release, through the same move Up and Down make. The schematic does not drag. -->
@@ -320,6 +325,10 @@
                                 </Grid>
                                 <TextBlock Text="⟶  OUT" FontWeight="SemiBold" VerticalAlignment="Center" Margin="4,0,8,0"/>
                             </StackPanel>
+                            <chv:ChainLevelStrip Name="LevelStrip" Height="260" Margin="0,8,0,0" HorizontalAlignment="Left"
+                                                 IsVisible="{Binding ShowLevels}" Plan="{Binding LevelPlan}"
+                                                 SelectedStage="{Binding SelectedStageIndex}"/>
+                            </StackPanel>
                         </ScrollViewer>
                     </TabItem>
                     <TabItem Header="Schematic" FontSize="13">
@@ -341,6 +350,13 @@
                         </Grid>
                     </TabItem>
                 </TabControl>
+                <!-- The Blocks view's Levels toggle, in the tab strip's empty right end, where it covers no block. -->
+                <CheckBox IsChecked="{Binding ShowLevels}" IsVisible="{Binding #BlocksTab.IsSelected}"
+                          HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,2,8,0"
+                          ToolTip.Tip="The level diagram under the blocks: the signal, the noise floor, the sensitivity, the IM3, the blockers and the compression limit at every node, a node on each gap. Click a node to select its stage.">
+                    <TextBlock Text="Levels" FontSize="12"/>
+                </CheckBox>
+                </Grid>
             </Border>
 
             <!-- The stages, one row each: name, part, the part's own parameters, and the stage's budget on its own. -->

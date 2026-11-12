@@ -22,13 +22,17 @@ public static class DocChainFixtures
     /// <summary>The example's 26 GHz link, on its Frequency sweep tab.</summary>
     public static FigureScene Link() => Window("26 GHz Link", "Frequency sweep");
 
-    private static FigureScene Window(string chain, string? tab = null)
+    /// <summary>The 26 GHz link with the Blocks view's Levels strip on: the link's front, an array and a conversion.</summary>
+    public static FigureScene Levels() => Window("26 GHz Link", levels: true);
+
+    private static FigureScene Window(string chain, string? tab = null, bool levels = false)
     {
         string root = ExampleWorkspaces.ResolveRoot()
             ?? throw new InvalidOperationException("No examples/ tree beside the generator or above it, so the RF Chain Budget figure has no document.");
         string path = Path.Combine(root, "RF Chain Budget", chain + ChainDesignIo.Extension);
         var vm = new ChainBudgetViewModel(ChainDesignIo.LoadFromFile(path));
         vm.SelectedStage = vm.Stages.FirstOrDefault(s => s.Part.Token == ChainParts.Combiner);
+        vm.ShowLevels = levels;
         var window = new ChainBudgetWindow { DataContext = vm };
         var content = window.Content as Control
             ?? throw new InvalidOperationException("ChainBudgetWindow has no content control to capture.");

@@ -258,6 +258,14 @@ public sealed partial class ChainBudgetViewModel : ObservableObject
     /// <summary>What the levels plots say about their simulated points: which bench results they read, or why none.</summary>
     [ObservableProperty] private string _levelsNote = "";
 
+    /// <summary>The level diagram the Blocks view draws under its blocks (and its Copy with them), of the last chain that
+    /// evaluated.</summary>
+    [ObservableProperty] private CircuitRF.Render.Chain.ChainLevelDiagram.Plan? _levelPlan;
+
+    /// <summary>The Blocks view's Levels toggle: the level diagram in a strip under the blocks. A view setting, not saved
+    /// with the chain.</summary>
+    [ObservableProperty] private bool _showLevels;
+
     /// <summary>
     /// Fills one plot, made on first use, with <paramref name="pc"/>'s traces over <paramref name="data"/>, which the
     /// Data Display reads through <see cref="CircuitRF.Render.DataDisplay.ChainBudgetDisplay.Source"/> as it reads a
@@ -297,6 +305,7 @@ public sealed partial class ChainBudgetViewModel : ObservableObject
     {
         var lv = ChainLevels.Evaluate(d, r);
         var data = ChainLevels.ToDataSet(lv);
+        LevelPlan = CircuitRF.Render.Chain.ChainLevelDiagram.For(d, r);
         var notes = new List<string>();
         // A chain whose Levels bench Transfer writes per conversion has its Levels, 1-Tone and Blockers benches each on a
         // conversion's own node axis and beside its own budget: their displays show them.

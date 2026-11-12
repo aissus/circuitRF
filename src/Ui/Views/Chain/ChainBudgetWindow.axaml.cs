@@ -9,6 +9,7 @@ using Avalonia.Interactivity;
 using Avalonia.Platform.Storage;
 using Avalonia.VisualTree;
 using CircuitRF.Design.Chain;
+using CircuitRF.Render.Chain;
 using CircuitRF.Render.DataDisplay;
 using CircuitRF.Ui.Chain;
 using CircuitRF.Ui.Controls;
@@ -44,6 +45,8 @@ public partial class ChainBudgetWindow : Window, ICrfMenuWindow
                 vm.PropertyChanged += (_, e) =>
                 {
                     if (e.PropertyName == nameof(ChainBudgetViewModel.SelectedStage)) ScrollStageListToSelection();
+                    if (e.PropertyName == nameof(ChainBudgetViewModel.ShowLevels)) FitBlocksPane();
+                    if (e.PropertyName is nameof(ChainBudgetViewModel.ShowLevels) or nameof(ChainBudgetViewModel.LevelPlan)) PlaceLevelStrip();
                 };
             }
         };
@@ -74,6 +77,12 @@ public partial class ChainBudgetWindow : Window, ICrfMenuWindow
         AddHandler(KeyDownEvent, (_, e) => { if (e.Key == Avalonia.Input.Key.Enter && e.Source is TextBox) Vm?.CommitEdits(); },
                    Avalonia.Interactivity.RoutingStrategies.Tunnel, handledEventsToo: true);
         ActualThemeVariantChanged += (_, _) => SyncPlotTheme();
+        // The Levels strip follows the blocks: every layout pass may have moved a gap. Hooked on the lineup rather than the
+        // window, so it holds wherever the window's content is hosted. A chain opened with the strip on opens the pane tall
+        // enough for it, once the panes have their height.
+        if (BlocksRow is { } blocksRow) blocksRow.LayoutUpdated += (_, _) => PlaceLevelStrip();
+        if (Panes is { } panes)
+            panes.Loaded += (_, _) => Avalonia.Threading.Dispatcher.UIThread.Post(FitBlocksPane, Avalonia.Threading.DispatcherPriority.Background);
         // Back to the window after simulating a bench: its levels pick up the new results.
         Activated += (_, _) => Vm?.Recompute();
         Closed += (_, _) =>
@@ -83,6 +92,48 @@ public partial class ChainBudgetWindow : Window, ICrfMenuWindow
     }
 
     private ChainBudgetViewModel? Vm => DataContext as ChainBudgetViewModel;
+
+    // ── the Blocks view's Levels strip ───────────────────────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Puts the strip's nodes on the gaps between the blocks as laid out now: the input on the arrow before the first
+    /// block, each stage's output on the arrow after its block (<see cref="ChainLevelDiagram.NodesBetween"/>, the rule the
+    /// Copy's picture places them by), and moves the lineup right by the strip's dB scale and the link's slot. Each is set
+    /// only when it changed, so the layout pass it causes settles.
+    /// </summary>
+    private void PlaceLevelStrip()
+    {
+        if (Vm is not { } vm || BlocksRow is not { } row || LevelStrip is not { } strip || BlockItems is not { } items) return;
+        double left = vm.ShowLevels && vm.LevelPlan is { } plan ? ChainLevelDiagram.LeftGutter(plan) : 0;
+        if (row.Margin.Left != left) row.Margin = new Thickness(left, 0, 0, 0);
+        if (!vm.ShowLevels || !strip.IsVisible) return;
+        var blocks = new List<(float Left, float Right)>();
+        float gap = 0;
+        for (int i = 0; i < vm.Stages.Count; i++)
+        {
+            if (items.ContainerFromIndex(i) is not Control c
+                || c.GetVisualDescendants().OfType<Border>().FirstOrDefault(b => b.Classes.Contains("block")) is not { } block
+                || block.TranslatePoint(default, strip) is not { } at || c.TranslatePoint(default, strip) is not { } from) return;
+            if (i == 0) gap = (float)(at.X - from.X);
+            blocks.Add(((float)at.X, (float)(at.X + block.Bounds.Width)));
+        }
+        var xs = ChainLevelDiagram.NodesBetween(blocks, gap);
+        if (xs.Length == 0) return;
+        if (strip.NodeX is not { } old || !old.SequenceEqual(xs)) strip.NodeX = xs;
+        double width = xs[^1] + ChainLevelDiagram.EndGutter;
+        if (!(Math.Abs(strip.Width - width) <= 0.5)) strip.Width = width;   // an unset Width is NaN
+    }
+
+    /// <summary>The Blocks pane opens taller with its Levels strip, as much as the stage list's and the results' floors
+    /// leave, and back to its own height without.</summary>
+    private void FitBlocksPane()
+    {
+        if (Vm is not { } vm || Panes is not { } grid) return;
+        var row = grid.RowDefinitions[0];
+        double want = vm.ShowLevels ? 520 : 290;
+        double room = grid.Bounds.Height - grid.RowDefinitions[2].MinHeight - grid.RowDefinitions[4].MinHeight - 8;
+        row.Height = new GridLength(Math.Max(row.MinHeight, room > row.MinHeight ? Math.Min(want, room) : want));
+    }
 
     private void SyncPlotTheme()
     {

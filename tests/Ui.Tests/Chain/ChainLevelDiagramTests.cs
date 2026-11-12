@@ -6,6 +6,8 @@
 //      the bench's Levels display, which draws the IM3 only from the first node that has one;
 //    - the level diagram frames every level it draws, the link's EIRP and ceiling included, and no blocker a filter's zero
 //      has taken away;
+//    - the Blocks view's strip stands each node on the gap between two blocks, in an array and over two conversions, and
+//      the Copy's picture carries it;
 //    - circuitrf chain --level-diagram writes the figure as a .png or an .svg, and refuses any other kind.
 // ================================================================
 
@@ -40,6 +42,7 @@ public sealed class ChainLevelDiagramTests : IDisposable
     }
 
     private static double[] Finite(params double[] v) => [.. v.Where(x => double.IsFinite(x) && Math.Abs(x) < ChainBudgetDisplay.Sentinel)];
+
     [Fact]
     public void TheLevelWindow_HoldsEveryFiniteLevel_AndNoSentinel()
     {
@@ -106,6 +109,48 @@ public sealed class ChainLevelDiagramTests : IDisposable
         Assert.Equal(ChainBudgetDisplay.LevelWindow(drawn), (plan.Lo, plan.Hi));
         // The link stands in front: its EIRP is the figure's top.
         if (chain != "Superhet") Assert.True(plan.Link!.EirpDbm > plan.Nodes.Max(n => n.SignalDbm));
+    }
+
+    [Theory]
+    [InlineData("Superhet")]
+    [InlineData("Array")]
+    [InlineData("Dual Conversion")]
+    [InlineData("26 GHz Link")]
+    public void TheStripsNodes_StandOnTheGapsBetweenTheBlocks_AndTheCopyCarriesIt(string chain)
+    {
+        var vm = new ChainBudgetViewModel(Example(chain)) { ShowLevels = true };
+        var plan = vm.LevelPlan!;
+        var blocks = ChainBlocksGraphicExport.BlocksOf(vm);
+        var edges = ChainBlocksGraphicExport.BlockEdges(blocks, plan);
+        var xs = ChainBlocksGraphicExport.NodeXs(blocks, plan);
+
+        // A node a stage: the input before the first block, each stage's output after its own, an array's branch included
+        // once (the blocks draw it once, "× N"), every conversion's stages in line.
+        Assert.Equal(vm.Stages.Count + 1, xs.Length);
+        Assert.Equal(plan.Nodes.Count, xs.Length);
+        Assert.True(xs[0] < edges[0].Left);
+        for (int k = 1; k < edges.Count; k++)
+        {
+            Assert.InRange(xs[k], edges[k - 1].Right, edges[k].Left);
+            Assert.Equal((edges[k - 1].Right + edges[k].Left) / 2, xs[k], 3);
+        }
+        Assert.True(xs[^1] > edges[^1].Right);
+        // A click on a node finds that node.
+        var frame = ChainLevelDiagram.Strip(plan, xs, ChainBlocksGraphicExport.StripHeight);
+        for (int k = 0; k < xs.Length; k++) Assert.Equal(k, ChainLevelDiagram.NodeAt(frame, xs[k]));
+        // The lineup moves right by the strip's scale (and the link's slot), so node 0 keeps its gap.
+        Assert.True(edges[0].Left > ChainBlocksGraphicExport.PagePad + ChainLevelDiagram.LeftGutter(plan));
+
+        var bare = ChainBlocksGraphicExport.PageFor(blocks);
+        var page = ChainBlocksGraphicExport.PageFor(blocks, ChainBlocksGraphicExport.LevelsOf(vm));
+        Assert.Equal(bare.Height + ChainBlocksGraphicExport.StripGap + ChainBlocksGraphicExport.StripHeight, page.Height, 3);
+        Assert.True(page.Width > bare.Width);
+        var (compose, p) = ChainBlocksGraphicExport.Composition(blocks, CircuitRF.Render.ColorVariant.Light, false, ChainBlocksGraphicExport.LevelsOf(vm));
+        Assert.Equal(page, p);
+        Assert.NotEmpty(PlotDocumentWriter.BuildPdfBytes(compose, p));
+
+        vm.ShowLevels = false;
+        Assert.Null(ChainBlocksGraphicExport.LevelsOf(vm));
     }
 
     [Fact]

@@ -5,6 +5,7 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 using Avalonia.Controls;
+using CircuitRF.Render.Chain;
 using CircuitRF.Ui.Controls;
 using CircuitRF.Ui.DataDisplay;
 using CircuitRF.Ui.Theming;
@@ -20,6 +21,9 @@ namespace CircuitRF.Ui.Chain;
 /// bypass and the text fallback; the PDF, SVG and PNG writers are <c>PlotDocumentWriter</c>'s; the colours and the
 /// background come from <see cref="ClipboardRenderPolicy"/>. <see cref="Layout.StackupGraphicExport"/> is the model: the
 /// page is the picture plus <see cref="PagePad"/>, so a pasted lineup is not a small drawing in a large empty box.</para>
+///
+/// <para>With the view's Levels on, the level diagram is drawn under the lineup as the view's strip draws it
+/// (<see cref="ChainLevelDiagram"/>), each node on the gap the window puts it on (<see cref="ChainLevelDiagram.NodesBetween"/>).</para>
 ///
 /// <para>The picture is the WHOLE lineup, never the scrolled view, and it is artwork rather than the window: no
 /// selection outline. Each block carries what the window's block does — the stage's name, its System block's glyph
@@ -40,6 +44,9 @@ public static class ChainBlocksGraphicExport
     // The arrow between blocks is DRAWN, not a "⟶" character: the export faces have no glyph for it, and a picture
     // pasted into a slide must not depend on which fonts the receiving machine has.
     private const float ArrowLength = 20f, ArrowHead = 5f, ArrowRowHeight = 24f;
+
+    /// <summary>The Levels strip under the lineup: its height and its gap below the blocks, as the view's.</summary>
+    public const float StripHeight = 260f, StripGap = 8f;
 
     /// <summary>One block's content, read off its stage row as the window shows it.</summary>
     public sealed record Block(string Name, IReadOnlyList<(IReadOnlyList<SymbolPrimitive> Artwork, string Caption)> Glyphs,
@@ -107,15 +114,45 @@ public static class ChainBlocksGraphicExport
     /// <summary>The lineup's own extent: IN, an arrow and a block per stage, an arrow and OUT.</summary>
     public static (float W, float H) Extent(IReadOnlyList<Block> blocks)
     {
-        float arrow = ArrowLength + 2 * ArrowGapX;
-        float w = Measure("IN", EndSize, true) + blocks.Sum(b => arrow + SizeOf(b).W) + arrow + Measure("OUT", EndSize, true);
+        float w = Measure("IN", EndSize, true) + blocks.Sum(b => ArrowRoom + SizeOf(b).W) + ArrowRoom + Measure("OUT", EndSize, true);
         float h = Math.Max(ArrowRowHeight, blocks.Count == 0 ? 0 : blocks.Max(b => SizeOf(b).H));
         return (w, h);
     }
 
-    public static PagePlacement PageFor(IReadOnlyList<Block> blocks)
+    /// <summary>The room an arrow between two blocks takes.</summary>
+    private const float ArrowRoom = ArrowLength + 2 * ArrowGapX;
+
+    /// <summary>How far right of the page's padding the lineup starts: the Levels strip's dB scale and link slot, with it.</summary>
+    private static float Indent(ChainLevelDiagram.Plan? levels) => levels is null ? 0 : ChainLevelDiagram.LeftGutter(levels);
+
+    /// <summary>Each block's left and right edge on the page, as <see cref="Render"/> draws them.</summary>
+    public static IReadOnlyList<(float Left, float Right)> BlockEdges(IReadOnlyList<Block> blocks, ChainLevelDiagram.Plan? levels = null)
+    {
+        var edges = new List<(float, float)>();
+        float x = PagePad + Indent(levels) + Measure("IN", EndSize, true);
+        foreach (var b in blocks)
+        {
+            x += ArrowRoom;
+            float w = SizeOf(b).W;
+            edges.Add((x, x + w));
+            x += w;
+        }
+        return edges;
+    }
+
+    /// <summary>Where the Levels strip's nodes stand on the page: on the gaps between the blocks.</summary>
+    public static float[] NodeXs(IReadOnlyList<Block> blocks, ChainLevelDiagram.Plan levels)
+        => ChainLevelDiagram.NodesBetween(BlockEdges(blocks, levels), ArrowRoom);
+
+    public static PagePlacement PageFor(IReadOnlyList<Block> blocks, ChainLevelDiagram.Plan? levels = null)
     {
         var (w, h) = Extent(blocks);
+        w += Indent(levels);
+        if (levels is not null && blocks.Count == levels.Nodes.Count - 1)
+        {
+            w = Math.Max(w, NodeXs(blocks, levels)[^1] - PagePad + ChainLevelDiagram.EndGutter);
+            h += StripGap + StripHeight;
+        }
         return new(Math.Max(w, 1f) + 2f * PagePad, Math.Max(h, 1f) + 2f * PagePad, PagePad);
     }
 
@@ -126,16 +163,19 @@ public static class ChainBlocksGraphicExport
         canvas.DrawText(text, cx, baseline, SKTextAlign.Center, font, paint);
     }
 
-    /// <summary>Draws the lineup on a page-sized canvas, centred vertically in the page's padding.</summary>
-    internal static void Render(SKCanvas canvas, IReadOnlyList<Block> blocks, ColorVariant variant, bool transparentBackground)
+    /// <summary>Draws the lineup on a page-sized canvas, centred vertically in the page's padding, and under it the
+    /// Levels strip when <paramref name="levels"/> is given.</summary>
+    internal static void Render(SKCanvas canvas, IReadOnlyList<Block> blocks, ColorVariant variant, bool transparentBackground,
+                                ChainLevelDiagram.Plan? levels = null)
     {
+        if (levels is not null && blocks.Count != levels.Nodes.Count - 1) levels = null;
         var c = ColorsFor(variant);
-        var page = PageFor(blocks);
+        var page = PageFor(blocks, levels);
         if (!transparentBackground) canvas.DrawRect(0, 0, page.Width, page.Height, new SKPaint { Color = c.Page });
 
         var (_, totalH) = Extent(blocks);
         float midY = PagePad + totalH / 2f;
-        float x = PagePad;
+        float x = PagePad + Indent(levels);
 
         // The row's words and arrows sit on the blocks' centre line, as the window's StackPanel centres them.
         float EndBaseline(float size) => midY + size * 0.35f;
@@ -151,7 +191,7 @@ public static class ChainBlocksGraphicExport
             canvas.DrawLine(x0, midY, x1, midY, arrowPaint);
             canvas.DrawLine(x1 - ArrowHead, midY - ArrowHead * 0.7f, x1, midY, arrowPaint);
             canvas.DrawLine(x1 - ArrowHead, midY + ArrowHead * 0.7f, x1, midY, arrowPaint);
-            x += ArrowLength + 2 * ArrowGapX;
+            x += ArrowRoom;
         }
 
         float inW = Measure("IN", EndSize, true);
@@ -198,6 +238,15 @@ public static class ChainBlocksGraphicExport
         Arrow();
         float outW = Measure("OUT", EndSize, true);
         Text(canvas, "OUT", x + outW / 2f, EndBaseline(EndSize), EndSize, true, c.Text, 1f);
+
+        if (levels is null) return;
+        // The strip's own origin is the page's padding, as the view's strip starts where the lineup's indent does.
+        var xs = NodeXs(blocks, levels).Select(v => v - PagePad).ToArray();
+        int strip = canvas.Save();
+        canvas.Translate(PagePad, PagePad + totalH + StripGap);
+        var theme = variant == ColorVariant.Light ? CircuitRF.Render.DataDisplay.RenderTheme.Light : CircuitRF.Render.DataDisplay.RenderTheme.Dark;
+        ChainLevelDiagram.Draw(canvas, levels, ChainLevelDiagram.Strip(levels, xs, StripHeight), theme with { BackgroundColor = c.Page });
+        canvas.RestoreToCount(strip);
     }
 
     /// <summary>The lineup as text, one stage a line: its name, its own numbers and the cascade at its output.</summary>
@@ -212,8 +261,14 @@ public static class ChainBlocksGraphicExport
 
     /// <summary>The page composition and the page, together, so no writer is handed one without the other.</summary>
     public static (Action<SKCanvas> Compose, PagePlacement Page) Composition(
-        IReadOnlyList<Block> blocks, ColorVariant variant, bool transparentBackground)
-        => (canvas => Render(canvas, blocks, variant, transparentBackground), PageFor(blocks));
+        IReadOnlyList<Block> blocks, ColorVariant variant, bool transparentBackground, ChainLevelDiagram.Plan? levels = null)
+    {
+        if (levels is not null && blocks.Count != levels.Nodes.Count - 1) levels = null;
+        return (canvas => Render(canvas, blocks, variant, transparentBackground, levels), PageFor(blocks, levels));
+    }
+
+    /// <summary>The Levels strip the view shows, for the Copy: the plan when Levels is on.</summary>
+    public static ChainLevelDiagram.Plan? LevelsOf(ChainBudgetViewModel vm) => vm.ShowLevels ? vm.LevelPlan : null;
 
     /// <summary>Renders the lineup and places PDF, SVG, a 2x bitmap and the text on the clipboard together.</summary>
     internal static async Task CopyToClipboardAsync(Control anchor, ChainBudgetViewModel vm)
@@ -223,7 +278,7 @@ public static class ChainBlocksGraphicExport
 
         var blocks = BlocksOf(vm);
         var (variant, transparent) = ClipboardRenderPolicy.Resolve();
-        var (compose, page) = Composition(blocks, variant, transparent);
+        var (compose, page) = Composition(blocks, variant, transparent, LevelsOf(vm));
 
         byte[] pdf = PlotDocumentWriter.BuildPdfBytes(compose, page);
         string svg = PlotDocumentWriter.BuildSvgString(compose, page);
