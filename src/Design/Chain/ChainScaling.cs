@@ -105,15 +105,15 @@ public static class ChainScaling
                 if (At(text, f, d.BaseDirectory, out string why) is { } v) s.Parameters[p.Name] = v.ToString("R", CultureInfo.InvariantCulture);
                 else refusals.Add($"Stage '{s.Name}': {p.Name} = '{text.Trim()}' {why}.");
             }
-            if (s.Part != ChainParts.Mixer) continue;
+            if (!ChainParts.Converts(s.Part)) continue;
             // The stages after a mixer whose LO cannot be read have no frequency to be read at: one refusal, not theirs too.
-            if (!ChainValue.TryParse(s.Get("Flo"), out double flo))
+            if (!ChainValue.TryParse(s.Get("Flo"), out _))
             {
                 if (!refusals.Any(x => x.StartsWith($"Stage '{s.Name}': Flo = ", StringComparison.Ordinal)))
                     refusals.Add($"Stage '{s.Name}': Flo = '{s.Get("Flo").Trim()}' is not a number{WhyNotANumber(s.Get("Flo"))}.");
                 break;
             }
-            f = Math.Abs(f - flo);
+            f = ChainParts.OutputHz(s, f);
         }
         return r;
     }

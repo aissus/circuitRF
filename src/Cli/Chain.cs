@@ -145,6 +145,18 @@ internal static class Chain
                             + $"{D(s.Ip1dbDbm),8} {D(s.Op1dbDbm),8} {D(s.PoutDbm),8} {D(s.SnrDb),8} {D(s.NoiseSharePct),7}");
         Console.WriteLine($"  gain {D(t.GainDb)} dB, NF {D(t.NfDb)} dB (Te {t.TeK:0.#} K), IIP3 {D(t.Iip3Dbm)} dBm, OIP3 {D(t.Oip3Dbm)} dBm, "
                         + $"IP1dB {D(t.Ip1dbDbm)} dBm, OP1dB {D(t.Op1dbDbm)} dBm");
+        if (ChainTransmit.Read(r) is { } x)
+        {
+            // A transmit chain is read at its output: no sensitivity or range at its input, which is its drive.
+            Console.WriteLine($"  transmit: Pout {D(x.PoutDbm)} dBm, CW {D(x.PoutCwDbm)} dBm ({D(x.CompressionDb)} dB compressed), "
+                            + $"back-off {D(x.BackoffP1dbDb)} dB from OP1dB and {D(x.BackoffPsatDb)} dB from Psat {D(x.PsatDbm)} dBm");
+            Console.WriteLine($"  ACLR {D(x.AclrDbc)} dBc, output noise {D(x.NoisePsdDbmHz)} dBm/Hz"
+                            + (double.IsFinite(x.RxNoiseDbm) ? $", {D(x.RxNoiseDbm)} dBm ({D(x.RxNoisePsdDbmHz)} dBm/Hz) in the receive band at {x.RxFrequencyHz / 1e6:0.###} MHz" : "")
+                            + (double.IsFinite(x.ImageDbc) ? $", image {D(x.ImageDbc)} dBc" : "")
+                            + (double.IsFinite(x.LoLeakDbc) ? $", LO {D(x.LoLeakDbc)} dBc" : ""));
+            if (ChainLink.Power(r) is { TotalW: > 0 } tp) Console.WriteLine($"  DC power {ChainLink.Watts(tp.TotalW)}");
+            return;
+        }
         Console.WriteLine($"  thermal floor {D(t.ThermalFloorDbm)} dBm, output noise {D(t.NoiseOutDbm)} dBm, MDS {D(t.MdsDbm)} dBm, "
                         + $"sensitivity {D(t.SensitivityDbm)} dBm at {D(d.RequiredSnrDb)} dB SNR");
         Console.WriteLine($"  SNR {D(t.SnrDb)} dB, SFDR {D(t.SfdrDb)} dB" + (t.ArrayGainDb > 0 ? $", array gain {D(t.ArrayGainDb)} dB" : ""));

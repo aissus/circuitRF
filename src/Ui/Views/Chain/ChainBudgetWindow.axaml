@@ -108,7 +108,8 @@
         <DataTemplate DataType="vm:ChainParamViewModel">
             <StackPanel Orientation="Horizontal" Margin="0,0,5,2" ToolTip.Tip="{Binding Tip}">
                 <TextBlock Classes="lbl" Text="{Binding Name}"/>
-                <TextBox Classes="p param" Text="{Binding Value}" Classes.invalid="{Binding Invalid}" PlaceholderText="{Binding Watermark}"/>
+                <TextBox Classes="p param" Text="{Binding Value}" Classes.invalid="{Binding Invalid}" IsVisible="{Binding IsText}" PlaceholderText="{Binding Watermark}"/>
+                <ComboBox Classes="p param" ItemsSource="{Binding Options}" SelectedItem="{Binding Value}" IsVisible="{Binding HasOptions}"/>
                 <TextBlock Classes="lbl" Text="{Binding Unit}" Margin="3,0,0,0"/>
             </StackPanel>
         </DataTemplate>
@@ -200,9 +201,12 @@
             </DockPanel>
         </Border>
 
-        <!-- The system inputs. -->
+        <!-- The system inputs, the chain's direction first: a transmit chain is read at its output. -->
         <Border Classes="pane" DockPanel.Dock="Top">
             <WrapPanel>
+                <ItemsControl ItemsSource="{Binding TransmitInputs}">
+                    <ItemsControl.ItemsPanel><ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+                </ItemsControl>
                 <TextBlock Classes="lbl" Text="Frequency"/>
                 <TextBox Name="FrequencyBox" Classes="p" Text="{Binding Frequency}" Classes.invalid="{Binding FrequencyInvalid}" ToolTip.Tip="The input (RF) frequency"/>
                 <TextBlock Classes="unit" Text="{Binding FrequencyUnit}"/>

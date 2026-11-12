@@ -31020,3 +31020,30 @@ After review:
   every gain after it: through a 60 dB IF amplifier the absent blocker came back at −260 dBm, which no "≤ −299" test
   catches, while a real IM3 at −374 dBm on a 200 km link was dropped as one. The budget's absent level is now −∞ (it
   absorbs), so nothing finite is a stand-in; only a bench's own results carry one, `ChainBenches.Absent`, matched exactly.
+
+## The chain budget's transmit chains, the amplifier's laws and the IQ modulator (CH-2, 2026-11-12)
+
+- **A parameter that has a value meaning "as before" must say so, or every chain changes.** An Amplifier's new `Law`,
+  `Psat`, `P`, `PhiSat` and `PhiMax` and a Mixer's `Sideband` defaulted in the part's list would have been written onto
+  every amplifier's bench line and into every stage the window saves. `ChainParam.Implied` names that value, and
+  `ChainParam.Unstated` keeps it out of both; every shipped receive chain and bench stays the same to the byte, and a
+  chain is version 3 only when it uses one of them.
+- **The IQ modulator's sideband sign.** A Combiner's path phase is e^(+jφ) and the hybrid's coupled port +90°: with the
+  LO's quadrature path at −90° (the hybrid's convention) the first bench selected the image, 35 dB down, and read the
+  wanted sideband there. The upper sideband takes the LO path at +90°.
+- **A hybrid set off quadrature is not passive.** The LO's quadrature with a phase error was first a second hybrid at
+  90° + φ, which the noise run then left noiseless and warned about on every run. A Combiner path is flat and passive at
+  any phase, so the LO is split by one.
+- **A node in front of a reflection reads the incident wave and the reflected one.** The modulator's image and LO at its
+  output read 5.4 and 2.6 dB off their closed forms, the band filter after it reflecting both; the TX 1-Tone bench puts
+  an isolator after an IQ modulator, and both sit on their closed forms to 10⁻³ and 10⁻² dB.
+- **A filter in its stopband adds almost no noise.** The receive band's noise at first took a passive stage's noise
+  figure as its loss at every frequency, and read 2.3 dB over the run: a reflective filter feeds the driver after it
+  almost no noise where the loss rule put T0. A filter now adds T0·(1 − |S21|² − |S22|²) (Bosma), its loss in band.
+- **Noise under compression is half amplitude.** The TX noise floor reads 0.13 to 0.15 dB under the budget 0.05 dB into
+  the PA's compression: the PA's differential gain there is about five times its compression for a Rapp law of p = 2,
+  and half the noise sees it.
+- **Rapp has no third-order term at p ≠ 1.** Its intercept in the cascade is the cubic's at its 1 dB point; two tones at
+  the linear transmitter's operating point read their IM3 under it, and 20 dB down the PA's products fall at 5:1.
+
+Gates: `tests/Ui.Tests/Chain/ChainTransmitTests.cs`, `tests/Ui.Tests/Examples/ChainBudgetExampleTests.cs` (`LinearTx_*`).

@@ -76,8 +76,7 @@ public static class ChainBudget
             gs *= Lin(b.GainDb);
             gn *= Lin(b.NoiseGainDb);
             a *= Lin(b.GainDb - b.NoiseGainDb);   // the array gain: signal over noise gain, N for equal paths
-            if (d.Stages[i].Part == ChainParts.Mixer)
-                f = Math.Abs(f - ChainValue.Or(d.Stages[i].Get("Flo"), 0));
+            f = ChainParts.OutputHz(d.Stages[i], f);
 
             double g = Db(gs);
             double iip3 = inv3 > 0 ? -Db(inv3) : double.PositiveInfinity;
@@ -110,8 +109,10 @@ public static class ChainBudget
             mdsT + d.RequiredSnrDb, d.InputPowerDbm - mdsT,
             double.IsPositiveInfinity(last.Iip3Dbm) ? double.PositiveInfinity : 2.0 / 3.0 * (last.Iip3Dbm - mdsT),
             Db(a), f);
-        notes.AddRange(ChainCapacity.Notes(d, rows, totals));
-        return new(rows, totals, [], notes) { Design = d };
+        // A transmit chain's input is its drive, not a signal a receiver takes: no ceiling, but its output's compression.
+        var result = new ChainBudgetResult(rows, totals, [], notes) { Design = d };
+        notes.AddRange(d.IsTransmit ? ChainTransmit.Notes(result) : ChainCapacity.Notes(d, rows, totals));
+        return result;
     }
 
     /// <summary>Each blocker that reaches an SnP stage outside its file's range: carried at the file's edge value, as the
@@ -127,7 +128,7 @@ public static class ChainBudget
                 if (s.Part == ChainParts.Snp && ChainSnp.GainDbAt(s, d.BaseDirectory, f, out bool outside) is not null && outside)
                     yield return $"{s.Name}: blocker {k + 1} reaches it at {ChainSnp.Hz(f)}, outside its file's range; its gain " +
                                  "there is taken at the file's nearest frequency, as the SnP block takes it in a simulation.";
-                if (s.Part == ChainParts.Mixer) f = Math.Abs(f - ChainValue.Or(s.Get("Flo"), 0));
+                f = ChainParts.OutputHz(s, f);
             }
         }
     }
@@ -188,6 +189,7 @@ public static class ChainBudget
         One("Fout_Hz", "Hz", t.OutputFrequencyHz);
         ChainCapacity.AddTo(ds, r, stage);
         ChainLink.AddTo(ds, r);
+        ChainTransmit.AddTo(ds, r);
         return ds;
     }
 

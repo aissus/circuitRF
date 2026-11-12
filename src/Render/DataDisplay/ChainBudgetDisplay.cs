@@ -10,6 +10,7 @@
 //  column is a measurement the bench's MEAS block computes (ChainBenches), so nothing here computes a number.
 // ================================================================
 
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -57,7 +58,9 @@ public static class ChainBudgetDisplay
             case ChainBench.Canceller: return Display(chain, bench, src, Canceller(src));
             case ChainBench.Demo: return Display(chain, bench, src, Demo(src, ChainBenches.DemoPowers(budget.Totals!)));
             case ChainBench.Transmitter: return Display(chain, bench, src, Transmitter(src));
+            case ChainBench.Pa: return Display(chain, bench, src, Pa(src, design));
         }
+        if (design.IsTransmit) return Display(chain, bench, src, Transmit(src, bench, design));
         double bocc = ChainBenches.Carrier(design.BandwidthHz).OccupiedHz / 1e6;
         var (rows, perStage) = bench switch
         {
@@ -396,6 +399,110 @@ public static class ChainBudgetDisplay
                  [Over(src, "ACPR_L", bo, "lower", C(3), true), Over(src, "ACPR_U", bo, "upper", C(5), true)]),
             t,
         ];
+    }
+
+    /// <summary>
+    /// A transmit chain's benches. 1-Tone: the output against the drive over the budget's CW output, their difference,
+    /// and a table of the operating point, the top of the sweep, the 1 dB point, the noise in band and in the receive band
+    /// and an IQ modulator's image and LO. 2-Tone: the IM3 against the two tones' level over the intercept's 3:1 line.
+    /// Envelope: the ACLR against the drive over the budget's estimate, the output power and EVM, and the spectrum at
+    /// the operating point.
+    /// </summary>
+    private static List<PlotContainerConfig> Transmit(string src, ChainBench bench, ChainDesign d)
+    {
+        (string, string, string) Row(string q, string title) => ($"{q}_calc", $"{q}_sim", title);
+        PlotContainerConfig Rows(string title, double top, params (string Calc, string Sim, string Title)[] rows)
+        {
+            var cols = rows.SelectMany(r => new[] { (r.Calc, $"{r.Title}: budget"), (r.Sim, "simulated") }).ToArray();
+            var t = Table(title, src, cols, first: 280);
+            t.Top = top;
+            return t;
+        }
+        double y = 300 + Gap;
+        switch (bench)
+        {
+            case ChainBench.OneTone:
+            {
+                var list = new List<PlotContainerConfig>
+                {
+                    Rect("Output against the drive", "Pin, dBm", "dBm", 0, 0, 560, 300,
+                         [Over(src, "Plin_calc", "Pin", "linear budget, Pin + G", C(0), false),
+                          Over(src, "Pout_calc", "Pin", "budget, through each stage's compression", C(1), false),
+                          Over(src, "Pout_sim", "Pin", "simulated", C(1), true)]),
+                    Rect("Simulated output − budget", "Pin, dBm", "dB", 560 + Gap, 0, 560, 300, [Over(src, "Pout_err", "Pin", "difference", C(4), true)]),
+                    Rows("Output", y, Row("Pout_op", "at the operating point, dBm"), Row("Ptop", "at the sweep's top, dBm"),
+                         Row("IP1dB", "input P1dB, dBm"), Row("OP1dB", "output P1dB, dBm")),
+                };
+                var noise = new List<(string, string, string)> { Row("Noise", "noise 1 MHz off the carrier, dBm/Hz") };
+                if (d.RxBandOffsetHz is not null) noise.Add(Row("RxNoise", "noise in the receive band, dBm/Hz"));
+                list.Add(Rows("Noise", y + H + Gap, [.. noise]));
+                if (d.Stages.Any(s => s.Part == ChainParts.IqMod))
+                    list.Add(Rows("IQ modulator", y + 2 * (H + Gap), Row("ImageIq", "image at its output, dBc"), Row("LoIq", "LO at its output, dBc"),
+                                  Row("Image", "image at the output, dBc"), Row("LoLeak", "LO at the output, dBc")));
+                return list;
+            }
+            case ChainBench.TwoTone:
+                return
+                [
+                    Rect("IM3 against the two tones' level", "each tone at the input, dBm", "dBc", 0, 0, 560, 300,
+                         [Over(src, "IM3_calc", "P2t", "budget, 2·(P − OIP3)", C(1), false), Over(src, "IM3_sim", "P2t", "simulated", C(1), true)]),
+                    Rect("Intercept the IM3 extrapolates to", "each tone at the input, dBm", "dBm", 560 + Gap, 0, 560, 300,
+                         [Over(src, "OIP3_sim", "P2t", "simulated, 3:1 from each level", C(3), true)]),
+                    Rows("At the operating point and at the lowest level", y, Row("IM3_op", "IM3 at the operating point, dBc"),
+                         ("OIP3_calc", "OIP3_lo_sim", "OIP3, 20 dB below it, dBm")),
+                ];
+            default:
+                return
+                [
+                    Rect("Adjacent-channel ratio against the drive", "Pin, dBm", "dBc", 0, 0, 560, 300,
+                         [Over(src, "ACLR_calc", "Pin", "budget, 2·(Pout − OIP3) − 4.77 dB", C(1), false),
+                          Over(src, "ACLR_L_sim", "Pin", "lower, simulated", C(3), true), Over(src, "ACLR_U_sim", "Pin", "upper, simulated", C(5), true)]),
+                    Rect("Output power and EVM against the drive", "Pin, dBm", "dBm, %", 560 + Gap, 0, 560, 300,
+                         [Over(src, "Pout_calc", "Pin", "linear budget, dBm", C(1), false), Over(src, "Pout_sim", "Pin", "simulated, dBm", C(1), true),
+                          Over(src, "EVM_sim", "Pin", "EVM, %", C(2), true)]),
+                    At(Table("At the operating point", src,
+                             [("Pout_op_calc", "output, dBm: budget"), ("Pout_op_sim", "simulated"), ("ACLR_op_calc", "ACLR, the worse side, dBc: budget"),
+                              ("ACLR_op_sim", "simulated"), ("EVM_op_sim", "EVM, %")], first: 280), y),
+                    new PlotContainerConfig
+                    {
+                        PlotType = PlotType.Rect, Left = 0, Top = y + H + Gap, Width = 620, Height = 360,
+                        CustomTitle = "Output spectrum at the operating point", CustomTitleOn = true,
+                        CustomYLabel = "PSD (dBm/Hz)", CustomYLabelOn = true,
+                        Traces = [new TraceConfig { SourcePath = src, Label = "PSD at the output",
+                                                    Expression = $"ENVT.PSD[{Array.IndexOf(ChainBenches.TxEnvelopeStepsDb, 0.0)}, \"Iout\", :]" }],
+                    },
+                ];
+        }
+    }
+
+    private static PlotContainerConfig At(PlotContainerConfig p, double top) { p.Top = top; return p; }
+
+    /// <summary>The PA bench: its AM-AM and AM-PM against the drive over the law's closed forms, its efficiency when it
+    /// states a DC power, and a table of its 1 dB point, its output at the operating point and at the sweep's top, and
+    /// its ACLR and EVM with the NR carrier.</summary>
+    private static List<PlotContainerConfig> Pa(string src, ChainDesign d)
+    {
+        int pa = ChainBenches.PaStage(d);
+        bool pdc = pa >= 0 && ChainValue.Or(d.Stages[pa].Get("Pdc"), 0) > 0;
+        var t = Table("At the 1 dB point and the operating point", src,
+                      [("IP1dB_calc", "input P1dB, dBm: budget"), ("IP1dB_sim", "simulated"), ("Pout_op_calc", "output at the operating point, dBm: budget"),
+                       ("Pout_op_sim", "simulated"), ("Ptop_calc", "at the sweep's top: budget"), ("Ptop_sim", "simulated"),
+                       ("ACLR_L_sim", "NR carrier: ACLR lower, dBc"), ("ACLR_U_sim", "upper"), ("EVM_sim", "EVM, %")], first: 280);
+        t.Top = 2 * (300 + Gap);
+        var list = new List<PlotContainerConfig>
+        {
+            Rect("AM-AM: the gain against the drive", "Pin, dBm", "dB", 0, 0, 560, 300,
+                 [Over(src, "AMAM_calc", "Pin", "the law's closed form", C(1), false), Over(src, "AMAM_sim", "Pin", "simulated", C(1), true)]),
+            Rect("AM-PM: the phase against the drive", "Pin, dBm", "deg", 560 + Gap, 0, 560, 300,
+                 [Over(src, "AMPM_calc", "Pin", "the law's closed form", C(2), false), Over(src, "AMPM_sim", "Pin", "simulated", C(2), true)]),
+            Rect("Simulated − closed form", "Pin, dBm", "dB, deg", 0, 300 + Gap, 560, 300,
+                 [Over(src, "AMAM_err", "Pin", "AM-AM, dB", C(1), true), Over(src, "AMPM_err", "Pin", "AM-PM, deg", C(2), true)]),
+            t,
+        };
+        if (pdc)
+            list.Add(Rect("Efficiency against the drive", "Pin, dBm", "PAE, %", 560 + Gap, 300 + Gap, 560, 300,
+                          [Over(src, "PAE_calc", "Pin", "budget", C(3), false), Over(src, "PAE_sim", "Pin", "simulated", C(3), true)]));
+        return list;
     }
 
     /// <summary>A constellation as the signal-quality preset draws it: the received points over the ideal ones, Im

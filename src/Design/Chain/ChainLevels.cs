@@ -80,33 +80,38 @@ public static class ChainLevels
     /// <summary>
     /// A stage's gain at a frequency other than the chain's, dB, and the frequency after it. A filter's is its own
     /// response there (<see cref="FilterNetwork"/>, the model the Filter block simulates with), IL included, and −∞ where
-    /// it passes nothing; a mixer
-    /// moves the frequency to |f − Flo|; an SnP stage's is its file's |S(Out,In)| there, at the file's nearest frequency
-    /// outside its range (as the block clamps it); every other part is flat, so its gain is the budget's signal gain.
+    /// it passes nothing; a mixer or an IQ modulator moves the frequency to its output's (<see cref="ChainParts.OutputHz"/>);
+    /// an SnP stage's is its file's |S(Out,In)| there, at the file's nearest frequency outside its range (as the block
+    /// clamps it); every other part is flat, so its gain is the budget's signal gain.
     /// </summary>
     /// <param name="baseDirectory">Where an SnP stage's relative <c>File</c> resolves from.</param>
     public static double GainAt(ChainStage s, StageBudget b, ref double fHz, string? baseDirectory = null)
     {
-        double V(string key, double fallback) => ChainValue.Or(s.Get(key), fallback);
         switch (s.Part)
         {
             case ChainParts.Filter:
-                var response = Enum.TryParse<FilterResponse>(s.Get("Response").Trim(), true, out var rsp) ? rsp : FilterResponse.Chebyshev;
-                var form = Enum.TryParse<NetworkForm>(s.Get("Form").Trim(), true, out var fm) ? fm : NetworkForm.Bandpass;
-                var net = FilterNetwork.Create(response, form, (int)Math.Round(V("Order", 3)), V("Fc", 1e9), V("F1", 0.9e9),
-                                               V("F2", 1.1e9), V("Ripple", 0.1), V("Astop", 40), V("IL", 0));
                 // An exact zero (a band-pass at 0 Hz) passes nothing: −∞, which absorbs whatever gain follows, where a
                 // finite stand-in would come back up the chain as a level.
-                double s21 = net.At(2 * Math.PI * fHz).S21.Magnitude;
+                double s21 = FilterOf(s).At(2 * Math.PI * fHz).S21.Magnitude;
                 return s21 > 0 ? 20 * Math.Log10(s21) : double.NegativeInfinity;
-            case ChainParts.Mixer:
-                fHz = Math.Abs(fHz - V("Flo", 0));
+            case ChainParts.Mixer or ChainParts.IqMod:
+                fHz = ChainParts.OutputHz(s, fHz);
                 return b.GainDb;
             case ChainParts.Snp:
                 return ChainSnp.GainDbAt(s, baseDirectory, fHz, out _) is { } g ? g : b.GainDb;
             default:
                 return b.GainDb;
         }
+    }
+
+    /// <summary>A Filter stage's network, the model the Filter block simulates with.</summary>
+    public static FilterNetwork FilterOf(ChainStage s)
+    {
+        double V(string key, double fallback) => ChainValue.Or(s.Get(key), fallback);
+        var response = Enum.TryParse<FilterResponse>(s.Get("Response").Trim(), true, out var rsp) ? rsp : FilterResponse.Chebyshev;
+        var form = Enum.TryParse<NetworkForm>(s.Get("Form").Trim(), true, out var fm) ? fm : NetworkForm.Bandpass;
+        return FilterNetwork.Create(response, form, (int)Math.Round(V("Order", 3)), V("Fc", 1e9), V("F1", 0.9e9),
+                                    V("F2", 1.1e9), V("Ripple", 0.1), V("Astop", 40), V("IL", 0));
     }
 
     /// <summary>

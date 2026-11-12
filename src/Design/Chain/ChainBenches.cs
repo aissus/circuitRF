@@ -33,6 +33,10 @@
 //   - in an array, a TLIN in front of element k of (k − 1)·Steer: the arriving wave's extra path, which each branch's
 //     phase shifter is set to remove.
 //
+// A transmit chain has its own four: 1-Tone (the output over the drive beside the budget's CW output, the 1 dB point, an IQ
+// modulator's image and LO, the noise in band and in a receive band), 2-Tone (the IM3 against the level), Envelope (an
+// NR carrier's output, ACLR and EVM) and PA (the PA alone at its own input: AM-AM, AM-PM, efficiency).
+//
 // Every measurement row reads ONE analysis, so a CLI run of one analysis (`circuitrf hb … -a SW1`) still evaluates its
 // own rows. `temp = 16.85` puts every part at 290 K, the temperature a noise figure is stated at.
 //
@@ -54,7 +58,7 @@ using CircuitRF.Engine.HarmonicBalance;
 
 namespace CircuitRF.Design.Chain;
 
-public enum ChainBench { OneTone, TwoTone, Envelope, Steering, Combiners, Levels, Blockers, Canceller, Demo, Transmitter }
+public enum ChainBench { OneTone, TwoTone, Envelope, Steering, Combiners, Levels, Blockers, Canceller, Demo, Transmitter, Pa }
 
 /// <summary>One bench: its cell name, its netlist, where each of its instances is drawn, and what it verifies: the chain
 /// named <paramref name="Chain"/>, the whole chain or one of its conversions (<see cref="ChainBenches.Conversions"/>),
@@ -92,6 +96,7 @@ public static class ChainBenches
         ChainBench.Blockers => chain + " Blockers",
         ChainBench.Demo    => chain + " Demo",
         ChainBench.Transmitter => chain + " TX",
+        ChainBench.Pa      => chain + " PA",
         _                  => chain + " Canceller",
     };
 
@@ -126,6 +131,9 @@ public static class ChainBenches
     /// limiter saturates its fundamental at (4/π)·Vsat in amplitude, and its intercept is 2·Vsat.</summary>
     public static readonly double TanhPsatBelowOip3Db = 10 * Math.Log10(Math.PI * Math.PI / 4);
 
+    /// <summary>A transmit chain's Envelope bench's drives about its input power, dB.</summary>
+    public static readonly double[] TxEnvelopeStepsDb = [-3, 0, 3];
+
     /// <summary>The steer angles the Steering bench sweeps, degrees from broadside.</summary>
     public static readonly double[] SteerAnglesDeg = [-30, 0, 30];
 
@@ -141,6 +149,15 @@ public static class ChainBenches
     /// </summary>
     public static IReadOnlyList<ChainBench> BenchesFor(ChainDesign d, List<string>? why = null)
     {
+        // A transmit chain is driven at its input and read at its output: its own 1-Tone, 2-Tone and Envelope benches,
+        // and the PA's own (its AM-AM, AM-PM and efficiency, one fundamental at its input).
+        if (d.IsTransmit)
+        {
+            List<ChainBench> tx = [ChainBench.OneTone, ChainBench.TwoTone, ChainBench.Envelope];
+            if (PaStage(d) >= 0) tx.Add(ChainBench.Pa);
+            else why?.Add("The chain has no amplifier that compresses, so there is no PA bench.");
+            return tx;
+        }
         List<ChainBench> b = [ChainBench.OneTone, ChainBench.TwoTone, ChainBench.Envelope, ChainBench.Levels];
         if (d.Blockers.Count > 0) b.Add(ChainBench.Blockers);
         if (d.Demo) b.Add(ChainBench.Demo);
@@ -200,6 +217,28 @@ public static class ChainBenches
     }
 
     /// <summary>
+    /// A transmitter's NR carrier for a chain of <paramref name="bandwidthHz"/>: the 15 kHz-spacing channel nearest it up to
+    /// 50 MHz, as <see cref="Carrier"/> has it, and above that the 30 kHz one (60 to 100 MHz, 162 to 273 resource blocks):
+    /// its channel bandwidth, MHz, its subcarrier spacing, kHz, and its occupied bandwidth, Hz.
+    /// </summary>
+    public static (int ChannelMHz, int ScsKHz, double OccupiedHz) TxCarrier(double bandwidthHz)
+    {
+        (int Mhz, int Rb)[] wide = [(60, 162), (70, 189), (80, 217), (90, 245), (100, 273)];
+        if (bandwidthHz <= 55e6) { var (m, occ) = Carrier(bandwidthHz); return (m, 15, occ); }
+        var best = wide.MinBy(c => Math.Abs(Math.Log(c.Rb * 360e3 / bandwidthHz)));
+        return (best.Mhz, 30, best.Rb * 360e3);
+    }
+
+    /// <summary>A transmit chain's PA: its last Amplifier with a bandpass law, else its last one that compresses; −1 when
+    /// it has none.</summary>
+    public static int PaStage(ChainDesign d)
+    {
+        int law = d.Stages.FindLastIndex(s => ChainParts.LawOf(s) is not null);
+        return law >= 0 ? law
+             : d.Stages.FindLastIndex(s => s.Part == ChainParts.Amp && ChainValue.Or(s.Get("IP3"), 40) < ChainParts.AmpLinearDbm);
+    }
+
+    /// <summary>
     /// The chain's benches (<see cref="BenchesFor"/>), each one that a single run can hold as the whole chain, and the
     /// others once per conversion (<see cref="Conversions"/>); none when the budget is refused. A bench no run can hold
     /// even per conversion is not written. Every bench run is checked against what its analysis takes: a
@@ -238,8 +277,9 @@ public static class ChainBenches
                 notes?.AddRange(whole[b].Notes.Select(n => $"{whole[b].Text.CellName}: {n}."));
                 continue;
             }
-            // The TX bench is the transmitter's, not a conversion's: there is no per-conversion one to fall back on.
-            if (conv is null || b == ChainBench.Transmitter) { leftOut?.Add($"{CellName(chain, b)} is not written: {why}."); continue; }
+            // The TX bench is the transmitter's, not a conversion's, and a transmit chain's benches drive it whole: there
+            // is no per-conversion one to fall back on.
+            if (conv is null || b == ChainBench.Transmitter || d.IsTransmit) { leftOut?.Add($"{CellName(chain, b)} is not written: {why}."); continue; }
             var made = new List<string>();
             foreach (var c in conv)
             {
@@ -287,7 +327,7 @@ public static class ChainBenches
     {
         if (r.Totals is null) return null;
         d = r.Design ?? d;   // every expression and table read, the link's power the input
-        var mixers = d.Stages.Select((s, i) => (s, i)).Where(x => x.s.Part == ChainParts.Mixer).Select(x => x.i).ToList();
+        var mixers = d.Stages.Select((s, i) => (s, i)).Where(x => ChainParts.Converts(x.s.Part)).Select(x => x.i).ToList();
         if (mixers.Count < 2) return null;
         var starts = mixers.SkipLast(1).Select(i => i + 1).Prepend(0).ToList();
         var fin = d.StageInputFrequencies();
@@ -527,7 +567,7 @@ public static class ChainBenches
         /// outermost.
         /// </summary>
         private void EnvelopeFits(params (double Hz, double Bw)[] carriers)
-            => EnvelopeFits([.. d.Stages.Where(s => s.Part == ChainParts.Mixer).Select(s => ChainValue.Or(s.Get("Flo"), 0)).Distinct()], carriers);
+            => EnvelopeFits([.. d.Stages.Where(s => ChainParts.Converts(s.Part)).Select(s => ChainValue.Or(s.Get("Flo"), 0)).Distinct()], carriers);
 
         /// <summary>The same check for a bench whose LOs are <paramref name="los"/>: the TX bench's, none.</summary>
         private void EnvelopeFits(List<double> los, (double Hz, double Bw)[] carriers)
@@ -571,7 +611,7 @@ public static class ChainBenches
                          ? Math.Max(2, (int)Math.Round(ChainValue.Or(c.Get("N"), 2))) : 1;
         private int Branch => d.Stages.FindIndex(s => s.Part == ChainParts.Combiner) is >= 0 and var i ? i : 0;
         private double Steer => d.Stages.FirstOrDefault(s => s.Part == ChainParts.Combiner) is { } c ? ChainValue.Or(c.Get("Steer"), 0) : 0;
-        private int Mixers => d.Stages.Count(s => s.Part == ChainParts.Mixer);
+        private int Mixers => d.Stages.Count(s => ChainParts.Converts(s.Part));
 
         private void Line(string text) => _parts.AppendLine(text);
         private void Place(string inst, double x, double y, bool mirror = false)
@@ -598,7 +638,7 @@ public static class ChainBenches
             var part = ChainParts.Find(s.Part)!;
             var sb = new StringBuilder();
             foreach (var p in part.Parameters.Where(p => !skip.Contains(p.Name) && !p.BudgetOnly))
-                if (s.Get(p.Name).Trim() is { Length: > 0 } v) sb.Append($"  {p.Name}={Param(p, v)}");
+                if (s.Get(p.Name).Trim() is { Length: > 0 } v && !p.Unstated(v)) sb.Append($"  {p.Name}={Param(p, v)}");
             foreach (var (k, v) in s.Parameters.Where(kv => part.Parameters.All(p => p.Name != kv.Key) && !skip.Contains(kv.Key)))
                 sb.Append($"  {k}={v.Trim()}");
             return sb.ToString();
@@ -612,11 +652,13 @@ public static class ChainBenches
             if (bench == ChainBench.Combiners) return EmitCombiners();
             if (bench == ChainBench.Canceller) return EmitCanceller();
             if (bench == ChainBench.Transmitter) return EmitTransmitter();
+            if (bench == ChainBench.Pa) return EmitPa();
             int n = N, nb = Branch;
             bool array = n > 1;
             double frf = d.FrequencyHz;
             _vars.Add($"Frf = {G(frf)}");
-            if (bench is ChainBench.TwoTone or ChainBench.Levels)
+            if (d.IsTransmit) TxVars();
+            else if (bench is ChainBench.TwoTone or ChainBench.Levels)
             {
                 double df = Math.Min(1e6, d.BandwidthHz);
                 _vars.Add($"F1 = {G(frf - df / 2)}");
@@ -1099,6 +1141,15 @@ public static class ChainBenches
                     return;
                 }
                 default:
+                    if (d.IsTransmit)
+                    {
+                        // A transmitter's carrier, at the chain's input frequency (its IF), noiseless: the bench reads its
+                        // distortion, and the noise floor is the 1-Tone bench's.
+                        var (txMhz, txScs, _) = TxCarrier(d.BandwidthHz);
+                        Line($"MOD_Source:{name}  {net}  0  Fc=Frf  Pavg=Pin dBm  Z=50 Ohm  " +
+                             $"Carrier[1]=\"NR;BW={txMhz}MHz;SCS={txScs}kHz;Mod=64QAM;Off=0;P=0;Seed=1\"  Record=0.0005  Noise=no");
+                        break;
+                    }
                     var (mhz0, _) = Carrier(d.BandwidthHz);
                     Line($"MOD_Source:{name}  {net}  0  Fc=Frf  Pavg=Pin dBm  Z=50 Ohm  " +
                          $"Carrier[1]=\"NR;BW={mhz0}MHz;SCS=15kHz;Mod=64QAM;Off=0;P=0;Seed=1\"  Record=0.0005  Noise=yes  " +
@@ -1128,6 +1179,22 @@ public static class ChainBenches
             }
         }
 
+        /// <summary>
+        /// A converter on the tone lattice, its LO tone <paramref name="t"/>: each tracked product's index after it, and
+        /// the frequency. The sum moves the product up by the LO; the difference down by it, or, when the LO is above the
+        /// signal, to the LO less the conjugate.
+        /// </summary>
+        private static void Convert(ChainStage s, double flo, ref double f, int t, params int[][] vs)
+        {
+            if (ChainParts.IsUpper(s)) { foreach (var v in vs) v[t] += 1; f += flo; }
+            else if (f > flo) { foreach (var v in vs) v[t] -= 1; f -= flo; }
+            else
+            {
+                foreach (var v in vs) { for (int i = 0; i < v.Length; i++) v[i] = -v[i]; v[t] += 1; }
+                f = flo - f;
+            }
+        }
+
         /// <summary>One stage between two nets. Returns the instances it placed that a noise run lists among its shares:
         /// the lossy and the noisy ones. A lossless part's share is zero, so leaving it out changes no sum.</summary>
         private List<string> Stage(ChainStage s, string name, string a, string b, ref double f, int[] v1, int[] v3, ref int lo, int k, int n)
@@ -1136,7 +1203,8 @@ public static class ChainBenches
             switch (s.Part)
             {
                 case ChainParts.Amp:
-                    Line($"Amp:{name}  {a}  0  {b}  0{Params(s)}"); Inline(name, 300);
+                    // A bandpass law replaces the intercept, which its line then does not carry.
+                    Line($"Amp:{name}  {a}  0  {b}  0{(ChainParts.LawOf(s) is null ? Params(s) : Params(s, "IP3", "IP3Ref"))}"); Inline(name, 300);
                     if (ChainValue.Or(s.Get("NF"), 0) > 0) placed.Add(name);
                     break;
                 case ChainParts.Atten:
@@ -1184,15 +1252,13 @@ public static class ChainBenches
                     placed.Add($"{iso}_R");
                     if (ChainValue.TryParse(s.Get("NF"), out _) && r.Stages.First(x => x.Name == s.Name).Stage.NfDb > ChainParts.NoiselessMixerSsbDb + 1e-9)
                         placed.Add(name);
-                    int t = lo++;
-                    if (f > flo) { v1[t] -= 1; v3[t] -= 1; f -= flo; }
-                    else
-                    {
-                        for (int i = 0; i < v1.Length; i++) { v1[i] = -v1[i]; v3[i] = -v3[i]; }
-                        v1[t] += 1; v3[t] += 1; f = flo - f;
-                    }
+                    Convert(s, flo, ref f, lo++, v1, v3);
                     break;
                 }
+                case ChainParts.IqMod:
+                    placed.AddRange(IqMod(s, name, a, b, isolate: !diagram && bench == ChainBench.OneTone && d.IsTransmit));
+                    Convert(s, ChainValue.Or(s.Get("Flo"), 0), ref f, lo++, v1, v3);
+                    break;
                 case ChainParts.Snp:
                 {
                     // The library's SnP block on the file, the chain through In → Out and every other port terminated
@@ -1449,7 +1515,7 @@ public static class ChainBenches
                      : $"NumFreqs={names.Count} " + string.Join(" ", names.Select((t, i) => $"Tone[{i + 1}]=\"{t}\" ToneUnit[{i + 1}]=Hz"));
             }
             // One LO variable per mixer STAGE (an array's per-branch mixers share it), in chain order.
-            var mixerStages = d.Stages.Where(s => s.Part == ChainParts.Mixer).ToList();
+            var mixerStages = d.Stages.Where(s => ChainParts.Converts(s.Part)).ToList();
             for (int i = 0; i < mixerStages.Count; i++) _vars.Add($"Flo{i + 1} = {G(ChainValue.Or(mixerStages[i].Get("Flo"), 0))}");
             int mix = mixerStages.Count;
             // The tones' frequencies, in the directive's order.
@@ -1467,6 +1533,7 @@ public static class ChainBenches
             string w = G(PathWeight());
             string ka = n > 1 ? $"/{w}" : "";
             string nfArray(string f1) => n > 1 ? $"10*log10(1 + ({f1} - 1)/{w})" : $"10*log10({f1})";
+            if (d.IsTransmit) { TxMeasurements(tonesDirective, toneHz, nets, v1, v3, fout); return; }
 
             switch (bench)
             {
@@ -1632,13 +1699,8 @@ public static class ChainBenches
                         int mi = 0;
                         foreach (var st in d.Stages)
                         {
-                            if (st.Part == ChainParts.Mixer)
-                            {
-                                double flo = ChainValue.Or(st.Get("Flo"), 0);
-                                int t = d.Blockers.Count + mi++;
-                                if (fbk > flo) { v[t] -= 1; fbk -= flo; }
-                                else { for (int i = 0; i < v.Length; i++) v[i] = -v[i]; v[t] += 1; fbk = flo - fbk; }
-                            }
+                            if (ChainParts.Converts(st.Part))
+                                Convert(st, ChainValue.Or(st.Get("Flo"), 0), ref fbk, d.Blockers.Count + mi++, v);
                             perNode.Add((int[])v.Clone());
                         }
                         blkV.Add(perNode);
@@ -1703,6 +1765,341 @@ public static class ChainBenches
                     break;
                 }
             }
+        }
+
+        // ── a transmit chain ─────────────────────────────────────────────────
+
+        /// <summary>The variables a transmit bench drives at: the operating point Pop, the chain's input power, and the
+        /// source's own variable the bench sweeps around it.</summary>
+        private void TxVars()
+        {
+            _vars.Add($"Pop = {F(d.InputPowerDbm)}");
+            if (bench == ChainBench.TwoTone)
+            {
+                double df = Math.Min(1e6, d.BandwidthHz);
+                _vars.Add($"F1 = {G(d.FrequencyHz - df / 2)}");
+                _vars.Add($"F2 = {G(d.FrequencyHz + df / 2)}");
+                _vars.Add("P2t = Pop - 3.0103");   // two tones whose total is the drive
+            }
+            else _vars.Add("Pin = Pop");
+        }
+
+        /// <summary>The chain's CW output for <paramref name="pin"/> at its input, dBm: the carrier through every stage's
+        /// compression (<see cref="ChainTransmit.StageCwDbm"/>).</summary>
+        private double CwAt(double pin) => r.Stages.Aggregate(pin, (p, row) => ChainTransmit.StageCwDbm(row.Stage, p));
+
+        /// <summary>One cube over a swept variable from one value per sweep point: Σ v_k·L_k(var), L_k the Lagrange basis
+        /// polynomial 1 at point k and 0 at every other, exact at the points (each factor there is a difference of equal
+        /// numbers or a ratio of them).</summary>
+        private static string SweepCube(string var, double[] at, Func<int, string> value)
+        {
+            var terms = new List<string>();
+            for (int k = 0; k < at.Length; k++)
+            {
+                var basis = Enumerable.Range(0, at.Length).Where(j => j != k)
+                                      .Select(j => $"({var} - ({G(at[j])}))/({G(at[k])} - ({G(at[j])}))");
+                terms.Add($"({value(k)})*{(at.Length == 1 ? "1" : string.Join("*", basis))}");
+            }
+            return string.Join(" + ", terms);
+        }
+
+        /// <summary>
+        /// The image and the LO of the chain's first IQ modulator as products of the tone lattice at the output: its other
+        /// sideband, and its LO tone, each carried through every converter after it as the signal is. Null when the chain
+        /// has no IQ modulator.
+        /// </summary>
+        private (int[] Image, int[] Lo, int[] AtIq, int[] ImageAtIq, int Stage)? Spurs(int tones)
+        {
+            int iq = d.Stages.FindIndex(st => st.Part == ChainParts.IqMod);
+            if (iq < 0) return null;
+            var v = new int[tones]; v[0] = 1;
+            int[]? img = null, lo = null, atIq = null, imgIq = null;
+            double f = d.FrequencyHz, fi = 0, fl = 0;
+            int t = 1;
+            for (int i = 0; i < d.Stages.Count; i++)
+            {
+                var st = d.Stages[i];
+                if (!ChainParts.Converts(st.Part)) continue;
+                double flo = ChainValue.Or(st.Get("Flo"), 0);
+                if (i == iq)
+                {
+                    img = (int[])v.Clone(); lo = new int[tones]; lo[t] = 1;
+                    fi = f; fl = flo;
+                    // the image is the other sideband: the difference for an upper one, the sum for a lower one
+                    var other = st.Clone(); other.Parameters["Sideband"] = ChainParts.IsUpper(st) ? ChainParts.Lower : ChainParts.Upper;
+                    Convert(other, flo, ref fi, t, img);
+                    imgIq = (int[])img.Clone();
+                    atIq = (int[])v.Clone();
+                    double fq = f;
+                    Convert(st, flo, ref fq, t, atIq);
+                }
+                else if (img is not null)
+                {
+                    Convert(st, flo, ref fi, t, img);
+                    Convert(st, flo, ref fl, t, lo!);
+                }
+                Convert(st, flo, ref f, t, v);
+                t++;
+            }
+            return (img!, lo!, atIq!, imgIq!, iq);
+        }
+
+        /// <summary>
+        /// A transmit chain's measurements. 1-Tone: the output against the drive, from deep back-off to past saturation,
+        /// beside the budget's CW output through every stage's compression; the 1 dB point beside the cascade's; at the
+        /// operating point the output, an IQ modulator's image and LO; and a harmonic-balance noise run there, the output
+        /// noise in band and in the receive band. 2-Tone: the IM3 against the two tones' level beside the intercept's
+        /// 3:1 line. Envelope: the NR carrier's output power, ACLR and EVM against the drive, the ACLR beside the budget's
+        /// estimate from the intercept.
+        /// </summary>
+        private void TxMeasurements(Func<bool, string> tonesDirective, Func<bool, double[]> toneHz, string[] nets, int[] v1, int[] v3, double fout)
+        {
+            var tx = ChainTransmit.Read(r)!;
+            int mix = Mixers;
+            double pop = d.InputPowerDbm, g = _t.GainDb;
+            string p1 = mix == 0 ? "1" : Idx(v1);
+            switch (bench)
+            {
+                case ChainBench.OneTone:
+                {
+                    var spur = Spurs(v1.Length);
+                    double top = Math.Ceiling(Finite(tx.BackoffPsatDb, 20)) + 10;
+                    var pins = Enumerable.Range(0, (int)((top + 20) / 2) + 1).Select(i => pop - 20 + 2 * i)
+                        .Concat(double.IsFinite(_t.Ip1dbDbm) ? [_t.Ip1dbDbm - CompressionBackoffDb, _t.Ip1dbDbm - CompressionStepDb, _t.Ip1dbDbm + CompressionStepDb] : [])
+                        .Append(pop).Select(x => Math.Round(x, 6)).Distinct().Order().ToArray();
+                    int kop = Array.IndexOf(pins, Math.Round(pop, 6));
+                    var read = new List<int[]> { v1 };
+                    if (spur is { } sp) read.AddRange([sp.Image, sp.Lo]);
+                    _analyses.Add($"analysis HB1 type=hb {tonesDirective(false)} MaxHarm=3 MaxMixOrder={Order("HB1", toneHz(false), 3 + 2 * mix, 1 + 2 * mix, "the output's compression", read)} Tol=1e-12");
+                    _analyses.Add($"analysis SW1 type=parametric_sweep Var=Pin Values={string.Join(",", pins.Select(F))} Inner=HB1");
+                    _meas.Add($"Pout_sim = dB(HB1.V(\"out\",{p1})) + 10");
+                    _meas.Add($"Pout_calc = {SweepCube("Pin", pins, k => G(CwAt(pins[k])))}");
+                    _meas.Add("Pout_err = Pout_sim - Pout_calc");
+                    _meas.Add($"Plin_calc = Pin + {G(g)}");
+                    _meas.Add($"Pout_op_calc = {G(tx.PoutCwDbm)}");
+                    _meas.Add($"Pout_op_sim = at(Pout_sim,\"Pin\",{kop})");
+                    _meas.Add("Pout_op_err = Pout_op_sim - Pout_op_calc");
+                    _meas.Add($"Ptop_calc = {G(CwAt(pins[^1]))}");
+                    _meas.Add($"Ptop_sim = at(Pout_sim,\"Pin\",{pins.Length - 1})");
+                    _meas.Add("Ptop_err = Ptop_sim - Ptop_calc");
+                    _meas.Add($"Psat_calc = {G(tx.PsatDbm)}");
+                    if (double.IsFinite(_t.Ip1dbDbm))
+                    {
+                        int k0 = Array.IndexOf(pins, Math.Round(_t.Ip1dbDbm - CompressionBackoffDb, 6));
+                        int ka = Array.IndexOf(pins, Math.Round(_t.Ip1dbDbm - CompressionStepDb, 6));
+                        int kb = Array.IndexOf(pins, Math.Round(_t.Ip1dbDbm + CompressionStepDb, 6));
+                        _meas.Add($"IP1dB_calc = {G(_t.Ip1dbDbm)}");
+                        _meas.Add($"OP1dB_calc = {G(_t.Op1dbDbm)}");
+                        _meas.Add("Ghb = Pout_sim - Pin");
+                        _meas.Add($"Comp = at(Ghb,\"Pin\",{k0}) - Ghb");
+                        _meas.Add($"IP1dB_sim = at(Pin,\"Pin\",{ka}) + (1 - at(Comp,\"Pin\",{ka}))*(at(Pin,\"Pin\",{kb}) - at(Pin,\"Pin\",{ka}))/(at(Comp,\"Pin\",{kb}) - at(Comp,\"Pin\",{ka}))");
+                        _meas.Add($"OP1dB_sim = IP1dB_sim + at(Ghb,\"Pin\",{k0}) - 1");
+                        _meas.Add("IP1dB_err = IP1dB_sim - IP1dB_calc");
+                        _meas.Add("OP1dB_err = OP1dB_sim - OP1dB_calc");
+                    }
+                    if (spur is { } s2)
+                    {
+                        // At the IQ modulator's own output, its image rejection and LO feedthrough; at the chain's, each
+                        // after the filters' rejection at its own frequency.
+                        var st = d.Stages[s2.Stage];
+                        var spec = IqModSpec.Read(st);
+                        double pIq = (s2.Stage > 0 ? r.Stages[s2.Stage - 1].PoutDbm : pop) + ChainValue.Or(st.Get("ConvGain"), 0) + spec.WantedDb;
+                        string at(int[] v, string net) => $"at(dB(HB1.V(\"{net}\",{Idx(v)})),\"Pin\",{kop})";
+                        _meas.Add($"ImageIq_calc = {G(Finite(spec.ImageDb - spec.WantedDb, -300))}");
+                        string iqNet = $"{d.Stages[s2.Stage].Name}_c";   // before the bench's isolator
+                        _meas.Add($"ImageIq_sim = {at(s2.ImageAtIq, iqNet)} - {at(s2.AtIq, iqNet)}");
+                        _meas.Add($"LoIq_calc = {G(Finite(spec.LoLeakDbm - pIq, -300))}");
+                        _meas.Add($"LoIq_sim = {at(s2.Lo, iqNet)} - {at(s2.AtIq, iqNet)}");
+                        _meas.Add($"Image_calc = {G(Finite(tx.ImageDbc, -300))}");
+                        _meas.Add($"Image_sim = {at(s2.Image, "out")} - {at(v1, "out")}");
+                        _meas.Add($"LoLeak_calc = {G(Finite(tx.LoLeakDbc, -300))}");
+                        _meas.Add($"LoLeak_sim = {at(s2.Lo, "out")} - {at(v1, "out")}");
+                    }
+                    // The noise at the operating point: just off the carrier, and in the receive band when one is stated. The
+                    // input sideband reaches the output through the LOs alone, as on a receive chain's bench.
+                    // 1 kHz off the tone lattice, where the noise is defined (a product's own frequency reads NaN).
+                    double near = fout + 1e6 + 1e3, rx = (d.RxBandOffsetHz is { } off ? fout + off : near + 1e6) + 1e3;
+                    var sb = Enumerable.Range(0, v1.Length).Select(i => i == 0 ? 0 : -v1[i]);
+                    _analyses.Add($"analysis HBN type=hb {tonesDirective(false)} MaxHarm=3 MaxMixOrder={Order("HBN", toneHz(false), 1 + 2 * mix, 1 + 2 * mix, "each converter's image sideband", [v1], noise: true)} Tol=1e-12 " +
+                                  $"SSStart=\"{G(near)}\" SSStop=\"{G(rx)}\" SSNpts=2 Noise=yes NoiseIn=1 NoiseOut=2" +
+                                  (mix > 0 ? $" NoiseSideband=\"{string.Join(",", sb)}\"" : ""));
+                    _meas.Add($"Noise_calc = {G(tx.NoisePsdDbmHz)}");
+                    _meas.Add("Noise_sim = 10*log10(at(HBN.Nout,\"ssfreq\",0)) + 30");
+                    _meas.Add("Noise_err = Noise_sim - Noise_calc");
+                    if (d.RxBandOffsetHz is not null)
+                    {
+                        _meas.Add($"RxNoise_calc = {G(tx.RxNoisePsdDbmHz)}");
+                        _meas.Add("RxNoise_sim = 10*log10(at(HBN.Nout,\"ssfreq\",1)) + 30");
+                        _meas.Add("RxNoise_err = RxNoise_sim - RxNoise_calc");
+                    }
+                    break;
+                }
+                case ChainBench.TwoTone:
+                {
+                    double p2 = pop - 3.0103;
+                    double[] steps = [-20, -6, 0];
+                    var levels = steps.Select(x => Math.Round(p2 + x, 6)).ToArray();
+                    _analyses.Add($"analysis HB2 type=hb {tonesDirective(true)} MaxHarm=3 MaxMixOrder={Order("HB2", toneHz(true), 5 + mix, 3 + mix, "the output's IM3", [v1, v3])} Tol=1e-12");
+                    _analyses.Add($"analysis SW2 type=parametric_sweep Var=P2t Values={string.Join(",", levels.Select(F))} Inner=HB2");
+                    _meas.Add($"OIP3_calc = {G(Finite(_t.Oip3Dbm, double.NaN))}");
+                    _meas.Add($"P1_out = dB(HB2.V(\"out\",{Idx(v1)})) + 10");
+                    _meas.Add($"P3_out = dB(HB2.V(\"out\",{Idx(v3)})) + 10");
+                    _meas.Add("IM3_sim = P3_out - P1_out");
+                    _meas.Add($"IM3_calc = {SweepCube("P2t", levels, k => G(2 * (levels[k] + g - Finite(_t.Oip3Dbm, double.PositiveInfinity))))}");
+                    _meas.Add("IM3_err = IM3_sim - IM3_calc");
+                    _meas.Add("OIP3_sim = P1_out + (P1_out - P3_out)/2");
+                    int kop = levels.Length - 1;
+                    _meas.Add($"IM3_op_calc = {G(2 * (p2 + g - Finite(_t.Oip3Dbm, double.PositiveInfinity)))}");
+                    _meas.Add($"IM3_op_sim = at(IM3_sim,\"P2t\",{kop})");
+                    _meas.Add("IM3_op_err = IM3_op_sim - IM3_op_calc");
+                    _meas.Add("OIP3_lo_sim = at(OIP3_sim,\"P2t\",0)");
+                    _meas.Add("OIP3_lo_err = OIP3_lo_sim - OIP3_calc");
+                    break;
+                }
+                default:
+                {
+                    var (mhz, _, bocc) = TxCarrier(d.BandwidthHz);
+                    EnvelopeFits((d.FrequencyHz, mhz * 1e6));
+                    double[] steps = TxEnvelopeStepsDb;
+                    var pins = steps.Select(x => Math.Round(pop + x, 6)).ToArray();
+                    int kop = Array.IndexOf(steps, 0.0);
+                    _analyses.Add($"analysis ENVT type=env Stop=0.1e-3 Step=auto Accuracy=draft MaxHarm=1 MaxMixOrder={Math.Max(2, 1 + 2 * mix)} " +
+                                  "Segments=auto Warmup=auto Start=0 Tol=1e-6 SaveWaveforms=no");
+                    _analyses.Add($"analysis SWE type=parametric_sweep Var=Pin Values={string.Join(",", pins.Select(F))} Inner=ENVT");
+                    double aclr(double pin) => 2 * (pin + g - Finite(_t.Oip3Dbm, double.PositiveInfinity)) - ChainTransmit.AclrConstantDb;
+                    _meas.Add($"Pout_calc = {SweepCube("Pin", pins, k => G(pins[k] + g))}");
+                    _meas.Add("Pout_sim = ENVT.Pavg_dBm[:, \"Iout\"]");
+                    _meas.Add("Comp_sim = Pout_calc - Pout_sim");
+                    _meas.Add($"ACLR_calc = {SweepCube("Pin", pins, k => G(aclr(pins[k])))}");
+                    _meas.Add("ACLR_L_sim = ENVT.ACLR[:, \"Iout\", 0, \"ACPR1L\"]");
+                    _meas.Add("ACLR_U_sim = ENVT.ACLR[:, \"Iout\", 0, \"ACPR1U\"]");
+                    _meas.Add("EVM_sim = ENVT.EVM_pct[:, \"Iout\", 0]");
+                    _meas.Add($"Pout_op_calc = {G(tx.PoutDbm)}");
+                    _meas.Add($"Pout_op_sim = ENVT.Pavg_dBm[{kop}, \"Iout\"]");
+                    _meas.Add("Pout_op_err = Pout_op_sim - Pout_op_calc");
+                    _meas.Add($"ACLR_op_calc = {G(tx.AclrDbc)}");
+                    _meas.Add($"ACLR_op_sim = max(ENVT.ACLR[{kop}, \"Iout\", 0, \"ACPR1L\"], ENVT.ACLR[{kop}, \"Iout\", 0, \"ACPR1U\"])");
+                    _meas.Add("ACLR_op_err = ACLR_op_sim - ACLR_op_calc");
+                    _meas.Add($"EVM_op_sim = ENVT.EVM_pct[{kop}, \"Iout\", 0]");
+                    _vars.Add($"Bocc = {G(bocc)}");
+                    break;
+                }
+            }
+        }
+
+        /// <summary>
+        /// The PA bench: the chain's PA stage alone, at its own input and frequency, from a MOD_Source that harmonic
+        /// balance takes as a CW carrier at its average power and the envelope as the NR carrier. A harmonic-balance drive
+        /// sweep gives its AM-AM and AM-PM beside the law's closed forms, its 1 dB point and its saturation; an envelope
+        /// run at the operating point the AM-AM and AM-PM of the carrier's own samples, its ACLR and EVM; and, when the
+        /// stage states a Pdc, its efficiency against the drive.
+        /// </summary>
+        private ChainBenchText EmitPa()
+        {
+            int pa = PaStage(d);
+            var st = d.Stages[pa];
+            var row = r.Stages[pa].Stage;
+            double fpa = d.StageInputFrequencies()[pa], pop = pa > 0 ? r.Stages[pa - 1].PoutDbm : d.InputPowerDbm;
+            var (mhz, scs, _) = TxCarrier(d.BandwidthHz);
+            EnvelopeFits([], [(fpa, mhz * 1e6)]);   // one fundamental, the carrier: the PA has no LO
+            _vars.AddRange([$"Frf = {G(fpa)}", $"Pop = {F(pop)}", "Pin = Pop"]);
+            Line($"MOD_Source:SRC  in  0  Fc=Frf  Pavg=Pin dBm  Z=50 Ohm  " +
+                 $"Carrier[1]=\"NR;BW={mhz}MHz;SCS={scs}kHz;Mod=64QAM;Off=0;P=0;Seed=1\"  Record=0.0005  Noise=no");
+            Place("SRC", 0, 200);
+            _x = Lead;
+            _stage = pa;
+            double f = fpa; int lo = 1;
+            Stage(st, st.Name, "in", "out", ref f, [1], [0], ref lo, 1, 1);
+            _stage = -1;
+            Load(1);
+
+            double p1 = row.Ip1dbDbm, psat = ChainTransmit.StagePsatDbm(row);
+            var pins = Enumerable.Range(0, 21).Select(i => Math.Round(p1 - 20 + 1.5 * i, 6))
+                .Concat([p1 - CompressionBackoffDb, p1 - CompressionStepDb, p1 + CompressionStepDb, pop])
+                .Select(x => Math.Round(x, 6)).Distinct().Order().ToArray();
+            int k0 = Array.IndexOf(pins, Math.Round(p1 - CompressionBackoffDb, 6));
+            int ka = Array.IndexOf(pins, Math.Round(p1 - CompressionStepDb, 6)), kb = Array.IndexOf(pins, Math.Round(p1 + CompressionStepDb, 6));
+            int kop = Array.IndexOf(pins, Math.Round(pop, 6));
+            _analyses.Add("analysis HB1 type=hb Tone=\"Frf\" ToneUnit=Hz MaxHarm=5 Tol=1e-12");
+            _analyses.Add($"analysis SW1 type=parametric_sweep Var=Pin Values={string.Join(",", pins.Select(F))} Inner=HB1");
+            _analyses.Add("analysis ENVP type=env Stop=0.1e-3 Step=auto Accuracy=draft MaxHarm=1 Segments=auto Warmup=auto Start=0 Tol=1e-6 SaveWaveforms=no");
+            _meas.Add("AMAM_sim = dB(HB1.V(\"out\",1)) + 10 - Pin");
+            _meas.Add($"AMAM_calc = {SweepCube("Pin", pins, k => G(ChainTransmit.StageCwDbm(row, pins[k]) - pins[k]))}");
+            _meas.Add("AMAM_err = AMAM_sim - AMAM_calc");
+            _meas.Add("AMPM_sim = phase(HB1.V(\"out\",1)) - phase(HB1.V(\"in\",1))");
+            _meas.Add($"AMPM_calc = {SweepCube("Pin", pins, k => G(row.Law?.AmPmDeg(pins[k]) ?? 0))}");
+            _meas.Add("AMPM_err = AMPM_sim - AMPM_calc");
+            _meas.Add("Pout_sim = AMAM_sim + Pin");
+            _meas.Add($"IP1dB_calc = {G(p1)}");
+            _meas.Add($"Comp = at(AMAM_sim,\"Pin\",{k0}) - AMAM_sim");
+            _meas.Add($"IP1dB_sim = at(Pin,\"Pin\",{ka}) + (1 - at(Comp,\"Pin\",{ka}))*(at(Pin,\"Pin\",{kb}) - at(Pin,\"Pin\",{ka}))/(at(Comp,\"Pin\",{kb}) - at(Comp,\"Pin\",{ka}))");
+            _meas.Add("IP1dB_err = IP1dB_sim - IP1dB_calc");
+            _meas.Add($"Psat_calc = {G(psat)}");
+            _meas.Add($"Ptop_calc = {G(ChainTransmit.StageCwDbm(row, pins[^1]))}");
+            _meas.Add($"Ptop_sim = at(Pout_sim,\"Pin\",{pins.Length - 1})");
+            _meas.Add("Ptop_err = Ptop_sim - Ptop_calc");
+            _meas.Add($"Pout_op_calc = {G(ChainTransmit.StageCwDbm(row, pop))}");
+            _meas.Add($"Pout_op_sim = at(Pout_sim,\"Pin\",{kop})");
+            _meas.Add("Pout_op_err = Pout_op_sim - Pout_op_calc");
+            if (ChainValue.Or(st.Get("Pdc"), 0) is var pdc && pdc > 0)
+            {
+                // An ideal amplifier draws its stated DC power at every drive: its efficiency is the power it adds over it.
+                _meas.Add($"PAE_sim = 100*(10^((Pout_sim - 30)/10) - 10^((Pin - 30)/10))/{G(pdc)}");
+                _meas.Add($"PAE_calc = {SweepCube("Pin", pins, k => G(100 * (Math.Pow(10, (ChainTransmit.StageCwDbm(row, pins[k]) - 30) / 10) - Math.Pow(10, (pins[k] - 30) / 10)) / pdc))}");
+                _meas.Add("PAE_env_sim = 100*(10^((ENVP.Pavg_dBm[\"Iout\"] - 30)/10) - 10^((Pop - 30)/10))/" + G(pdc));
+            }
+            _meas.Add("Penv_sim = ENVP.Pavg_dBm[\"Iout\"]");
+            _meas.Add("ACLR_L_sim = ENVP.ACLR[\"Iout\", 0, \"ACPR1L\"]");
+            _meas.Add("ACLR_U_sim = ENVP.ACLR[\"Iout\", 0, \"ACPR1U\"]");
+            _meas.Add("EVM_sim = ENVP.EVM_pct[\"Iout\", 0]");
+            return Text();
+        }
+
+        /// <summary>
+        /// An IQ modulator, of library blocks (<see cref="IqModSpec"/>): a 90° hybrid splitting the input into I and Q (its
+        /// fourth port terminated), the LO from a P1Tone 3.01 dB above Plo so each mixer is driven at its stated Plo, split
+        /// by a 2-way Combiner whose second path is the quadrature — +90° for the upper sideband, −90° for the lower, plus
+        /// the phase error — two Mixers, the Q one's gain the I one's plus the imbalance, and a 2-way Combiner summing them.
+        /// Returns the parts a noise run lists: the input hybrid's termination and the mixers.
+        /// </summary>
+        /// <param name="isolate">An isolator after it, the bench's: its output node then sees a match, so that node's
+        /// voltage is the forward wave at its image and LO, which the filter after it reflects.</param>
+        private List<string> IqMod(ChainStage s, string name, string a, string b, bool isolate = false)
+        {
+            string o = isolate ? $"{name}_c" : b;
+            var iq = IqModSpec.Read(s);
+            double conv = ChainValue.Or(s.Get("ConvGain"), 0), flo = ChainValue.Or(s.Get("Flo"), 0);
+            string nf = s.Get("NF").Trim() is { Length: > 0 } x ? $"  NF={Param(new ChainParam("NF", "", "dB"), x)}  NFType={s.Get("NFType").Trim()}" : "";
+            string Mix(double extra) => $"ConvGain={G(conv + extra)} dB  Plo={F(iq.PloDbm)} dBm  IIP3={Param(new ChainParam("IIP3", "", "dBm"), s.Get("IIP3"))}" +
+                                        $"{nf}  IsoLO_IF={F(iq.IsoLoIfDb)} dB";
+            // The Combiner's path phase is e^(jφ), the hybrid's coupled port +90°: the sum sideband adds with the LO's Q
+            // path at +90°, the difference with it at −90°.
+            double phase = (ChainParts.IsUpper(s) ? 90 : -90) + iq.PhaseImbDeg;
+            Line($"Coupler:{name}_HI  {a}  0  {name}_i  0  {name}_q  0  {name}_t  0  Coupling=3.0103 dB  Phase=90 deg  Z0=50 Ohm");
+            Line($"R:{name}_RT  {name}_t  0  R=50 Ohm");
+            Line($"P1Tone:LO_{name}  {name}_lo  0  Freq={G(flo)}  Pavl={G(iq.PloDbm + 10 * Math.Log10(2))} dBm  Z=50 Ohm");
+            // The LO's split is a Combiner used from its common port: its path phases are flat and it stays passive at any
+            // phase, where a 90° hybrid set off quadrature does not.
+            Line($"Combiner:{name}_HL  {name}_lo  0  {name}_li  0  {name}_lq  0  N=2  Phase[2]={G(phase)} deg  Z0=50 Ohm");
+            Line($"Mixer:{name}_I  {name}_i  0  {name}_li  0  {name}_oi  0  {Mix(0)}");
+            Line($"Mixer:{name}_Q  {name}_q  0  {name}_lq  0  {name}_oq  0  {Mix(iq.GainImbDb)}");
+            Line($"Combiner:{name}_S  {o}  0  {name}_oi  0  {name}_oq  0  N=2  Z0=50 Ohm");
+            if (isolate)
+            {
+                Line($"Circulator:ISO_{name}  {o}  0  {b}  0  ISO_{name}_t  0  Direction=CW");
+                Line($"R:ISO_{name}_R  ISO_{name}_t  0  R=50 Ohm");
+            }
+            double x0 = _x;
+            Place($"{name}_HI", x0 + 300, _y + 100);
+            Place($"{name}_RT", x0 + 600, _y + 900);
+            Place($"{name}_I", x0 + 1300, _y);
+            Place($"{name}_Q", x0 + 1300, _y + 700);
+            Place($"LO_{name}", x0 + 300, _y + 1900);
+            Place($"{name}_HL", x0 + 900, _y + 1600, mirror: true);
+            Place($"{name}_S", x0 + 2200, _y + 300);
+            _x = x0 + 2500 + Lead;
+            if (isolate) { Inline($"ISO_{name}", 300); Place($"ISO_{name}_R", _x - Lead - 300, _y + 900); }
+            return [$"{name}_RT", $"{name}_I", $"{name}_Q"];
         }
 
     }

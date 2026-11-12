@@ -22,9 +22,9 @@ public sealed partial class ChainParamViewModel(ChainParam param, string value, 
     /// ("2.35 GHz"), so none is shown for one.</summary>
     public string Unit => param.Unit is "dB" or "dBm" or "deg" or "dBi" or "%" or "dB/km" ? param.Unit : "";
 
-    /// <summary>A budget-only value left blank is not written into the stage, so a chain that does not use one saves as
-    /// it always did.</summary>
-    public bool OmitWhenBlank => param.BudgetOnly && string.IsNullOrWhiteSpace(Value);
+    /// <summary>A budget-only value left blank, or a value that is what the part means without it (an Amplifier's Tanh
+    /// law), is not written into the stage, so a chain that does not use one saves as it always did.</summary>
+    public bool OmitWhenBlank => param.Unstated(Value);
     public string Tip => param.Help.Length > 0 ? $"{param.Name}: {param.Help}" : param.Name;
     public IReadOnlyList<string>? Options => param.Options;
     public bool HasOptions => param.Options is { Count: > 0 };
@@ -535,7 +535,29 @@ public sealed partial class ChainBudgetViewModel : ObservableObject
         NfAllowanceDb = Parse(Rx("NfAllowance"), 1, double.NaN),
         RxBackoffDb = Parse(Rx("RxBackoff"), 1, double.NaN),
         Sweeps = ParseSweeps(),
+        Direction = Tr("Direction").Trim() is { Length: > 0 } dir ? dir : ChainDesign.Receive,
+        RxBandOffsetHz = Tr("RxOffset").Trim().Length == 0 ? null : Mhz(Tr("RxOffset")),
+        RxBandHz = Mhz(Tr("RxBandwidth")),
     };
+
+    /// <summary>A frequency typed in MHz when bare ("200"), or with its unit ("200 MHz"); NaN when it is neither.</summary>
+    private static double Mhz(string text) =>
+        double.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out double v) ? v * 1e6
+        : ChainValue.TryParse(text, out double hz) ? hz : double.NaN;
+
+    /// <summary>The chain's direction, and a transmit chain's receive band: its centre's offset from the carrier at the
+    /// output and its width, each MHz.</summary>
+    public static readonly IReadOnlyList<ChainParam> TransmitParameters =
+    [
+        new("Direction", ChainDesign.Receive, "", Numeric: false, Options: [ChainDesign.Receive, ChainDesign.Transmit],
+            Help: "Receive: the chain read at its input, its noise, sensitivity and range. Transmit: the chain driven at its input and read at its output, its power, back-off, ACLR and noise floor"),
+        new("RxOffset", "", "", BlankAllowed: true, Help: "a transmit chain's receive band: its centre's offset from the carrier at the output, MHz; blank: none"),
+        new("RxBandwidth", "20", "", Help: "the receive band's width, MHz"),
+    ];
+
+    public ObservableCollection<ChainParamViewModel> TransmitInputs { get; } = [];
+
+    private string Tr(string name) => TransmitInputs.FirstOrDefault(p => p.Name == name)?.Value ?? "";
 
     // ── the link, and the receiver's readout inputs: rows of parameters as a stage's are ──
 
@@ -556,7 +578,7 @@ public sealed partial class ChainBudgetViewModel : ObservableObject
     public ObservableCollection<ChainParamViewModel> LinkPath { get; } = [];
     public ObservableCollection<ChainParamViewModel> ReceiverInputs { get; } = [];
     public ObservableCollection<ChainParamViewModel> SweepInputs { get; } = [];
-    private IEnumerable<ChainParamViewModel> LinkParams => LinkTx.Concat(LinkPath).Concat(ReceiverInputs).Concat(SweepInputs);
+    private IEnumerable<ChainParamViewModel> LinkParams => LinkTx.Concat(LinkPath).Concat(ReceiverInputs).Concat(SweepInputs).Concat(TransmitInputs);
 
     /// <summary>The sweeps, one line each as the Blockers are: "from, to, points".</summary>
     public static readonly IReadOnlyList<ChainParam> SweepParameters =
@@ -607,13 +629,19 @@ public sealed partial class ChainBudgetViewModel : ObservableObject
         Fill(LinkPath, ChainLink.PathParameters, "Path.", d.Link?.Path);
         Fill(ReceiverInputs, ReceiverParameters, "Rx.", rx);
         Fill(SweepInputs, SweepParameters, "Sw.", d.Sweeps.GroupBy(s => s.Of).ToDictionary(g => g.Key, g => FormatSweep(g.First())));
+        Fill(TransmitInputs, TransmitParameters, "Tr.", new Dictionary<string, string>
+        {
+            ["Direction"] = d.IsTransmit ? ChainDesign.Transmit : ChainDesign.Receive,
+            ["RxOffset"] = d.RxBandOffsetHz is { } o ? N(o / 1e6) : "", ["RxBandwidth"] = N(d.RxBandHz / 1e6),
+        });
     }
 
     /// <summary>The rows' values, by row and name, as an undo step keeps them.</summary>
     private string LinkSnapshot() => System.Text.Json.JsonSerializer.Serialize(
         LinkTx.Select(p => ("Tx." + p.Name, p.Value)).Concat(LinkPath.Select(p => ("Path." + p.Name, p.Value)))
               .Concat(ReceiverInputs.Select(p => ("Rx." + p.Name, p.Value)))
-              .Concat(SweepInputs.Select(p => ("Sw." + p.Name, p.Value))).ToDictionary(x => x.Item1, x => x.Item2));
+              .Concat(SweepInputs.Select(p => ("Sw." + p.Name, p.Value)))
+              .Concat(TransmitInputs.Select(p => ("Tr." + p.Name, p.Value))).ToDictionary(x => x.Item1, x => x.Item2));
 
     /// <summary>An edit that is an undo step of its own: a stage added, inserted, removed or moved.</summary>
     private void Changed() => Edited(null);
@@ -813,12 +841,22 @@ public sealed partial class ChainBudgetViewModel : ObservableObject
         Notes = string.Join("\n", r.Notes.Concat(ChainLink.Power(r)?.Note is { } dc ? [dc] : []).Concat(sweepNotes));
         Summary = r.Totals is not { } t ? "" :
             $"Gain {D(t.GainDb)} dB    NF {D(t.NfDb)} dB (Te {t.TeK:0.#} K)    IIP3 {D(t.Iip3Dbm)} dBm    OIP3 {D(t.Oip3Dbm)} dBm    " +
-            $"IP1dB {D(t.Ip1dbDbm)} dBm    OP1dB {D(t.Op1dbDbm)} dBm    Pout {D(t.PoutDbm)} dBm\n" +
-            $"Thermal floor {D(t.ThermalFloorDbm)} dBm    Output noise {D(t.NoiseOutDbm)} dBm    MDS {D(t.MdsDbm)} dBm    " +
-            $"Sensitivity {D(t.SensitivityDbm)} dBm    SNR {D(t.SnrDb)} dB    SFDR {D(t.SfdrDb)} dB" +
+            $"IP1dB {D(t.Ip1dbDbm)} dBm    OP1dB {D(t.Op1dbDbm)} dBm    Pout {D(t.PoutDbm)} dBm" +
+            // A transmit chain's input is its drive: no sensitivity or range to read there, its own line below instead.
+            (r.Design is { IsTransmit: true } ? "" :
+            $"\nThermal floor {D(t.ThermalFloorDbm)} dBm    Output noise {D(t.NoiseOutDbm)} dBm    MDS {D(t.MdsDbm)} dBm    " +
+            $"Sensitivity {D(t.SensitivityDbm)} dBm    SNR {D(t.SnrDb)} dB    SFDR {D(t.SfdrDb)} dB") +
             (t.ArrayGainDb > 0 ? $"    Array gain {D(t.ArrayGainDb)} dB" : "") +
             (Math.Abs(t.OutputFrequencyHz - d.FrequencyHz) > 0 ? $"    Output at {t.OutputFrequencyHz / 1e6:0.###} MHz" : "") +
-            (ChainCapacity.Read(r) is { } o
+            (ChainTransmit.Read(r) is { } x
+                ? $"\nTransmit: Pout {D(x.PoutDbm)} dBm, CW {D(x.PoutCwDbm)} dBm ({D(x.CompressionDb)} dB compressed)    " +
+                  $"Back-off {D(x.BackoffP1dbDb)} dB from OP1dB, {D(x.BackoffPsatDb)} dB from Psat {D(x.PsatDbm)} dBm    " +
+                  $"ACLR {D(x.AclrDbc)} dBc    Noise {D(x.NoisePsdDbmHz)} dBm/Hz" +
+                  (double.IsFinite(x.RxNoiseDbm) ? $"    In the receive band {D(x.RxNoiseDbm)} dBm ({D(x.RxNoisePsdDbmHz)} dBm/Hz)" : "") +
+                  (double.IsFinite(x.ImageDbc) ? $"    Image {D(x.ImageDbc)} dBc" : "") +
+                  (double.IsFinite(x.LoLeakDbc) ? $"    LO {D(x.LoLeakDbc)} dBc" : "")
+                : "") +
+            (r.Design is { IsTransmit: false } && ChainCapacity.Read(r) is { } o
                 ? $"\nNF of the array {D(o.NfArrayDb)} dB    Margin {D(o.MarginDb)} dB    " +
                   $"Rate {ChainCapacity.Rate(o.RateBps)}" + (o.Streams > 1 ? $" over {o.Streams} streams" : "") + $"    Ceiling {D(o.CeilingDbm)} dBm"
                 : "") +
@@ -827,7 +865,8 @@ public sealed partial class ChainBudgetViewModel : ObservableObject
                   $"Received {D(l.PrxDbm)} dBm per element    Input {D(rd.InputPowerDbm)} dBm"
                 : "") +
             (ChainLink.Power(r) is { TotalW: > 0 } pw
-                ? $"\nDC power: transmit {ChainLink.Watts(pw.TxW)}, receive {ChainLink.Watts(pw.RxW)}, total {ChainLink.Watts(pw.TotalW)}    " +
+                ? r.Design is { IsTransmit: true } ? $"\nDC power {ChainLink.Watts(pw.TotalW)}"
+                : $"\nDC power: transmit {ChainLink.Watts(pw.TxW)}, receive {ChainLink.Watts(pw.RxW)}, total {ChainLink.Watts(pw.TotalW)}    " +
                   $"{D(pw.EnergyPerBitJ * 1e12)} pJ/bit"
                 : "");
         if (r.Totals is null) return false;
@@ -926,7 +965,7 @@ public sealed partial class ChainBudgetViewModel : ObservableObject
             row.Glyphs = Glyphs(st);
             row.Extra = st.Part switch
             {
-                ChainParts.Mixer => $"LO {ChainValue.Or(st.Get("Flo"), 0) / 1e6:0.###} MHz",
+                ChainParts.Mixer or ChainParts.IqMod => $"LO {ChainValue.Or(st.Get("Flo"), 0) / 1e6:0.###} MHz",
                 ChainParts.PhaseShifter => $"φ {st.Get("Phase")}°",
                 ChainParts.Combiner => ChainParts.ReadCombiner(st).Describe()
                                        + (ChainValue.Or(st.Get("Steer"), 0) != 0 ? $", steer {st.Get("Steer")}°" : ""),
@@ -972,7 +1011,7 @@ public sealed partial class ChainBudgetViewModel : ObservableObject
         }
         var kind = st.Part switch
         {
-            ChainParts.Mixer => SymbolKind.Mixer, ChainParts.Atten => SymbolKind.Atten, ChainParts.Filter => SymbolKind.Filter,
+            ChainParts.Mixer or ChainParts.IqMod => SymbolKind.Mixer, ChainParts.Atten => SymbolKind.Atten, ChainParts.Filter => SymbolKind.Filter,
             ChainParts.Switch => SymbolKind.Switch, ChainParts.Circulator => SymbolKind.Circulator,
             ChainParts.Coupler => SymbolKind.Coupler, ChainParts.PhaseShifter => SymbolKind.Tline,
             ChainParts.Limiter => SymbolKind.Diode, ChainParts.Splitter => SymbolKind.Combiner,
@@ -1000,7 +1039,7 @@ public sealed partial class ChainBudgetViewModel : ObservableObject
             ChainParts.Amp => "AMP", ChainParts.Mixer => "MIX", ChainParts.Atten => "ATT", ChainParts.Filter => "FLT",
             ChainParts.Switch => "SW", ChainParts.Circulator => "ISO", ChainParts.Coupler => "CPL",
             ChainParts.PhaseShifter => "PS", ChainParts.Limiter => "LIM", ChainParts.Splitter => "SPL",
-            ChainParts.Canceller => "CANC", ChainParts.Snp => "SNP", _ => "CMB",
+            ChainParts.Canceller => "CANC", ChainParts.Snp => "SNP", ChainParts.IqMod => "IQ", _ => "CMB",
         };
         int n = 1;
         while (Stages.Any(s => s.Name.Equals($"{stem}{n}", StringComparison.OrdinalIgnoreCase))) n++;

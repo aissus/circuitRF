@@ -12,17 +12,21 @@
 //   Combiner      Direct: one N:1 Combiner; Tree: log2(N) levels of 2:1 Combiners; Active: an Amp after each
 //   Canceller     a Coupler whose isolated port takes a reference path (an Amp for the amplitude, a Combiner path for
 //                 a flat phase, a TLIN for the delay) that subtracts a copy of the interference from the main path
+//   IQMod         a 90° hybrid splitting the input into I and Q, an LO split into its quadrature by a Combiner, two
+//                 Mixers and a Combiner summing them: an image-reject up-converter (IqModSpec)
 //
 // And ONE IS DATA: an SnP stage is a Touchstone file on the library's SnP block, its budget read from the file at the
 // stage's frequency (ChainSnp).
 //
 // The budget of each is closed form. A matched passive part at T0 has NF = its loss. An ideal Amp's and Mixer's
 // 1 dB compression point is its tanh limiter's own, IIP3 − 8.9625 dB (src/Core/Devices/ThirdOrderLimiter.cs), which is
-// what the transfer's simulation then measures. The combiner adds 10·log10(N) of COHERENT signal gain and none of noise
+// what the transfer's simulation then measures; an Amp with a Rapp or Saleh law compresses as its law does
+// (src/Core/Devices/System/AmplifierLaw.cs), in the budget and the simulation alike. The combiner adds 10·log10(N) of COHERENT signal gain and none of noise
 // gain: N element signals in phase add in amplitude, their uncorrelated noise in power. Each variant of the combiner is
 // budgeted as the cascade of its own levels (CombinerSpec.Budget), so a tree's losses, gains, noise and intercepts
 // accumulate level by level exactly as a chain's do.
 
+using CircuitRF.Core.Devices;
 using CircuitRF.Design.Schematic;
 
 namespace CircuitRF.Design.Chain;
@@ -33,9 +37,20 @@ namespace CircuitRF.Design.Chain;
 /// <param name="IsFile">The parameter names a file, which the window offers a picker for.</param>
 /// <param name="BudgetOnly">Read by the budget and never written onto the part's netlist line (a DC power, a gain per
 /// amplifier stage).</param>
+/// <param name="Implied">What the parameter means when a stage leaves it out. A stage holding exactly this (or nothing)
+/// writes it nowhere — not into the <c>.cchain</c> from the window, nor onto the part's line — so a chain that never
+/// changes it reads and saves as it did before the parameter existed (an Amplifier's <c>Law</c>, a Mixer's
+/// <c>Sideband</c>).</param>
 public sealed record ChainParam(string Name, string Default, string Unit, bool Numeric = true, bool BlankAllowed = false,
                                 IReadOnlyList<string>? Options = null, string Help = "", bool IsFile = false,
-                                bool BudgetOnly = false);
+                                bool BudgetOnly = false, string? Implied = null)
+{
+    /// <summary>Whether <paramref name="text"/> is what the stage would mean without the parameter, so need not be
+    /// written: blank for a budget-only one, its <see cref="Implied"/> value for one that has it.</summary>
+    public bool Unstated(string? text) =>
+        string.IsNullOrWhiteSpace(text) ? BudgetOnly || Implied is not null
+        : Implied is not null && text.Trim().Equals(Implied, StringComparison.OrdinalIgnoreCase);
+}
 
 /// <summary>Where a stage sits in its chain: the frequency at its INPUT (the chain's, or a mixer's output after one),
 /// Hz, and the directory a relative file reference resolves against (null for a chain that has none).</summary>
@@ -49,7 +64,12 @@ public sealed record ChainStageContext(double FrequencyHz, string? BaseDirectory
 /// <param name="Ip1dbDbm">Input-referred 1 dB compression point, dBm; +∞ for a linear stage.</param>
 /// <param name="ArrayN">N for a Combiner, 1 otherwise.</param>
 public sealed record StageBudget(double GainDb, double NoiseGainDb, double NfDb, double Iip3Dbm, double Ip1dbDbm, int ArrayN,
-                                 IReadOnlyList<string> Notes);
+                                 IReadOnlyList<string> Notes)
+{
+    /// <summary>An Amplifier's bandpass law (Rapp, Saleh), which sets its compression, saturation and AM-PM; null for
+    /// every other stage, which compresses as a tanh limiter of its intercept does, or not at all.</summary>
+    public AmplifierLaw? Law { get; init; }
+}
 
 /// <summary>A chain part: its token in a <c>.cchain</c>, what it is called, whether the library has it as one block, and
 /// its budget.</summary>
@@ -64,7 +84,51 @@ public static class ChainParts
     public const string Amp = "Amp", Mixer = "Mixer", Atten = "Atten", Filter = "Filter", Switch = "Switch",
                         Circulator = "Circulator", Coupler = "Coupler", PhaseShifter = "PhaseShifter",
                         Limiter = "Limiter", Splitter = "Splitter", Combiner = "Combiner", Canceller = "Canceller",
-                        Snp = "SnP";
+                        Snp = "SnP", IqMod = "IQMod";
+
+    /// <summary>A Mixer's or an IQ modulator's two sidebands: the difference |f − Flo| and the sum f + Flo.</summary>
+    public const string Lower = "Lower", Upper = "Upper";
+
+    /// <summary>True for a stage that moves the frequency: a Mixer, an IQ modulator.</summary>
+    public static bool Converts(string part) => part is Mixer or IqMod;
+
+    /// <summary>The frequency after <paramref name="s"/>, Hz, for <paramref name="fHz"/> at its input: a converter's
+    /// sideband (|f − Flo| or f + Flo), every other stage's input.</summary>
+    public static double OutputHz(ChainStage s, double fHz)
+    {
+        if (!Converts(s.Part)) return fHz;
+        double flo = ChainValue.Or(s.Get("Flo"), 0);
+        return IsUpper(s) ? fHz + flo : Math.Abs(fHz - flo);
+    }
+
+    /// <summary>Whether a converter takes its sum sideband, f + Flo.</summary>
+    public static bool IsUpper(ChainStage s) => s.Get("Sideband").Trim().Equals(Upper, StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>The Amplifier's law as a stage states it (<c>Law</c>, <c>Psat</c>, <c>P</c>, <c>PhiSat</c>,
+    /// <c>PhiMax</c>), read; null for the tanh law or a linear one.</summary>
+    public static AmplifierLaw? LawOf(ChainStage s)
+    {
+        if (s.Part != Amp || !Enum.TryParse<AmplifierLawKind>(s.Get("Law").Trim(), true, out var k) || k == AmplifierLawKind.Tanh) return null;
+        double g = Num(s, "Gain"), psat = Num(s, "Psat", 30);
+        if (psat >= AmplifierLaw.OffDbm) return null;
+        return k == AmplifierLawKind.Rapp ? AmplifierLaw.Rapp(psat, g, Num(s, "P", 2))
+                                          : AmplifierLaw.Saleh(psat, g, Num(s, "PhiSat"), Num(s, "PhiMax"));
+    }
+
+    /// <summary>Why a stage's law cannot be read, or null.</summary>
+    public static string? LawRefusal(ChainStage s)
+    {
+        if (s.Part != Amp) return null;
+        string law = s.Get("Law").Trim();
+        if (law.Length > 0 && !Enum.TryParse<AmplifierLawKind>(law, true, out _))
+            return $"Law = '{law}' is not a law; the laws are Tanh, Rapp and Saleh.";
+        if (law.Equals(nameof(AmplifierLawKind.Rapp), StringComparison.OrdinalIgnoreCase) && !(Num(s, "P", 2) > 0))
+            return $"a Rapp law's smoothness P is above 0, and it is {s.Get("P").Trim()}.";
+        if (law.Equals(nameof(AmplifierLawKind.Saleh), StringComparison.OrdinalIgnoreCase)
+            && AmplifierLaw.SalehPhaseRefusal(Num(s, "PhiSat"), Num(s, "PhiMax")) is { } why)
+            return why;
+        return null;
+    }
 
     /// <summary>tanh's 1 dB compression point below its input intercept, dB — the ideal Amp's and Mixer's own
     /// (<c>ThirdOrderLimiter</c>; system-components.md, Amplifier).</summary>
@@ -92,6 +156,27 @@ public static class ChainParts
     }
 
     private static double Num(ChainStage s, string key, double fallback = 0) => ChainValue.Or(s.Get(key), fallback);
+
+    /// <summary>A Mixer's or an IQ modulator's input intercept, dBm; +∞ at the Mixer's linear sentinel.</summary>
+    private static double MixerIip3(ChainStage s) => Num(s, "IIP3", 100) is var ip && ip >= MixerLinearDbm ? double.PositiveInfinity : ip;
+
+    /// <summary>A Mixer's single-sideband NF, dB, from its NF and NFType; a blank one a noiseless multiplier's.</summary>
+    private static double MixerNf(ChainStage s, List<string> notes, string what)
+    {
+        if (s.Get("NF").Trim().Length == 0)
+        {
+            notes.Add($"{s.Name}: NF is blank, so the {what} is a noiseless multiplier: 3.01 dB single-sideband.");
+            return NoiselessMixerSsbDb;
+        }
+        double nf = Num(s, "NF");
+        if (s.Get("NFType").Trim().Equals("dsb", StringComparison.OrdinalIgnoreCase)) nf += NoiselessMixerSsbDb;
+        if (nf < NoiselessMixerSsbDb)
+        {
+            notes.Add($"{s.Name}: an SSB NF below 3.01 dB is below a noiseless mixer's; it is taken as 3.01 dB, as the run takes it.");
+            nf = NoiselessMixerSsbDb;
+        }
+        return nf;
+    }
 
     private static StageBudget Passive(double lossDb, params string[] notes)
         => new(-lossDb, -lossDb, lossDb, double.PositiveInfinity, double.PositiveInfinity, 1, notes);
@@ -124,43 +209,69 @@ public static class ChainParts
     [
         new(Amp, "Amplifier", true,
             [Reg(SymbolKind.Amp, "Gain"), Reg(SymbolKind.Amp, "NF", blank: true, help: "blank: noiseless"),
-             Reg(SymbolKind.Amp, "IP3"), Reg(SymbolKind.Amp, "IP3Ref", numeric: false, options: ["Output", "Input"]), GainPerStage],
-            "An ideal gain block. P1dB follows from IP3: IIP3 − 8.96 dB. Any gain, negative included, so it is also the " +
-            "stage for any other block that has a gain, a noise figure and an intercept.",
+             Reg(SymbolKind.Amp, "IP3"), Reg(SymbolKind.Amp, "IP3Ref", numeric: false, options: ["Output", "Input"]), GainPerStage,
+             new("Law", "Tanh", "", Numeric: false, Options: ["Tanh", "Rapp", "Saleh"], Implied: "Tanh",
+                 Help: "the compression law: Tanh on IP3; Rapp or Saleh on Psat, which then replaces IP3"),
+             new("Psat", "30", "dBm", Implied: "30", Help: "Rapp or Saleh: the saturated output power"),
+             new("P", "2", "", Implied: "2", Help: "Rapp: the smoothness p; 1 soft, 3 or more near a hard clip"),
+             new("PhiSat", "0", "deg", Implied: "0", Help: "Saleh: the AM-PM at the drive that saturates it"),
+             new("PhiMax", "0", "deg", Implied: "0", Help: "Saleh: the AM-PM's limit at large drive, beyond PhiSat")],
+            "An ideal gain block. With the Tanh law P1dB follows from IP3: IIP3 − 8.96 dB. With a Rapp or Saleh law the " +
+            "compression is the law's on Psat. Any gain, negative included, so it is also the stage for any other block " +
+            "that has a gain, a noise figure and an intercept.",
             (s, _) =>
             {
                 double g = Num(s, "Gain"), ip = Num(s, "IP3", 40);
                 bool blankNf = s.Get("NF").Trim().Length == 0;
+                List<string> notes = blankNf ? [$"{s.Name}: NF is blank, so the amplifier is noiseless."] : [];
+                if (LawOf(s) is { } law)
+                {
+                    if (law.Kind == AmplifierLawKind.Rapp)
+                        notes.Add($"{s.Name}: a Rapp law has no third-order term at p ≠ 1, so its intercept is the cubic's with " +
+                                  "the same 1 dB compression point, IP1dB + 9.64 dB.");
+                    return new StageBudget(g, g, blankNf ? 0 : Num(s, "NF"), law.Iip3Dbm, law.Ip1dbDbm, 1, notes) { Law = law };
+                }
                 double iip3 = ip >= AmpLinearDbm ? double.PositiveInfinity
                             : s.Get("IP3Ref").Trim().Equals("Input", StringComparison.OrdinalIgnoreCase) ? ip : ip - g;
-                return new(g, g, blankNf ? 0 : Num(s, "NF"), iip3, P1(iip3), 1,
-                           blankNf ? [$"{s.Name}: NF is blank, so the amplifier is noiseless."] : []);
+                return new(g, g, blankNf ? 0 : Num(s, "NF"), iip3, P1(iip3), 1, notes);
             }),
         new(Mixer, "Mixer", true,
             [Reg(SymbolKind.Mixer, "ConvGain"), Reg(SymbolKind.Mixer, "NF", blank: true, help: "SSB or DSB, as NFType says"),
              Reg(SymbolKind.Mixer, "NFType", numeric: false, options: ["ssb", "dsb"]), Reg(SymbolKind.Mixer, "IIP3"),
              Reg(SymbolKind.Mixer, "Plo"),
-             new("Flo", "2.1 GHz", "Hz", Help: "the LO frequency; the output is the difference |f − Flo|")],
-            "An ideal multiplier, down-converting to |f − Flo|. Its noise is its single-sideband figure: the image is " +
-            "taken as terminated at T0 and filtered of every earlier stage's noise.",
+             new("Flo", "2.1 GHz", "Hz", Help: "the LO frequency; the output is the difference |f − Flo|, or the sum"),
+             new("Sideband", Lower, "", Numeric: false, Options: [Lower, Upper], BudgetOnly: true, Implied: Lower,
+                 Help: "the sideband the chain goes on with: Lower, the difference |f − Flo|; Upper, the sum f + Flo")],
+            "An ideal multiplier: the chain goes on at its difference |f − Flo|, or at its sum f + Flo. Its noise is its " +
+            "single-sideband figure: the image is taken as terminated at T0 and filtered of every earlier stage's noise.",
             (s, _) =>
             {
-                double g = Num(s, "ConvGain"), ip = Num(s, "IIP3", 100);
                 var notes = new List<string>();
-                double nf;
-                if (s.Get("NF").Trim().Length == 0) { nf = NoiselessMixerSsbDb; notes.Add($"{s.Name}: NF is blank, so the mixer is a noiseless multiplier: 3.01 dB single-sideband."); }
-                else
-                {
-                    nf = Num(s, "NF");
-                    if (s.Get("NFType").Trim().Equals("dsb", StringComparison.OrdinalIgnoreCase)) nf += NoiselessMixerSsbDb;
-                    if (nf < NoiselessMixerSsbDb)
-                    {
-                        notes.Add($"{s.Name}: an SSB NF below 3.01 dB is below a noiseless mixer's; it is taken as 3.01 dB, as the run takes it.");
-                        nf = NoiselessMixerSsbDb;
-                    }
-                }
-                double iip3 = ip >= MixerLinearDbm ? double.PositiveInfinity : ip;
-                return new(g, g, nf, iip3, P1(iip3), 1, notes);
+                double iip3 = MixerIip3(s);
+                return new(Num(s, "ConvGain"), Num(s, "ConvGain"), MixerNf(s, notes, "mixer"), iip3, P1(iip3), 1, notes);
+            }),
+        new(IqMod, "IQ modulator (composed)", false,
+            [Reg(SymbolKind.Mixer, "ConvGain"), Reg(SymbolKind.Mixer, "NF", blank: true, help: "each mixer's; SSB or DSB, as NFType says"),
+             Reg(SymbolKind.Mixer, "NFType", numeric: false, options: ["ssb", "dsb"]), Reg(SymbolKind.Mixer, "IIP3"),
+             Reg(SymbolKind.Mixer, "Plo"),
+             new("Flo", "3.4 GHz", "Hz", Help: "the LO frequency"),
+             new("Sideband", Upper, "", Numeric: false, Options: [Lower, Upper],
+                 Help: "the sideband it makes: Upper, Flo + f; Lower, Flo − f. The other is its image"),
+             new("GainImb", "0", "dB", Help: "the Q arm's gain over the I arm's"),
+             new("PhaseImb", "0", "deg", Help: "the LO quadrature's error from 90°"),
+             Reg(SymbolKind.Mixer, "IsoLO_IF", help: "each mixer's LO-to-output isolation: the LO feedthrough")],
+            "An image-reject up-converter of library blocks: a 90° hybrid splits the input into I and Q, a 2-way Combiner " +
+            "splits the LO into its quadrature, two Mixers convert, and a second Combiner sums them, so the wanted sideband " +
+            "adds and its image cancels. Its " +
+            "gain is a mixer's ConvGain; its intercept and compression a mixer's, 3.01 dB up for the split.",
+            (s, _) =>
+            {
+                var notes = new List<string>();
+                double iip3 = MixerIip3(s);
+                if (double.IsFinite(iip3)) iip3 += NoiselessMixerSsbDb;   // each mixer sees half the input
+                var iq = IqModSpec.Read(s);
+                double g = Num(s, "ConvGain") + iq.WantedDb;
+                return new(g, g, MixerNf(s, notes, "IQ modulator"), iip3, P1(iip3), 1, notes);
             }),
         new(Atten, "Attenuator", true, [Reg(SymbolKind.Atten, "Loss")],
             "A matched pad. Its noise figure is its loss.", (s, _) => Passive(Num(s, "Loss"))),
@@ -447,4 +558,37 @@ public sealed record CancellerSpec(double CouplingDb, double IlDb, double PintDb
 
     /// <summary>The residual interference at the canceller's output, dBm.</summary>
     public double ResidualDbm => PintDbm - ThroughLossDb - DepthDb;
+}
+
+/// <summary>
+/// An IQ modulator stage read: its two arms' imbalance and its LO feedthrough, and what they make at its output.
+///
+/// <para>The input's 90° hybrid gives the Q arm the input's quadrature, the LO's split (a Combiner path at 90° plus the
+/// error φ) the LO's, and the Q mixer's conversion gain is the I mixer's plus the imbalance; the 2-way Combiner sums the
+/// two. With g = 10^(GainImb/20), relative to one balanced mixer the wanted sideband comes out at |1 + g·e^(jφ)|²/4 and
+/// its image at |1 − g·e^(jφ)|²/4, so the image rejection is |1 + g·e^(jφ)|² / |1 − g·e^(jφ)|² — infinite when balanced.
+/// Each mixer is driven at its Plo (the LO's source 3.01 dB above it, for the split) and leaks Plo − IsoLO_IF into its
+/// output, the Q arm's at the LO's quadrature, ±90° + φ (+ for the upper sideband); the combiner adds the two at half each:
+/// Plo − IsoLO_IF + 10·log10(1 ∓ sin φ) at the output, the two in quadrature when φ = 0.</para>
+/// </summary>
+public sealed record IqModSpec(double GainImbDb, double PhaseImbDeg, double PloDbm, double IsoLoIfDb, bool Upper = true)
+{
+    public static IqModSpec Read(ChainStage s) => new(
+        ChainValue.Or(s.Get("GainImb"), 0), ChainValue.Or(s.Get("PhaseImb"), 0),
+        ChainValue.Or(s.Get("Plo"), 7), ChainValue.Or(s.Get("IsoLO_IF"), 200), ChainParts.IsUpper(s));
+
+    private System.Numerics.Complex Ge => System.Numerics.Complex.FromPolarCoordinates(Math.Pow(10, GainImbDb / 20), PhaseImbDeg * Math.PI / 180);
+
+    /// <summary>The wanted sideband against one balanced mixer's conversion, dB: 0 when balanced.</summary>
+    public double WantedDb => 20 * Math.Log10((1 + Ge).Magnitude / 2);
+
+    /// <summary>The image against one balanced mixer's conversion, dB; −∞ when balanced.</summary>
+    public double ImageDb => (1 - Ge).Magnitude is var m && m > 0 ? 20 * Math.Log10(m / 2) : double.NegativeInfinity;
+
+    /// <summary>The image rejection, dB: the wanted sideband over its image.</summary>
+    public double ImageRejectionDb => WantedDb - ImageDb;
+
+    /// <summary>The LO at the output, dBm; −∞ at the Mixer's isolation sentinel.</summary>
+    public double LoLeakDbm => IsoLoIfDb >= 150 ? double.NegativeInfinity
+        : PloDbm - IsoLoIfDb + 10 * Math.Log10(1 - (Upper ? 1 : -1) * Math.Sin(PhaseImbDeg * Math.PI / 180));
 }
