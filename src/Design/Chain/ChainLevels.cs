@@ -79,7 +79,8 @@ public static class ChainLevels
 
     /// <summary>
     /// A stage's gain at a frequency other than the chain's, dB, and the frequency after it. A filter's is its own
-    /// response there (<see cref="FilterNetwork"/>, the model the Filter block simulates with), IL included; a mixer
+    /// response there (<see cref="FilterNetwork"/>, the model the Filter block simulates with), IL included, and −∞ where
+    /// it passes nothing; a mixer
     /// moves the frequency to |f − Flo|; an SnP stage's is its file's |S(Out,In)| there, at the file's nearest frequency
     /// outside its range (as the block clamps it); every other part is flat, so its gain is the budget's signal gain.
     /// </summary>
@@ -94,8 +95,10 @@ public static class ChainLevels
                 var form = Enum.TryParse<NetworkForm>(s.Get("Form").Trim(), true, out var fm) ? fm : NetworkForm.Bandpass;
                 var net = FilterNetwork.Create(response, form, (int)Math.Round(V("Order", 3)), V("Fc", 1e9), V("F1", 0.9e9),
                                                V("F2", 1.1e9), V("Ripple", 0.1), V("Astop", 40), V("IL", 0));
+                // An exact zero (a band-pass at 0 Hz) passes nothing: −∞, which absorbs whatever gain follows, where a
+                // finite stand-in would come back up the chain as a level.
                 double s21 = net.At(2 * Math.PI * fHz).S21.Magnitude;
-                return s21 > 0 ? 20 * Math.Log10(s21) : -300;
+                return s21 > 0 ? 20 * Math.Log10(s21) : double.NegativeInfinity;
             case ChainParts.Mixer:
                 fHz = Math.Abs(fHz - V("Flo", 0));
                 return b.GainDb;

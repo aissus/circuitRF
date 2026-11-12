@@ -1,14 +1,18 @@
 // ================================================================
 //  ChainLevelDiagramTests.cs — the RF Chain Budget's level diagram, and the level plots' one window rule
 //
-//    - the window rule frames every finite level and drops a sentinel (the ±300 a bench writes for none, a dB of nothing);
-//    - the window's Levels plots take that window (the refill used to drop a plot's stated window and autoscale), and so do
-//      the bench's Levels display, which draws the IM3 only from the first node that has one;
-//    - the level diagram frames every level it draws, the link's EIRP and ceiling included, and no blocker a filter's zero
-//      has taken away;
+//    - the window rule: the top 10 dB over every level drawn, the bottom 20 dB under every level but the IM3, rounded out
+//      to 10 dB; only finite levels count, so an absent one (NaN, −∞) never moves it;
+//    - the window's Levels plots and the bench's Levels display take that window, clip an IM3 under it and say so in its
+//      legend, and draw the IM3 only from the first node that has one;
+//    - a filter's exact zero takes a blocker to nothing (−∞), never to a −300 dB that comes back up the chain, in the
+//      budget, the window's trace and the bench's text;
+//    - the level diagram frames every level it draws on the shipped chains, a 30-stage chain and a 200 km link, the IM3
+//      under the frame marked at its node;
 //    - the Blocks view's strip stands each node on the gap between two blocks, in an array and over two conversions, and
 //      the Copy's picture carries it;
-//    - circuitrf chain --level-diagram writes the figure as a .png or an .svg, and refuses any other kind.
+//    - circuitrf chain --level-diagram writes a .png or an .svg, makes its folder, and refuses anything else, or no file,
+//      before writing anything.
 // ================================================================
 
 using System;
@@ -32,46 +36,132 @@ public sealed class ChainLevelDiagramTests : IDisposable
     private static ChainDesign Example(string chain) => ChainDesignIo.LoadFromFile(
         Path.Combine(CircuitRF.Ui.Tests.Examples.ChainBudgetExampleTests.Workspace, chain + ChainDesignIo.Extension));
 
-    /// <summary>The superhet with a third blocker on its LO: the mixer puts it at 0 Hz, where the IF filter passes nothing,
-    /// so from there on it is the −300 dB a zero reads as.</summary>
-    private static ChainDesign SuperhetWithAnAbsentBlocker()
+    private static readonly string[] Shipped = ["Superhet", "Array", "Front End", "Dual Conversion", "26 GHz Link"];
+
+    /// <summary>The superhet with a third blocker on its LO: the mixer puts it at 0 Hz, where the IF filter passes
+    /// nothing at all. <paramref name="level"/> and a 60 dB IF amplifier: the case a −300 dB stand-in came back from.</summary>
+    private static ChainDesign SuperhetWithABlockerOnTheLo(double level = -45, string ifGain = "20")
     {
         var d = Example("Superhet");
-        d.Blockers.Add(new ChainBlocker(2.1e9 - d.FrequencyHz, -45));
+        d.Blockers.Add(new ChainBlocker(2.1e9 - d.FrequencyHz, level));
+        d.Stages.First(s => s.Name == "IFA").Parameters["Gain"] = ifGain;
         return d;
     }
 
-    private static double[] Finite(params double[] v) => [.. v.Where(x => double.IsFinite(x) && Math.Abs(x) < ChainBudgetDisplay.Sentinel)];
+    /// <summary>Thirty stages, a 3 dB amplifier and a 2 dB pad in turn: an IM3 hundreds of dB under the signal.</summary>
+    private static ChainDesign LongChain() => new()
+    {
+        Stages = [.. Enumerable.Range(0, 30).Select(i => i % 2 == 0
+            ? new ChainStage { Name = $"A{i}", Part = ChainParts.Amp, Parameters = { ["Gain"] = "3", ["NF"] = "1", ["IP3"] = "30", ["IP3Ref"] = "Output" } }
+            : new ChainStage { Name = $"P{i}", Part = ChainParts.Atten, Parameters = { ["Loss"] = "2" } })],
+    };
+
+    /// <summary>The 26 GHz link at 200 km: an IM3 near −370 dBm.</summary>
+    private static ChainDesign FarLink()
+    {
+        var d = Example("26 GHz Link");
+        d.BaseDirectory = CircuitRF.Ui.Tests.Examples.ChainBudgetExampleTests.Workspace;
+        d.Link!.Path["Distance"] = "200 km";
+        return d;
+    }
+
+    private static ChainDesign Named(string chain) => chain switch
+    {
+        "long chain" => LongChain(),
+        "far link" => FarLink(),
+        "blocker on the LO" => SuperhetWithABlockerOnTheLo(10, "60"),
+        _ => Example(chain),
+    };
+
+    private static double[] Finite(params double[] v) => [.. v.Where(double.IsFinite)];
+
+    /// <summary>What a level plot frames (all but the IM3) and the IM3 itself.</summary>
+    private static (double[] Framed, double[] Im3) Dbm(IReadOnlyList<ChainNodeLevel> lv) =>
+        (Finite([.. lv.SelectMany(n => new[] { n.SignalDbm, n.NoiseDbm, n.InterferenceDbm }.Concat(n.BlockerDbm))]),
+         Finite([.. lv.Select(n => n.Im3Dbm)]));
 
     [Fact]
-    public void TheLevelWindow_HoldsEveryFiniteLevel_AndNoSentinel()
+    public void TheLevelWindow_FramesTheBottomOnAllButTheIm3_AndOnlyOnLevels()
     {
-        var (lo, hi) = ChainBudgetDisplay.LevelWindow([-70, double.NaN, double.PositiveInfinity, -300, -3000, 300, 12.5]);
-        Assert.Equal((-80.0, 30.0), (lo, hi));
+        Assert.Equal((-130.0, 30.0), ChainBudgetDisplay.LevelWindow([-70, -107, double.NaN, double.NegativeInfinity], [-200, 12.5]));
+        // An absent level is never a number: −∞ and NaN move nothing, and a real level far down is a level.
+        Assert.Equal((-400.0, -40.0), ChainBudgetDisplay.LevelWindow([-374, -50]));
+        Assert.Equal((-10.0, 50.0), ChainBudgetDisplay.DbWindow([0, 37, double.NaN]));
         Assert.Equal((-0.5, 6.5), ChainBudgetDisplay.NodeWindow(7));
-        Assert.Equal((-10.0, 10.0), ChainBudgetDisplay.LevelWindow([double.NaN]));
+        Assert.True(ChainBudgetDisplay.Clipped([-90, -200], (-130, 30)));
+        Assert.False(ChainBudgetDisplay.Clipped([-90, double.NaN, double.NegativeInfinity], (-130, 30)));
+    }
+
+    [Theory]
+    [InlineData("Superhet")]
+    [InlineData("Array")]
+    [InlineData("Front End")]
+    [InlineData("Dual Conversion")]
+    [InlineData("26 GHz Link")]
+    [InlineData("long chain")]
+    public void TheWindowsLevelsPlots_FrameEveryLevelButAnIm3UnderTheNoise_AndSaySo(string chain)
+    {
+        var d = Named(chain);
+        var vm = new ChainBudgetViewModel(d);
+        var lv = ChainLevels.Evaluate(d, ChainBudget.Evaluate(d));
+        var (framed, im3) = Dbm(lv);
+
+        var w = vm.LevelsPlot!.Axes.Window;
+        Assert.Equal(ChainBudgetDisplay.LevelWindow(framed, im3), (w.Y, w.Y + w.Height));
+        Assert.Equal(ChainBudgetDisplay.NodeWindow(lv.Count), (w.X, w.X + w.Width));
+        Assert.All(framed, v => Assert.InRange(v, w.Y, w.Y + w.Height));
+        // The bottom is the levels', not the IM3's.
+        Assert.Equal(Math.Floor((framed.Min() - 20) / 10) * 10, w.Y);
+        var label = vm.LevelsPlot.Traces.Select(t => t.Label).First(l => l?.StartsWith("IM3", StringComparison.Ordinal) == true);
+        Assert.Equal(im3.Any(v => v < w.Y) ? ChainBudgetDisplay.Im3Clipped : "IM3", label);
+
+        var dw = vm.LevelsDbPlot!.Axes.Window;
+        Assert.Equal(ChainBudgetDisplay.DbWindow(lv.SelectMany(n => new[] { n.NfDb, n.SnrDb, n.MarginDb })), (dw.Y, dw.Y + dw.Height));
     }
 
     [Fact]
-    public void TheWindowsLevelsPlots_FrameEveryFiniteLevel_AndNoSentinel()
+    public void AFiltersZero_TakesABlockerToNothing_InTheBudgetTheTraceAndTheBench()
     {
-        var d = SuperhetWithAnAbsentBlocker();
-        var vm = new ChainBudgetViewModel(d);
-        var lv = ChainLevels.Evaluate(d, ChainBudget.Evaluate(d));
-        Assert.Contains(lv, n => n.BlockerDbm[2] <= -ChainBudgetDisplay.Sentinel);   // the sentinel is there to be dropped
+        var d = SuperhetWithABlockerOnTheLo();
+        var r = ChainBudget.Evaluate(d);
+        var lv = ChainLevels.Evaluate(d, r);
+        int ifbpf = d.Stages.FindIndex(s => s.Name == "IFBPF") + 1;
+        Assert.True(lv.Take(ifbpf).All(n => double.IsFinite(n.BlockerDbm[2])));
+        Assert.True(lv.Skip(ifbpf).All(n => double.IsNegativeInfinity(n.BlockerDbm[2])), "the zero absorbs every gain after it");
+        Assert.True(ChainLevels.ToDataSet(lv)["Blk3_dBm"].RealValues.Skip(ifbpf).All(double.IsNaN));
 
-        var dbm = Finite([.. lv.SelectMany(n => new[] { n.SignalDbm, n.NoiseDbm, n.Im3Dbm, n.InterferenceDbm }.Concat(n.BlockerDbm))]);
-        var db = Finite([.. lv.SelectMany(n => new[] { n.NfDb, n.SnrDb, n.MarginDb })]);
-        foreach (var (plot, levels) in new[] { (vm.LevelsPlot!, dbm), (vm.LevelsDbPlot!, db) })
-        {
-            var w = plot.Axes.Window;
-            Assert.All(levels, v => Assert.InRange(v, w.Y, w.Y + w.Height));
-            Assert.True(w.Y > -ChainBudgetDisplay.Sentinel, $"the window reaches {w.Y}");
-            // The stated window, not an autoscale: 10 dB beyond the levels, rounded out to 10, and half a node beyond the
-            // input and the output.
-            Assert.Equal(ChainBudgetDisplay.LevelWindow(levels), (w.Y, w.Y + w.Height));
-            Assert.Equal(ChainBudgetDisplay.NodeWindow(lv.Count), (w.X, w.X + w.Width));
-        }
+        // The window's trace stops where the blocker does, every point of it inside the frame.
+        var vm = new ChainBudgetViewModel(d);
+        var w = vm.LevelsPlot!.Axes.Window;
+        var trace = vm.LevelsPlot.Traces.Single(t => t.Label == "blocker 3");
+        var points = trace.Points.Where(q => float.IsFinite(q.Y)).ToList();
+        Assert.Equal(ifbpf, points.Count);
+        Assert.All(points, q => Assert.InRange(q.Y, w.Y, w.Y + w.Height));
+
+        // A bench needs a number: where the budget has −∞ it writes its one stand-in, never an infinity. (The superhet's
+        // own Blockers bench is left out: a blocker on the LO lands on the LO's own product. The dual-conversion receiver's
+        // second conversion takes the blocker at 0 Hz, its band-pass the zero.)
+        var dual = Example("Dual Conversion");
+        double flo = ChainValue.Or(dual.Stages.First(s => s.Part == ChainParts.Mixer).Get("Flo"), 0);
+        dual.Blockers.Add(new ChainBlocker(flo - dual.FrequencyHz, -45));
+        var benches = ChainBenches.Build(dual, ChainBudget.Evaluate(dual), "D");
+        Assert.All(benches, b => Assert.DoesNotContain("Infinity", b.Netlist, StringComparison.Ordinal));
+        if (benches.FirstOrDefault(b => b.Kind == ChainBench.Blockers && b.Netlist.Contains("Blk3_calc", StringComparison.Ordinal)) is { } zeroed)
+            Assert.Contains("-300", zeroed.Netlist, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void AStrongBlockerOnTheLo_ThroughA60dBAmplifier_NeitherComesBackNorGrowsTheFrame()
+    {
+        var with = SuperhetWithABlockerOnTheLo(10, "60");
+        var without = SuperhetWithABlockerOnTheLo(10, "60");
+        without.Blockers.RemoveAt(2);
+        var lv = ChainLevels.Evaluate(with, ChainBudget.Evaluate(with));
+
+        // Before: −300 + 60 dB came back as a blocker at −260 dBm.
+        Assert.True(Finite([.. lv.Select(n => n.BlockerDbm[2])]).Min() > -100);
+        var plan = ChainLevelDiagram.For(with, ChainBudget.Evaluate(with))!;
+        Assert.Equal(ChainLevelDiagram.For(without, ChainBudget.Evaluate(without))!.Lo, plan.Lo);
     }
 
     [Fact]
@@ -89,26 +179,44 @@ public sealed class ChainLevelDiagramTests : IDisposable
             var slice = Assert.Single(levels.Traces.Single(t => t.CubeName == cube).CubeSlice);
             Assert.Equal((1, lv.Count), (slice.RangeStart, slice.RangeEndExclusive));
         }
-        var dbm = Finite([.. lv.SelectMany(n => new[] { n.SignalDbm, n.NoiseDbm, n.Im3Dbm, n.InterferenceDbm }.Concat(n.BlockerDbm))]);
-        Assert.Equal(ChainBudgetDisplay.LevelWindow(dbm), (levels.Axes!.WindowY, levels.Axes.WindowY + levels.Axes.WindowHeight));
+        var (framed, im3) = Dbm(lv);
+        var window = ChainBudgetDisplay.LevelWindow(framed, im3);
+        Assert.Equal(window, (levels.Axes!.WindowY, levels.Axes.WindowY + levels.Axes.WindowHeight));
+        Assert.Equal(ChainBudgetDisplay.Im3Clipped, levels.Traces.Single(t => t.CubeName == "IM3_calc").Label);
     }
 
     [Theory]
     [InlineData("Superhet")]
+    [InlineData("Array")]
+    [InlineData("Front End")]
+    [InlineData("Dual Conversion")]
     [InlineData("26 GHz Link")]
-    public void TheLevelDiagram_FramesEveryLevelItDraws_AndNoSentinel(string chain)
+    [InlineData("long chain")]
+    [InlineData("far link")]
+    [InlineData("blocker on the LO")]
+    public void TheLevelDiagram_FramesWhatItDraws_AndMarksAnIm3UnderIt(string chain)
     {
-        var d = chain == "Superhet" ? SuperhetWithAnAbsentBlocker() : Example(chain);
+        var d = Named(chain);
         var plan = ChainLevelDiagram.For(d, ChainBudget.Evaluate(d))!;
 
-        var drawn = Finite([.. plan.Nodes.SelectMany(n => new[] { n.SignalDbm, n.NoiseDbm, n.SensitivityDbm, n.Im3Dbm, n.InterferenceDbm,
-                                                                  n.CompressionDbm, n.NoiseDbm + n.SfdrDb }.Concat(n.BlockerDbm))]);
-        if (plan.Link is { } l) drawn = [.. drawn, l.EirpDbm, l.PrxDbm, l.CeilingDbm];
-        Assert.All(drawn, v => Assert.InRange(v, plan.Lo, plan.Hi));
-        Assert.True(plan.Lo > -ChainBudgetDisplay.Sentinel);
-        Assert.Equal(ChainBudgetDisplay.LevelWindow(drawn), (plan.Lo, plan.Hi));
-        // The link stands in front: its EIRP is the figure's top.
-        if (chain != "Superhet") Assert.True(plan.Link!.EirpDbm > plan.Nodes.Max(n => n.SignalDbm));
+        var framed = Finite([.. plan.Nodes.SelectMany(n => new[] { n.SignalDbm, n.NoiseDbm, n.SensitivityDbm, n.InterferenceDbm }.Concat(n.BlockerDbm))]);
+        var topOnly = Finite([.. plan.Nodes.SelectMany(n => new[] { n.Im3Dbm, n.CompressionDbm, n.NoiseDbm + n.SfdrDb })]);
+        if (plan.Link is { } l) { framed = [.. framed, l.PrxDbm]; topOnly = [.. topOnly, l.EirpDbm, l.CeilingDbm]; }
+        Assert.Equal(ChainBudgetDisplay.LevelWindow(framed, topOnly), (plan.Lo, plan.Hi));
+        Assert.All(framed, v => Assert.InRange(v, plan.Lo, plan.Hi));
+        Assert.All(topOnly, v => Assert.True(v <= plan.Hi));
+        if (plan.Link is { } link) Assert.True(link.EirpDbm > plan.Nodes.Max(n => n.SignalDbm));
+
+        // Every IM3 under the frame is marked at its node, so a real level never vanishes.
+        var below = ChainLevelDiagram.Im3BelowFrame(plan);
+        Assert.Equal([.. Enumerable.Range(0, plan.Nodes.Count).Where(k => double.IsFinite(plan.Nodes[k].Im3Dbm) && plan.Nodes[k].Im3Dbm < plan.Lo)], below);
+        if (chain is "long chain" or "far link") Assert.NotEmpty(below);
+        // It draws, in both themes, at its own size and under blocks.
+        foreach (var theme in new[] { RenderTheme.Light, RenderTheme.Dark })
+        {
+            var (compose, page) = ChainLevelDiagram.Figure(plan, chain, theme);
+            Assert.NotNull(PlotDocumentWriter.BuildPngBytes(compose, page, 1));
+        }
     }
 
     [Theory]
@@ -154,7 +262,7 @@ public sealed class ChainLevelDiagramTests : IDisposable
     }
 
     [Fact]
-    public void TheVerb_WritesTheLevelDiagram_AsAPngOrAnSvg()
+    public void TheVerb_WritesTheLevelDiagram_MakesItsFolder_AndRefusesBeforeWritingAnything()
     {
         Directory.CreateDirectory(_ws);
         string path = Path.Combine(_ws, "Rx.cchain"), png = Path.Combine(_ws, "levels.png"), svg = Path.Combine(_ws, "levels.svg");
@@ -169,6 +277,18 @@ public sealed class ChainLevelDiagramTests : IDisposable
         string text = File.ReadAllText(svg);
         Assert.StartsWith("<?xml", text, StringComparison.Ordinal);
         Assert.Contains("EIRP", text, StringComparison.Ordinal);
-        Assert.Equal(1, CliEntry.Run(["chain", path, "--level-diagram", Path.Combine(_ws, "levels.pdf")]));
+        // A folder that is not there yet is made, as render makes one.
+        string nested = Path.Combine(_ws, "no", "such", "folder", "levels.png");
+        Assert.Equal(0, CliEntry.Run(["chain", path, "--level-diagram", nested]));
+        Assert.True(File.Exists(nested));
+
+        // Another kind, or no file at all, is refused before the budget's own -o is written.
+        string npy = Path.Combine(_ws, "budget.npy");
+        Assert.Equal(1, CliEntry.Run(["chain", path, "-o", npy, "--level-diagram", Path.Combine(_ws, "levels.pdf")]));
+        Assert.False(File.Exists(npy));
+        Assert.False(File.Exists(Path.Combine(_ws, "levels.pdf")));
+        Assert.Equal(1, CliEntry.Run(["chain", path, "-o", npy, "--level-diagram"]));
+        Assert.Equal(1, CliEntry.Run(["chain", path, "--level-diagram", "-o", npy]));
+        Assert.False(File.Exists(npy));
     }
 }

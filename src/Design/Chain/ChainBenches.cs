@@ -71,6 +71,16 @@ public sealed record ChainTransferResult(IReadOnlyList<string> SchematicPaths, I
 
 public static class ChainBenches
 {
+    /// <summary>
+    /// What a bench writes for a level that does not exist — an IM3 before anything is nonlinear, the interference before
+    /// the canceller, a blocker a filter has taken to nothing — where the budget has NaN or −∞: a measurement row holds a
+    /// number. A reader of a bench's results treats exactly this value as none (+<see cref="Absent"/> is a margin that
+    /// never compresses).
+    /// </summary>
+    public const double Absent = -300;
+
+    private static double Lo(double v) => double.IsFinite(v) ? v : Absent;
+
     public static string CellName(string chain, ChainBench b) => b switch
     {
         ChainBench.OneTone => chain + " 1-Tone",
@@ -300,7 +310,7 @@ public static class ChainBenches
                     c.FrequencyHz = fin[i];
                     c.InputPowerDbm = at.PoutDbm;
                     c.TemperatureK = Math.Pow(10, (at.NoiseOutDbm - 30) / 10) / (ChainBudget.K * d.BandwidthHz);
-                    c.Blockers = [.. pb.Select((p, j) => new ChainBlocker(fb[j] - fin[i], p))];
+                    c.Blockers = [.. pb.Select((p, j) => new ChainBlocker(fb[j] - fin[i], Lo(p)))];
                 }
                 list.Add(new Conversion($"{chain} IF{k + 1}", c, ChainBudget.Evaluate(c)));
                 k++;
@@ -1589,15 +1599,14 @@ public static class ChainBenches
                         if (k > 0) _meas.Add($"P3_{k} = dB(HBL.V(\"{nodeNet[k]}\",{Idx(nodeV3[k])})) + 10");
                     }
                     NodeAxis(levels.Count);
-                    double Lo(double v) => double.IsFinite(v) ? v : -300;
                     _meas.Add($"Psig_sim = {NodeCube(levels.Count, k => $"P1_{k}")}");
-                    _meas.Add($"IM3_sim = {NodeCube(levels.Count, k => double.IsFinite(levels[k].Im3Dbm) ? $"P3_{k}" : "-300")}");
+                    _meas.Add($"IM3_sim = {NodeCube(levels.Count, k => double.IsFinite(levels[k].Im3Dbm) ? $"P3_{k}" : G(Absent))}");
                     _meas.Add($"Psig_calc = {NodeCube(levels.Count, k => G(levels[k].SignalDbm))}");
                     _meas.Add($"IM3_calc = {NodeCube(levels.Count, k => G(Lo(levels[k].Im3Dbm)))}");
                     _meas.Add($"Noise_calc = {NodeCube(levels.Count, k => G(levels[k].NoiseDbm))}");
                     _meas.Add($"SNR_calc = {NodeCube(levels.Count, k => G(levels[k].SnrDb))}");
                     // A linear chain has no margin at all: above the display's window.
-                    _meas.Add($"Margin_calc = {NodeCube(levels.Count, k => G(double.IsFinite(levels[k].MarginDb) ? levels[k].MarginDb : 300))}");
+                    _meas.Add($"Margin_calc = {NodeCube(levels.Count, k => G(double.IsFinite(levels[k].MarginDb) ? levels[k].MarginDb : -Absent))}");
                     if (levels.Any(l => double.IsFinite(l.InterferenceDbm)))
                         _meas.Add($"Int_calc = {NodeCube(levels.Count, k => G(Lo(levels[k].InterferenceDbm)))}");
                     for (int k = 0; k < levels.Count; k++)
@@ -1643,8 +1652,8 @@ public static class ChainBenches
                     {
                         int bb = b;
                         _meas.Add($"Blk{b + 1}_sim = {NodeCube(levels.Count, k => $"B{bb + 1}_{k}")}");
-                        _meas.Add($"Blk{b + 1}_calc = {NodeCube(levels.Count, k => G(levels[k].BlockerDbm[bb]))}");
-                        for (int k = 0; k < levels.Count; k++) _meas.Add($"Blk{b + 1}_{k}_err = B{b + 1}_{k} - {G(levels[k].BlockerDbm[b])}");
+                        _meas.Add($"Blk{b + 1}_calc = {NodeCube(levels.Count, k => G(Lo(levels[k].BlockerDbm[bb])))}");
+                        for (int k = 0; k < levels.Count; k++) _meas.Add($"Blk{b + 1}_{k}_err = B{b + 1}_{k} - {G(Lo(levels[k].BlockerDbm[b]))}");
                     }
                     break;
                 }

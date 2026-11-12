@@ -12,8 +12,9 @@
 //  gap between two blocks; the CLI's --level-diagram and the docs draw it standalone, the nodes evenly spaced.
 //
 //  Why not a Data Display plot: a level plan shades BETWEEN its lines and labels its values at the nodes, and under the
-//  blocks its nodes stand where the gaps are, which a linear axis cannot place. Its window is the Data Display's own
-//  rule (ChainBudgetDisplay.LevelWindow), so the two frame a chain alike.
+//  blocks its nodes stand where the gaps are, which a linear axis cannot place. Its window is the level plots' own rule
+//  (ChainBudgetDisplay.LevelWindow); the diagram's window also holds the P1dB, the sensitivity and the EIRP. An IM3
+//  below it is a ▼ on the bottom edge at its node.
 // ================================================================
 
 using System;
@@ -51,10 +52,16 @@ public static class ChainLevelDiagram
             var l = link.Budget(d.FrequencyHz);
             front = new Front(l.EirpDbm, l.LfsDb + l.AtmDb, ChainValue.Or(link.GetPath("RxAntennaGain"), 0), l.PrxDbm, o.CeilingDbm);
         }
-        var levels = lv.SelectMany(n => new[] { n.SignalDbm, n.NoiseDbm, n.SensitivityDbm, n.Im3Dbm, n.InterferenceDbm, n.CompressionDbm,
-                                                n.NoiseDbm + n.SfdrDb }.Concat(n.BlockerDbm));
-        if (front is not null) levels = levels.Concat([front.EirpDbm, front.PrxDbm, front.CeilingDbm]);
-        var (lo, hi) = ChainBudgetDisplay.LevelWindow(levels);
+        // The bottom is set by the levels a receiver lives between; the IM3, the compression limit, the SFDR's top, the
+        // EIRP and the ceiling reach the top only.
+        var framed = lv.SelectMany(n => new[] { n.SignalDbm, n.NoiseDbm, n.SensitivityDbm, n.InterferenceDbm }.Concat(n.BlockerDbm));
+        var topOnly = lv.SelectMany(n => new[] { n.Im3Dbm, n.CompressionDbm, n.NoiseDbm + n.SfdrDb });
+        if (front is not null)
+        {
+            framed = framed.Append(front.PrxDbm);
+            topOnly = topOnly.Concat([front.EirpDbm, front.CeilingDbm]);
+        }
+        var (lo, hi) = ChainBudgetDisplay.LevelWindow(framed, topOnly);
         return new Plan(lv, [d.FrequencyHz, .. r.Stages.Select(s => s.FrequencyHz)], cmb >= 0 ? cmb + 1 : 0,
                         cmb >= 0 ? ChainParts.ReadCombiner(d.Stages[cmb]).N : 1,
                         [.. d.Blockers.Select((b, k) => $"blocker {k + 1}")], d.RequiredSnrDb, front, lo, hi);
@@ -85,7 +92,7 @@ public static class ChainLevelDiagram
     /// <summary>Under the blocks: <paramref name="nodeX"/> is each node's x in the strip, which reaches
     /// <see cref="LeftGutter"/> left of the blocks and <see cref="EndGutter"/> past the last node.</summary>
     public static Frame Strip(Plan p, IReadOnlyList<float> nodeX, float height)
-        => new(new SKRect(AxisGutter, 26, nodeX[^1] + 24, height - 36), nodeX, AxisGutter + FrontSlot / 2, 11f, null);
+        => new(new SKRect(AxisGutter, 20, nodeX[^1] + 24, height - 30), nodeX, AxisGutter + FrontSlot / 2, 11f, null);
 
     /// <summary>The figure's full width for <paramref name="f"/>: its last node and the labels beyond it.</summary>
     public static float Width(Frame f) => f.Plot.Right + EndGutter - 24;
@@ -105,6 +112,10 @@ public static class ChainLevelDiagram
         return xs;
     }
 
+    /// <summary>The nodes whose IM3 lies under the figure's window: each drawn as a ▼ on the bottom edge.</summary>
+    public static IReadOnlyList<int> Im3BelowFrame(Plan p)
+        => [.. Enumerable.Range(0, p.Nodes.Count).Where(k => double.IsFinite(p.Nodes[k].Im3Dbm) && p.Nodes[k].Im3Dbm < p.Lo)];
+
     /// <summary>The node nearest <paramref name="x"/>, within half the spacing; −1 for none.</summary>
     public static int NodeAt(Frame f, float x)
     {
@@ -121,11 +132,13 @@ public static class ChainLevelDiagram
     private static SKColor Palette(RenderTheme t, int order)
         => t.ToSKColor(TraceProperties.ColorLUT[TraceProperties.LineColorOrder[order % TraceProperties.LineColorOrder.Length]]);
 
-    private static bool Level(double v) => double.IsFinite(v) && Math.Abs(v) < ChainBudgetDisplay.Sentinel;
+    /// <summary>A level the budget has: an absent one is NaN or −∞, never a number.</summary>
+    private static bool Level(double v) => double.IsFinite(v);
 
     private static string D(double v) => v.ToString("0.0", CultureInfo.InvariantCulture).Replace('-', '−');
 
-    private static string Hz(double f) => f >= 1e9 ? $"{f / 1e9:0.###} GHz" : f >= 1e6 ? $"{f / 1e6:0.###} MHz" : $"{f / 1e3:0.###} kHz";
+    private static string Hz(double f) => f >= 1e9 ? $"{f / 1e9:0.###} GHz" : f >= 1e6 ? $"{f / 1e6:0.###} MHz"
+                                        : f >= 1e3 ? $"{f / 1e3:0.###} kHz" : f > 0 ? $"{f:0.###} Hz" : "0 Hz";
 
     /// <summary>One series: its name, colour, values at the nodes, and how it is stroked.</summary>
     private sealed record Series(string Name, SKColor Color, double[] Values, float Width, bool Dashed, bool Points, bool ValueLabels);
@@ -158,8 +171,8 @@ public static class ChainLevelDiagram
             c.DrawRect(xs[selected] - slot * 0.42f, plot.Top, slot * 0.84f, plot.Height, sel);
         }
 
-        // The dB scale: a line every 10, 20 or 50 dB, whichever gives no more than a dozen.
-        double span = p.Hi - p.Lo, step = span <= 120 ? 10 : span <= 240 ? 20 : 50;
+        // The dB scale: a line every 10, 20, 50 or 100 dB, the finest that leaves two lines of text between two of them.
+        double span = p.Hi - p.Lo, step = new[] { 10.0, 20, 50, 100 }.FirstOrDefault(d => d / span * plot.Height >= 2 * f.Font, 100);
         for (double v = Math.Ceiling(p.Lo / step) * step; v <= p.Hi + 1e-9; v += step)
         {
             c.DrawLine(plot.Left, Y(v), plot.Right, Y(v), grid);
@@ -175,7 +188,7 @@ public static class ChainLevelDiagram
         for (int k = 0; k < n; k++)
         {
             c.DrawLine(xs[k], plot.Top, xs[k], plot.Bottom, grid);
-            c.DrawText(p.Nodes[k].Node, xs[k], plot.Bottom + f.Font * 1.3f, SKTextAlign.Center, k == selected ? bold : regular, text);
+            c.DrawText(p.Nodes[k].Node, xs[k], plot.Bottom + f.Font * 1.15f, SKTextAlign.Center, k == selected ? bold : regular, text);
         }
         // Where the chain's own nodes start: the plot's edge, or the link's column's when it has one.
         float chainLeft = p.Link is null ? plot.Left : f.FrontX + FrontSlot / 2 - 8;
@@ -215,10 +228,20 @@ public static class ChainLevelDiagram
                 int b = a;
                 while (b + 1 < n && Level(lower[b + 1]) && Level(upper[b + 1])) b++;
                 using var path = new SKPath();
-                path.MoveTo(xs[a], Y(upper[a]));
-                for (int k = a + 1; k <= b; k++) path.LineTo(xs[k], Y(upper[k]));
-                for (int k = b; k >= a; k--) path.LineTo(xs[k], Y(lower[k]));
-                path.Close();
+                if (a == b)
+                {
+                    // A band at one node alone has no width between nodes: a narrow bar, so the key never names a band
+                    // nobody can see.
+                    float w = slot * 0.15f;
+                    path.AddRect(new SKRect(xs[a] - w, Y(upper[a]), xs[a] + w, Y(lower[a])));
+                }
+                else
+                {
+                    path.MoveTo(xs[a], Y(upper[a]));
+                    for (int k = a + 1; k <= b; k++) path.LineTo(xs[k], Y(upper[k]));
+                    for (int k = b; k >= a; k--) path.LineTo(xs[k], Y(lower[k]));
+                    path.Close();
+                }
                 if (hatched) Hatch(c, path, hatch, 7); else c.DrawPath(path, fill);
                 a = b;
             }
@@ -234,7 +257,7 @@ public static class ChainLevelDiagram
         Band(signal, comp, cComp);
 
         // The link: the EIRP before the input, the path down to the power each element receives, the ceiling there.
-        var ends = new List<(double V, string Text, SKColor Color)>();
+        var ends = new List<(double V, string Text, SKColor Color, bool Below)>();
         if (p.Link is { } lk)
         {
             float fx = f.FrontX, x0 = xs[0];
@@ -252,10 +275,15 @@ public static class ChainLevelDiagram
                                            PathEffect = SKPathEffect.CreateDash([4, 3], 0) };
             if (Level(lk.CeilingDbm))
             {
-                Line(c, x0 - slot * 0.35f, Y(lk.CeilingDbm), x0 + slot * 0.35f, Y(lk.CeilingDbm), ceil);
-                Say(c, $"ceiling {D(lk.CeilingDbm)}", x0 + slot * 0.35f + 4, Y(lk.CeilingDbm) + f.Font * 0.35f, SKTextAlign.Left, small, Readable(theme, cComp));
+                // The input's own mark: it starts at the chain's left edge, never in the link's column, and its name sits
+                // above it, right of the input, clear of the path arriving from the left.
+                Line(c, Math.Max(x0 - slot * 0.35f, chainLeft + 2), Y(lk.CeilingDbm), x0 + slot * 0.35f, Y(lk.CeilingDbm), ceil);
+                Say(c, $"ceiling {D(lk.CeilingDbm)}", x0 + 5, Y(lk.CeilingDbm) - 4, SKTextAlign.Left, small, Readable(theme, cComp), theme.BackgroundColor);
             }
-            Say(c, $"EIRP {D(lk.EirpDbm)}", fx, Y(lk.EirpDbm) - 6, SKTextAlign.Center, small, Readable(theme, cSignal));
+            // Under its point, at the column's left: the frame's top is often only 10 dB above it, and the path leaves
+            // the point down to the right.
+            Say(c, $"EIRP {D(lk.EirpDbm)}", plot.Left + 3, Y(lk.EirpDbm) + f.Font + 2, SKTextAlign.Left, small, Readable(theme, cSignal),
+                theme.BackgroundColor);
             // At the foot of the link's column, clear of the segment that falls across it.
             float fy = plot.Bottom - f.Font * (lk.RxGainDbi != 0 ? 1.6f : 0.6f);
             c.DrawText($"path −{D(lk.PathDb).TrimStart('−')} dB", fx, fy, SKTextAlign.Center, small, faint);
@@ -268,7 +296,7 @@ public static class ChainLevelDiagram
         {
             Line(c, chainLeft, plot.Top, chainLeft, plot.Bottom, divider);
             c.DrawText("link", f.FrontX, plot.Top - 6, SKTextAlign.Center, small, faint);
-            c.DrawText("TX", f.FrontX, plot.Bottom + f.Font * 1.3f, SKTextAlign.Center, regular, text);
+            c.DrawText("TX", f.FrontX, plot.Bottom + f.Font * 1.15f, SKTextAlign.Center, regular, text);
         }
 
         // The lines: the quiet ones first, the signal on top.
@@ -310,19 +338,38 @@ public static class ChainLevelDiagram
                 if (s.Points) Dot(c, xs[k], Y(s.Values[k]), s.Color, k == selected ? 4f : 2.6f, filled: true);
                 if (s.ValueLabels && (roomForValues || k == selected))
                 {
-                    // The signal's and the compression's value above their point, the noise floor's below.
+                    // The signal's and the compression's value above their point, the noise floor's below; the input's
+                    // signal right of its point where a link's path arrives from the left. Each on a halo of the page, so
+                    // it reads over a band's tint.
                     float y = s.Name == "noise floor" ? Y(s.Values[k]) + f.Font + 2 : Y(s.Values[k]) - 5;
-                    Say(c, D(s.Values[k]), xs[k], y, SKTextAlign.Center, small, Readable(theme, s.Color));
+                    bool aside = k == 0 && p.Link is not null && s.Name == "signal";
+                    Say(c, D(s.Values[k]), aside ? xs[k] + 6 : xs[k], y, aside ? SKTextAlign.Left : SKTextAlign.Center, small,
+                        Readable(theme, s.Color), theme.BackgroundColor);
                 }
             }
             int last = Array.FindLastIndex(s.Values, Level);
-            if (last >= 0) ends.Add((s.Values[last], $"{s.Name} {D(s.Values[last])}", s.Color));
+            if (last >= 0) ends.Add((s.Values[last], $"{s.Name} {D(s.Values[last])}", s.Color, s.Values[last] < p.Lo));
         }
         c.Restore();
 
+        // An IM3 under the frame keeps its node: a ▼ on the bottom edge, its value in the line's name at the output. Drawn,
+        // not a character: the figure's faces have no glyph for one.
+        void Down(float x, float bottom, float h, SKColor color)
+        {
+            using var paint = new SKPaint { IsAntialias = true, Color = color };
+            using var tri = new SKPath();
+            tri.MoveTo(x - h * 0.6f, bottom - h);
+            tri.LineTo(x + h * 0.6f, bottom - h);
+            tri.LineTo(x, bottom);
+            tri.Close();
+            c.DrawPath(tri, paint);
+        }
+        foreach (int k in Im3BelowFrame(p)) Down(xs[k], plot.Bottom - 1, f.Font * 0.55f, cIm3);
+
         // Each line named at the output, nudged apart where two would overlap, with a leader to its own level.
         float lx = plot.Right + 6, gap = f.Font * 1.2f;
-        var placed = ends.Select(e => (Y: Y(e.V), At: Y(e.V), e.Text, e.Color)).OrderBy(e => e.At).ToList();
+        var placed = ends.Select(e => (Y: Math.Clamp(Y(e.V), plot.Top, plot.Bottom), At: Math.Clamp(Y(e.V), plot.Top, plot.Bottom), e.Text, e.Color, e.Below))
+                         .OrderBy(e => e.At).ToList();
         for (int i = 1; i < placed.Count; i++)
             if (placed[i].Y < placed[i - 1].Y + gap) placed[i] = placed[i] with { Y = placed[i - 1].Y + gap };
         float over = placed.Count > 0 ? placed[^1].Y - (plot.Bottom + f.Font) : 0;
@@ -334,15 +381,23 @@ public static class ChainLevelDiagram
             using var lead = new SKPaint { IsAntialias = true, StrokeWidth = 1, Color = e.Color.WithAlpha(140), Style = SKPaintStyle.Stroke };
             c.DrawLine(xs[^1] + 3, e.At, lx - 2, e.Y, lead);
             Say(c, e.Text, lx, e.Y + f.Font * 0.35f, SKTextAlign.Left, small, Readable(theme, e.Color));
+            if (e.Below) Down(lx + small.MeasureText(e.Text) + f.Font * 0.6f, e.Y + f.Font * 0.3f, f.Font * 0.5f, Readable(theme, e.Color));
         }
 
         // The bands' widths at the output, as their key.
         var o = p.Nodes[^1];
         var keys = new List<(string Text, SKColor Color)> { ($"SNR {D(o.SnrDb)} dB", cNoise) };
-        if (Level(o.CompressionDbm)) keys.Add(($"headroom {D(o.CompressionDbm - o.SignalDbm)} dB", cComp));
+        if (Level(o.MarginDb))
+        {
+            // The budget's margin, as the Levels tab gives it: P1dB less the strongest at the output, which it names.
+            int top = -1;
+            for (int k = 0; k < o.BlockerDbm.Count; k++)
+                if (Level(o.BlockerDbm[k]) && o.BlockerDbm[k] > (top < 0 ? o.SignalDbm : o.BlockerDbm[top])) top = k;
+            keys.Add(($"margin to P1dB {D(o.MarginDb)} dB ({(top < 0 ? "signal" : p.Blockers[top])})", cComp));
+        }
         if (Level(o.SfdrDb)) keys.Add(($"SFDR {D(o.SfdrDb)} dB", cIm3));
         keys.Add(($"sensitivity: MDS + {D(p.RequiredSnrDb).Replace(".0", "")} dB", Palette(theme, 3)));
-        float kx = plot.Left, ky = plot.Bottom + f.Font * 2.8f;
+        float kx = plot.Left, ky = plot.Bottom + f.Font * 2.4f;
         foreach (var (t, col) in keys)
         {
             bool line = t.StartsWith("sens", StringComparison.Ordinal), hatched = t.StartsWith("SFDR", StringComparison.Ordinal);
@@ -370,8 +425,15 @@ public static class ChainLevelDiagram
         return c;
     }
 
-    private static void Say(SKCanvas c, string text, float x, float y, SKTextAlign align, SKFont font, SKColor color)
+    /// <param name="halo">Drawn round the letters first, so they read over whatever is under them; none: plain.</param>
+    private static void Say(SKCanvas c, string text, float x, float y, SKTextAlign align, SKFont font, SKColor color, SKColor? halo = null)
     {
+        if (halo is { } h)
+        {
+            using var ring = new SKPaint { IsAntialias = true, Color = h.WithAlpha(220), Style = SKPaintStyle.Stroke, StrokeWidth = 3,
+                                           StrokeJoin = SKStrokeJoin.Round };
+            c.DrawText(text, x, y, align, font, ring);
+        }
         using var p = new SKPaint { IsAntialias = true, Color = color };
         c.DrawText(text, x, y, align, font, p);
     }
@@ -431,15 +493,18 @@ public static class ChainLevelDiagram
         }, new PagePlacement(width, height, 0));
     }
 
-    /// <summary>Writes the figure: an <c>.svg</c>, or a <c>.png</c> at twice its size. False for any other kind.</summary>
+    /// <summary>True for the kinds <see cref="Write"/> writes: an <c>.svg</c> or a <c>.png</c>.</summary>
+    public static bool Writes(string path) => Path.GetExtension(path).ToLowerInvariant() is ".svg" or ".png";
+
+    /// <summary>Writes the figure: an <c>.svg</c>, or a <c>.png</c> at twice its size, making its folder as <c>render</c>
+    /// does. False for any other kind, and nothing written.</summary>
     public static bool Write(string path, Plan p, string? title)
     {
+        if (!Writes(path)) return false;
         var (compose, page) = Figure(p, title, RenderTheme.Light);
-        switch (Path.GetExtension(path).ToLowerInvariant())
-        {
-            case ".svg": PlotDocumentWriter.WriteSvg(path, compose, page); return true;
-            case ".png": File.WriteAllBytes(path, PlotDocumentWriter.BuildPngBytes(compose, page, 2f)!); return true;
-            default: return false;
-        }
+        if (Path.GetDirectoryName(Path.GetFullPath(path)) is { Length: > 0 } dir) Directory.CreateDirectory(dir);
+        if (Path.GetExtension(path).Equals(".svg", StringComparison.OrdinalIgnoreCase)) PlotDocumentWriter.WriteSvg(path, compose, page);
+        else File.WriteAllBytes(path, PlotDocumentWriter.BuildPngBytes(compose, page, 2f)!);
+        return true;
     }
 }

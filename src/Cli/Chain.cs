@@ -29,7 +29,8 @@ internal static class Chain
             switch (args[i])
             {
                 case "-o" or "--output" when i + 1 < args.Length: output = args[++i]; continue;
-                case "--level-diagram" when i + 1 < args.Length: levels = args[++i]; continue;
+                case "--level-diagram" when i + 1 < args.Length && !args[i + 1].StartsWith('-'): levels = args[++i]; continue;
+                case "--level-diagram": return JsonRun.Fail(CliDiagnostics.ChainLevelDiagramNeedsFile());
                 case "--to-schematic":
                     toSchematic = true;
                     if (i + 1 < args.Length && !args[i + 1].StartsWith('-')) into = args[++i];
@@ -50,6 +51,9 @@ internal static class Chain
             return 1;
         }
         JsonRun.InputPath = path;
+        // Before anything is written: a picture of another kind is refused here, not after the budget's own output.
+        if (levels is not null && !CircuitRF.Render.Chain.ChainLevelDiagram.Writes(levels))
+            return JsonRun.Fail(CliDiagnostics.ChainLevelDiagramKind(levels));
         var kind = DocumentKinds.Classify(path);
         if (kind != DocumentKind.Chain)
             return JsonRun.Fail(CliDiagnostics.ChainNotAChain(path, DocumentKinds.Name(kind)));
@@ -92,9 +96,13 @@ internal static class Chain
 
         if (levels is not null)
         {
-            if (!CircuitRF.Render.Chain.ChainLevelDiagram.Write(levels, CircuitRF.Render.Chain.ChainLevelDiagram.For(design, budget)!,
-                                                               $"{Path.GetFileNameWithoutExtension(path)}: levels at each node"))
-                return JsonRun.Fail(CliDiagnostics.ChainLevelDiagramKind(levels));
+            try
+            {
+                CircuitRF.Render.Chain.ChainLevelDiagram.Write(levels, CircuitRF.Render.Chain.ChainLevelDiagram.For(design, budget)!,
+                                                               $"{Path.GetFileNameWithoutExtension(path)}: levels at each node");
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            { return JsonRun.Fail(CliDiagnostics.ChainLevelDiagramWriteFailed(levels, ex.Message)); }
             Console.WriteLine($"Wrote {levels}");
             JsonRun.AddOutput(JsonRun.KindOf(levels), levels);
         }

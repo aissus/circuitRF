@@ -328,8 +328,9 @@ public sealed partial class ChainBudgetViewModel : ObservableObject
                 var sim = CircuitRF.Render.DataDisplay.PlotSourceFile.LoadWithNotes(file).Data;
                 foreach (var c in cubes)
                     if (sim is not null && sim.CubesIn("measurements").TryGetValue(c, out var cube) && cube.RealValues.Length == lv.Count)
-                        // A bench writes −300 where a quantity does not exist yet (the IM3 at the input): none, here.
-                        data.Add(c, new RfCore.Data.DataCube([axis], [.. cube.RealValues.Select(v => v <= -299 ? double.NaN : v)]) { Unit = cube.Unit });
+                        // A bench writes exactly ChainBenches.Absent where a quantity does not exist yet (the IM3 at the
+                        // input): none, here. Any other number is a measurement, however low.
+                        data.Add(c, new RfCore.Data.DataCube([axis], [.. cube.RealValues.Select(v => v == ChainBenches.Absent ? double.NaN : v)]) { Unit = cube.Unit });
             }
         }
         LevelsNote = lv.Count == 0 ? "" : perConversion

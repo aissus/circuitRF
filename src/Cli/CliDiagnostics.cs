@@ -4278,6 +4278,14 @@ internal static class CliDiagnostics
         "chain.level-diagram.kind", DiagnosticSeverity.Error,
         "--level-diagram writes a .png or an .svg, not '{path}'.", ("path", path));
 
+    public static Diagnostic ChainLevelDiagramNeedsFile() => Diagnostic.Create(
+        "chain.level-diagram.needs-file", DiagnosticSeverity.Error,
+        "--level-diagram needs the file to write: a .png or an .svg.");
+
+    public static Diagnostic ChainLevelDiagramWriteFailed(string path, string why) => Diagnostic.Create(
+        "chain.level-diagram.write-failed", DiagnosticSeverity.Error,
+        "The level diagram was not written to '{path}': {why}", ("path", path), ("why", why));
+
     public static Diagnostic ChainUnreadable(string path, string why) => Diagnostic.Create(
         "chain.document.unreadable", DiagnosticSeverity.Error,
         "'{path}' did not read: {why}", ("path", path), ("why", why));
