@@ -1034,6 +1034,7 @@ public sealed class ServeProtocolAdapterTests(ITestOutputHelper output) : IDispo
             ["model/export"]       = ["path"],
             ["model/validate"]     = ["path"],
             ["model/report"]       = ["path"],
+            ["model/sample"]       = ["path"],
             // brief-plg-5: plugins by id. No allow — permission is granted only in the window.
             ["plugin/list"]        = [],
             ["plugin/describe"]    = ["id"],
