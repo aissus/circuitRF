@@ -299,8 +299,8 @@
                   "AxisName": "nodeix",
                   "Role": "KeepAsX",
                   "Index": 0,
-                  "RangeStart": 0,
-                  "RangeEndExclusive": -1,
+                  "RangeStart": 2,
+                  "RangeEndExclusive": 5,
                   "Label": ""
                 }
               ],
@@ -355,8 +355,8 @@
                   "AxisName": "nodeix",
                   "Role": "KeepAsX",
                   "Index": 0,
-                  "RangeStart": 0,
-                  "RangeEndExclusive": -1,
+                  "RangeStart": 2,
+                  "RangeEndExclusive": 5,
                   "Label": ""
                 }
               ],
@@ -729,9 +729,9 @@
             "AutoscaleRightY": true,
             "AutoscaleMag": true,
             "WindowX": -0.5,
-            "WindowY": -5,
+            "WindowY": -10,
             "WindowWidth": 5,
-            "WindowHeight": 65,
+            "WindowHeight": 80,
             "WindowSecondaryX": -1,
             "WindowSecondaryY": -1,
             "WindowSecondaryWidth": 2,

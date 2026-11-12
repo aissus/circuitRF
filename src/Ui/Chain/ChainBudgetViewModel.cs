@@ -283,6 +283,8 @@ public sealed partial class ChainBudgetViewModel : ObservableObject
         plot.Legend = pc.Legend;
         plot.CustomXLabel = pc.CustomXLabel; plot.CustomXLabelOn = pc.CustomXLabelOn;
         plot.CustomYLabel = pc.CustomYLabel; plot.CustomYLabelOn = pc.CustomYLabelOn;
+        // The window the plot states, restored as a display file's is; a plot that states none autoscales.
+        CircuitRF.Render.DataDisplay.PlotConfigLoader.RestoreAxes(plot, pc.Axes);
         holder.OnPlotChanged(holder, EventArgs.Empty);
         holder.RequestPlotRedraw();
     }

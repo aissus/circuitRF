@@ -171,10 +171,16 @@ public static class ChainBudgetDisplay
 
     // ── the levels, the canceller and the demo ────────────────────────────────
 
-    private static TraceConfig Over(string src, string cube, string axis, string label, int color, bool simulated) => new()
+    /// <param name="nodes">The nodes the trace is drawn over, [From, To); null: every one. A bench writes ±300 where a
+    /// quantity does not exist (an IM3 before anything is nonlinear, the interference before the canceller, the margin of a
+    /// chain that never compresses), and a line drawn to it falls out of the window.</param>
+    private static TraceConfig Over(string src, string cube, string axis, string label, int color, bool simulated,
+                                    (int From, int To)? nodes = null) => new()
     {
         SourcePath = src, CubeName = cube, Label = label,
-        CubeSlice = [new AxisSliceConfig { AxisName = axis, Role = AxisRole.KeepAsX }],
+        CubeSlice = [nodes is { } n
+            ? new AxisSliceConfig { AxisName = axis, Role = AxisRole.KeepAsX, RangeStart = n.From, RangeEndExclusive = n.To }
+            : new AxisSliceConfig { AxisName = axis, Role = AxisRole.KeepAsX }],
         Properties = simulated
             ? new TracePropertiesConfig { LineEnabled = false, MarkerEnabled = true, MarkerType = MarkerType.Circle, MarkerSize = 1.8,
                                           LineColorIndex = color, MarkerColorIndex = color }
@@ -182,6 +188,41 @@ public static class ChainBudgetDisplay
     };
 
     private static int C(int i) => TraceProperties.LineColorOrder[i % TraceProperties.LineColorOrder.Length];
+
+    /// <summary>A level at or beyond this many dB(m) is a stand-in for none: the ±300 a bench writes where a quantity does
+    /// not exist, a blocker a filter's zero takes away, a dB of nothing.</summary>
+    public const double Sentinel = 299;
+
+    /// <summary>
+    /// The window of a plot of levels, or of their dB quantities: every finite level that is not a <see cref="Sentinel"/>,
+    /// 10 dB beyond each end, rounded out to 10 dB. The bench's Levels display, the window's Levels tab and the level
+    /// diagram all take it, so the three frame the same numbers the same way.
+    /// </summary>
+    public static (double Lo, double Hi) LevelWindow(IEnumerable<double> levels)
+    {
+        var v = levels.Where(x => double.IsFinite(x) && Math.Abs(x) < Sentinel).ToList();
+        if (v.Count == 0) return (-10, 10);
+        return (Math.Floor((v.Min() - 10) / 10) * 10, Math.Ceiling((v.Max() + 10) / 10) * 10);
+    }
+
+    /// <summary>A node axis' window: half a node beyond the input and beyond the output.</summary>
+    public static (double Lo, double Hi) NodeWindow(int nodes) => (-0.5, nodes - 0.5);
+
+    /// <summary>The nodes where <paramref name="pick"/> is a level, [first, last + 1), or (0, −1), the whole axis, where
+    /// that is every node; null where it is none. A cumulative quantity, once it exists, exists to the output.</summary>
+    private static (int From, int To)? Present(IReadOnlyList<ChainNodeLevel> lv, Func<ChainNodeLevel, double> pick)
+    {
+        int first = -1, last = -1;
+        for (int k = 0; k < lv.Count; k++)
+            if (double.IsFinite(pick(lv[k]))) { if (first < 0) first = k; last = k; }
+        return first < 0 ? null : first == 0 && last == lv.Count - 1 ? (0, -1) : (first, last + 1);
+    }
+
+    /// <summary>The dBm levels the Levels plot draws, and the dB ones its second plot draws.</summary>
+    private static IEnumerable<double> Dbm(IReadOnlyList<ChainNodeLevel> lv, bool blockersOnly = false)
+        => lv.SelectMany(n => (blockersOnly ? [] : new[] { n.SignalDbm, n.NoiseDbm, n.Im3Dbm, n.InterferenceDbm }).Concat(n.BlockerDbm));
+
+    private static IEnumerable<double> Db(IReadOnlyList<ChainNodeLevel> lv) => lv.SelectMany(n => new[] { n.NfDb, n.SnrDb, n.MarginDb });
 
     /// <summary>A Rect plot; a stated window fixes both axes (a window given for one axis alone leaves the other at
     /// its default rather than autoscaling it), and none autoscales both.</summary>
@@ -223,8 +264,11 @@ public static class ChainBudgetDisplay
                 traces.Add(Over(one, "Noise_node_calc", ChainBenches.NodeVar, "noise floor, budget", C(3), false));
                 traces.Add(Over(one, "Noise_node_sim", ChainBenches.NodeVar, "noise floor, simulated NF", C(3), true));
             }
-            traces.Add(Over(lev, "IM3_calc", ChainBenches.NodeVar, "IM3, budget", C(4), false));
-            traces.Add(Over(lev, "IM3_sim", ChainBenches.NodeVar, "IM3, simulated", C(4), true));
+            if (Present(lv, n => n.Im3Dbm) is { } im3)
+            {
+                traces.Add(Over(lev, "IM3_calc", ChainBenches.NodeVar, "IM3, budget", C(4), false, im3));
+                traces.Add(Over(lev, "IM3_sim", ChainBenches.NodeVar, "IM3, simulated", C(4), true, im3));
+            }
         }
         for (int k = 0; k < (Has(ChainBench.Blockers) ? d.Blockers.Count : 0); k++)
         {
@@ -232,15 +276,12 @@ public static class ChainBudgetDisplay
             traces.Add(Over(blk, $"Blk{k + 1}_calc", ChainBenches.NodeVar, name + ", budget", C(5 + k), false));
             traces.Add(Over(blk, $"Blk{k + 1}_sim", ChainBenches.NodeVar, name + ", simulated", C(5 + k), true));
         }
-        if (!blockersOnly && lv.Any(n => double.IsFinite(n.InterferenceDbm)))
-            traces.Add(Over(lev, "Int_calc", ChainBenches.NodeVar, "interference, budget", C(2), false));
-        var finite = lv.SelectMany(n => (blockersOnly ? [] : new[] { n.SignalDbm, n.NoiseDbm, n.Im3Dbm, n.InterferenceDbm }).Concat(n.BlockerDbm))
-                       .Where(double.IsFinite).ToList();
-        double lo = Math.Floor((finite.Min() - 10) / 10) * 10, hi = Math.Ceiling((finite.Max() + 10) / 10) * 10;
+        if (!blockersOnly && Present(lv, n => n.InterferenceDbm) is { } at)
+            traces.Add(Over(lev, "Int_calc", ChainBenches.NodeVar, "interference, budget", C(2), false, at));
         var plots = new List<PlotContainerConfig>
         {
             Rect(blockersOnly ? "The blockers at each node, dBm" : "Levels at each node, dBm", $"node: {nodes}", "dBm", 0, 0, 760, 420,
-                 traces, (lo, hi), (-0.5, lv.Count - 0.5)),
+                 traces, LevelWindow(Dbm(lv, blockersOnly)), NodeWindow(lv.Count)),
         };
         if (!blockersOnly)
         {
@@ -249,12 +290,11 @@ public static class ChainBudgetDisplay
                 Over(one, "NF_node_calc", ChainBenches.NodeVar, "NF, budget", C(1), false),
                 Over(one, "NF_node_sim", ChainBenches.NodeVar, "NF, simulated", C(1), true),
                 Over(lev, "SNR_calc", ChainBenches.NodeVar, "SNR, budget", C(3), false),
-                Over(lev, "Margin_calc", ChainBenches.NodeVar, "margin to P1dB, budget", C(4), false),
             };
+            if (Present(lv, n => n.MarginDb) is { } m) db.Add(Over(lev, "Margin_calc", ChainBenches.NodeVar, "margin to P1dB, budget", C(4), false, m));
             if (!Has(ChainBench.OneTone)) db.RemoveRange(0, 2);
-            double top = Math.Ceiling((lv.Select(n => n.SnrDb).Max() + 10) / 10) * 10;
             plots.Add(Rect("NF, SNR and margin to compression at each node, dB", $"node: {nodes}", "dB", 0, 420 + Gap, 760, 340, db,
-                           (-5, top), (-0.5, lv.Count - 0.5)));
+                           LevelWindow(Db(lv)), NodeWindow(lv.Count)));
         }
         return plots;
     }
@@ -378,8 +418,9 @@ public static class ChainBudgetDisplay
             Over(src, "NF_dB", "node", "NF", C(1), false), Over(src, "NF_node_sim", "node", "NF, simulated", C(1), true),
             Over(src, "SNR_dB", "node", "SNR", C(3), false), Over(src, "Margin_dB", "node", "margin to P1dB", C(4), false),
         };
-        return [Rect("Levels at each node, dBm", "node", "dBm", 0, 0, 560, 240, t),
-                Rect("NF, SNR and margin, dB", "node", "dB", 0, 0, 480, 240, db)];
+        // Windowed as the bench's display is, so the frame holds every level and nothing a sentinel would drag it to.
+        return [Rect("Levels at each node, dBm", "node", "dBm", 0, 0, 560, 240, t, LevelWindow(Dbm(lv)), NodeWindow(lv.Count)),
+                Rect("NF, SNR and margin, dB", "node", "dB", 0, 0, 480, 240, db, LevelWindow(Db(lv)), NodeWindow(lv.Count))];
     }
 
     /// <summary>The window's Canceller tab, in closed form: the depth against the phase error for five amplitude errors,
