@@ -1572,12 +1572,14 @@ writes nothing but `-o`'s PDF.
 
 ## `chain` — an RF chain budget, headless {#chain}
 
-<pre><code class="cmd"><span class="prompt">$ </span>circuitrf chain &lt;rx.cchain&gt; [-o budget.{npy,mat,txt}] [--to-schematic [dir]] [--name &lt;stem&gt;] [--replace] [--demo]</code></pre>
+<pre><code class="cmd"><span class="prompt">$ </span>circuitrf chain &lt;rx.cchain&gt; [-o budget.{npy,mat,txt}] [--level-diagram levels.{png,svg}] [--to-schematic [dir]] [--name &lt;stem&gt;] [--replace] [--demo]</code></pre>
 
 `chain` budgets a **`.cchain`** — the document the [RF Chain Budget](chain-budget.html) window edits — and prints
 the cascade, one row per stage, and the chain's totals: gain, NF, the intercepts and compression points, the noise
 floor, MDS, sensitivity, SNR and SFDR. The budget is a DataSet, so `--json` carries it and `-o` writes it: per-stage
 cubes over a `stage` axis labelled with the stage names (`G_dB`, `NF_dB`, `IIP3_dBm`, …) and the totals as scalars.
+`--level-diagram` draws the chain's [level diagram](chain-budget.html#level-diagram), the one the window's Blocks view
+shows under its blocks, as a `.png` or an `.svg`; any other kind is a refusal.
 
 Every chain's report adds the array's NF, the margin to the required SNR, the Shannon rate and the receiver's ceiling;
 a chain with a [link](chain-budget.html#link) a line for it, each PA's output, the EIRP, the free-space and extra path

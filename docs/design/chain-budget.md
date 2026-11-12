@@ -35,6 +35,9 @@ flowchart LR
     write --> demo["Demo bench (asked for)<br/>demodulated end to end"]
     write --> tx["TX bench (a link)<br/>the PA against its back-off"]
     calc --> levels["ChainLevels<br/>every node"] --> table
+    levels --> diagram["ChainLevelDiagram (src/Render)<br/>the level plan, one figure"]
+    diagram --> blocks
+    diagram --> verb
     one --> cdd["one .cdd per bench<br/>(ChainBudgetDisplay):<br/>budget | simulated | difference"]
     two --> cdd
     env --> cdd
@@ -84,7 +87,8 @@ plugin route once the plugin runtime exists:
   the tool adds to the drawing is text: four `EditableText` notes per stage, which a plugin's `schematic` view (§5.4)
   has no field for today, so a plugin port would need the view to carry annotations or the notes to move into a Table.
   The Blocks view is the one drawing of the tool's own — XAML over the palette's glyphs, fed by the core — and the
-  plugin vocabulary has no block-diagram view kind; a port would ask for one, or show the blocks as a Table.
+  plugin vocabulary has no block-diagram view kind; a port would ask for one, or show the blocks as a Table. Its Levels
+  strip is the other (§2.4): `ChainLevelDiagram` in `src/Render`, which the CLI's `--level-diagram` draws too.
 - **P-5, circuitRF writes the workspace.** Transfer stages the benches, validates each one, takes a checkpoint, and only
   then creates the cells through `CellCreate`; a refusal leaves the workspace untouched. An existing bench is the
   Replace question, in the window and as `--replace` on the CLI.
@@ -200,6 +204,41 @@ of 2, since a real uneven tree has unequal paths.
 **The sweeps** (`ChainBudget.Sweep`) evaluate the whole design again at every point, from the unresolved design, so the
 expressions and tables move. A point is one chain: its own copy drops the sweeps, or an Mrx of 1 (no combiner left)
 would be refused for sweeping a combiner it no longer has.
+
+### 2.4 The level diagram
+
+**One figure, three callers.** `ChainLevelDiagram` (`src/Render/Chain`) draws a chain's level plan: the nodes along x, and
+at each, in dBm, the signal, the noise floor, the sensitivity (MDS + the required SNR, carried by the gain), the IM3,
+every blocker, a canceller's interference and the compression limit (the cumulative OP1dB at the node, from the first
+stage that compresses); between them the SNR (noise to signal) and the headroom (signal to P1dB) filled, and the SFDR,
+(2/3)·(OIP3 − noise) above the noise floor, hatched, because it overlaps both and three tints over each other read as
+one grey. The signal's, the noise floor's and the P1dB's values are written at every node, every line's at the output,
+and the bands' widths at the output in a key. The numbers are `ChainLevels`' own: it gained the compression, the
+sensitivity and the SFDR per node, and nothing in the renderer computes a level. The Blocks view's Levels strip draws
+it with each node on a gap between two blocks; `circuitrf chain --level-diagram` and the docs draw it on its own, the
+nodes evenly spaced. `ChainLevelDiagram.NodesBetween` is the one rule for where a node stands under a lineup — the
+window applies it to the blocks as laid out, the Copy's picture to the blocks as it draws them.
+
+**Not a Data Display plot**, because a level plan shades between its lines, writes its values at the nodes and, under
+the blocks, puts its nodes where the gaps are, which a linear axis cannot. Its window is the Data Display's rule
+(`ChainBudgetDisplay.LevelWindow`), so the two frame one chain alike.
+
+**What the figure handles.**
+- *An array*: the nodes up to the combiner carry one element's levels, as the blocks draw that branch once ("× N"),
+  and are marked "each of N elements"; at the combiner the signal steps up by its coherent gain and the noise by less.
+- *Conversions*: the frequency of each run of nodes is written over it, a dashed line at each mixer.
+- *A link*: a left-hand segment before node 0 rather than nodes of its own, because the transmitter and the path are
+  not stages (§2.3) and stand under no block. Its one point is the EIRP; the segment falls to the power each element
+  receives with the path's loss written on it, and the ceiling is marked at the input. Where the arrival is above the
+  ceiling it is drawn hollow and held down to it, as the budget holds the input.
+
+**The window rule** (`LevelWindow`, `NodeWindow`): every finite level that is not a sentinel, 10 dB beyond each end,
+rounded out to 10 dB; x half a node beyond the input and the output. A sentinel is anything at ±299 dB or beyond: the
+−300 a bench writes for a level that does not exist (an IM3 before anything is nonlinear, the interference before the
+canceller) and the +300 of a margin that never compresses, the −300 dB `ChainLevels.GainAt` gives a filter's exact zero
+(a blocker a mixer has put at 0 Hz, in front of a band-pass), and a dB of nothing. The bench's Levels display, the
+window's Levels tab and the diagram take it, and the display draws the IM3, the interference and the margin only over
+the nodes where they exist (a kept range of the node axis), so no line falls out of the window to a stand-in.
 
 **Format version 2** is written only when a chain uses what version 1 does not have (a new field, an expression, a table
 or a budget-only parameter), so a 1.8.2 reader refuses such a chain rather than dropping the fields on save, and a

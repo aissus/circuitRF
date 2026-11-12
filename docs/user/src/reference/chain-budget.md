@@ -67,7 +67,7 @@ The window has three parts, and every edit recomputes all of them at once:
     removes the selected block's stage. Right-click for **Insert Block** ▸ a part, which inserts a stage of that part
     where you clicked (the left half of a block before it, the right half after it), **Copy**, which puts the whole
     lineup on the clipboard as a picture to paste into a slide or a document, and **Remove Block**, which removes the
-    block you clicked.
+    block you clicked. Tick **Levels** for the [level diagram](#level-diagram) under the blocks, a node on each gap.
   - **Schematic**: the schematic Transfer would write, drawn as every circuitRF schematic is, without the bench's
     sources, analyses and isolators: each stage is its own parts (a composed stage its composition, a tree its levels
     of Combiners), and in an array every element's branch is drawn into the combiner. Above each stage are four lines:
@@ -556,6 +556,43 @@ noise gain). In the window they appear once those benches have been simulated be
 they are its points, the budget its lines. The displays plot against a variable `nodeix` that each bench sweeps
 around a trivial DC solve, which is how one number per node becomes one curve.
 
+Both plots, in the window and in the display, are framed to every level they draw and 10 dB beyond, rounded out to
+10 dB, and half a node beyond the input and the output. A level that does not exist is left out rather than drawn at a
+stand-in: the IM3 before anything is nonlinear, the interference before the canceller, a blocker a filter has taken
+to nothing.
+
+### The level diagram {#level-diagram}
+
+Tick **Levels** in the Blocks view and the chain's level plan is drawn under its blocks, each node on the gap between
+two blocks: the input on the arrow before the first, each stage's output on the arrow after it.
+
+{{ui: chain-level-diagram}}
+
+At every node, in dBm:
+
+| Line | What it is |
+|---|---|
+| signal | Pin + G, its value written at each node |
+| noise floor | the noise in the bandwidth, kT·B with the cumulative NF and the gain, its value written at each node |
+| sensitivity | MDS + the required SNR, carried to the node by the gain: the signal the chain needs |
+| P1dB | the OP1dB of the stages up to the node, from the first stage that compresses, its value written at each node |
+| IM3 | each third-order product of two tones at the input power, from the first stage that has an intercept |
+| each blocker, the interference | as in the table above |
+
+Shaded between them: the **SNR**, from the noise floor up to the signal; the **headroom**, from the signal up to the
+P1dB; and, hatched, the **SFDR**, from the noise floor up to where the IM3 would reach it, (2/3)·(OIP3 − noise). The key
+under the plot gives each at the output. Each line is named at the output with its last value. Over the plot, the
+frequency of each run of nodes, a dashed line at each mixer; in an array, the nodes that carry one element's levels are
+marked **each of N elements**: the branch the blocks draw once, "× N", up to the combiner.
+
+With a [link](#link), its front stands left of the input: the EIRP, the path down to the power each element receives,
+the path's loss (and the receive antenna's gain) written on it, and the receiver's **ceiling**, IP1dB less
+`RxBackoffDb`, marked at the input. When the power arriving is above the ceiling it is drawn hollow, held down to it.
+
+Click a node to select the stage whose output it is; the selected stage's node is drawn selected. **Copy** puts the
+blocks and the diagram on the clipboard together. `circuitrf chain <file> --level-diagram levels.png` (or `.svg`) draws
+the same diagram on its own, the nodes evenly spaced.
+
 ## The canceller {#canceller}
 
 A **Canceller** stage subtracts a weighted copy of an interference from the main path: a reference path from the
@@ -734,6 +771,7 @@ A chain has at most one Combiner. An `SnP` stage's `File` is a path; a relative 
 circuitrf chain Superhet.cchain                      the cascade, as the window shows it
 circuitrf chain Superhet.cchain -o budget.npy        the budget as a DataSet: per-stage cubes over a stage axis
 circuitrf chain "26 GHz Link.cchain" -o link.npy     the link's numbers as scalars, each sweep a group of its own
+circuitrf chain Superhet.cchain --level-diagram levels.svg   the level diagram, as a .svg or a .png
 circuitrf chain Superhet.cchain --to-schematic       the benches and their displays, beside the .cchain
 circuitrf hb "Superhet 2-Tone/schematic/Superhet 2-Tone.csch"
 ```

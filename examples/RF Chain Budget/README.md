@@ -214,6 +214,20 @@ a carrier's SNR and EVM.
   power swept from noise-limited to compression-limited: the constellation, the EVM beside the budget's 1/√SNR, and its
   noise and distortion parts.
 
+### The level diagram
+
+Tick **Levels** in the Blocks view and each chain's level plan is drawn under its blocks, a node on each gap: the
+signal, the noise floor, the sensitivity, the IM3, every blocker and the P1dB at every node, the SNR and the headroom
+shaded between them and the SFDR hatched. `circuitrf chain Superhet.cchain --level-diagram superhet-levels.png` draws
+the same figure on its own:
+
+![The superhet's level diagram: the signal from −70 dBm at the input to −46.5 dBm at the output, the noise floor 34.9 dB under it, the P1dB from the LNA on, the blockers, the IM3 far below, and the two frequencies either side of the mixer](../../docs/images/rf-chain-budget/level-diagram-superhet.png)
+
+The 26 GHz link's starts in front of its input: the 16 transmit elements' EIRP, the path down to the −59.4 dBm each
+receive element gets, and the receiver's ceiling, 14 dB above it. Up to the combiner the levels are one element's.
+
+![The 26 GHz link's level diagram: the EIRP, the path loss and the ceiling left of the input, then each element's levels up to the combiner and the array's after it, and the conversion to 3 GHz](../../docs/images/rf-chain-budget/level-diagram-link.png)
+
 ## Two conversions
 
 `Dual Conversion` is written as two chains: `Dual Conversion IF1 …`, the front end to MIX1's output at 350 MHz, and
