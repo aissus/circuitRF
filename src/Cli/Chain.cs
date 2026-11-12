@@ -6,12 +6,14 @@ using RfCore.Export;
 namespace CircuitRF.Cli;
 
 /// <summary>
-/// <c>circuitrf chain &lt;path.cchain&gt; [-o budget.{npy,mat,txt}] [--to-schematic [dir]] [--name N] [--replace] [--demo]</c> —
+/// <c>circuitrf chain &lt;path.cchain&gt; [-o budget.{npy,mat,txt}] [--level-diagram out.{png,svg}] [--to-schematic [dir]] [--name N]
+/// [--replace] [--demo]</c> —
 /// the RF Chain Budget window, headless.
 ///
 /// <para><b>It owns no arithmetic and no drawing.</b> The budget is <see cref="ChainBudget.Evaluate"/>, the benches
 /// <see cref="ChainBenches.Write"/> and the display <see cref="ChainBudgetDisplay"/>, the three calls the window's own
-/// Transfer to Schematic makes. What is here is argument parsing, refusals and reporting, on <c>Authoring.cs</c>' terms.</para>
+/// Transfer to Schematic makes; the level diagram is <see cref="CircuitRF.Render.Chain.ChainLevelDiagram"/>, the drawing
+/// under the window's blocks. What is here is argument parsing, refusals and reporting, on <c>Authoring.cs</c>' terms.</para>
 ///
 /// <para><b>The budget is a DataSet</b>, as every run's result is: cubes over a <c>stage</c> axis and the chain's totals
 /// as scalars, so <c>--json</c>, <c>-o</c> and the Data Display read it with nothing new.</para>
@@ -20,13 +22,14 @@ internal static class Chain
 {
     public static int Run(string[] args)
     {
-        string? path = null, output = null, into = null, name = null;
+        string? path = null, output = null, into = null, name = null, levels = null;
         bool toSchematic = false, replace = false, demo = false;
         for (int i = 0; i < args.Length; i++)
         {
             switch (args[i])
             {
                 case "-o" or "--output" when i + 1 < args.Length: output = args[++i]; continue;
+                case "--level-diagram" when i + 1 < args.Length: levels = args[++i]; continue;
                 case "--to-schematic":
                     toSchematic = true;
                     if (i + 1 < args.Length && !args[i + 1].StartsWith('-')) into = args[++i];
@@ -42,7 +45,7 @@ internal static class Chain
         if (path is null)
         {
             Console.Error.WriteLine(
-                "Usage: circuitrf chain <path.cchain> [-o budget.{npy,mat,txt}]\n" +
+                "Usage: circuitrf chain <path.cchain> [-o budget.{npy,mat,txt}] [--level-diagram levels.{png,svg}]\n" +
                 "                       [--to-schematic [workspace-dir]] [--name <chain>] [--replace] [--demo]");
             return 1;
         }
@@ -85,6 +88,15 @@ internal static class Chain
             DataSetExporter.Export(JsonRun.Data, output, format, new ExportOptions(Format: format));
             Console.WriteLine($"Wrote {output}");
             JsonRun.AddOutput(JsonRun.KindOf(output), output);
+        }
+
+        if (levels is not null)
+        {
+            if (!CircuitRF.Render.Chain.ChainLevelDiagram.Write(levels, CircuitRF.Render.Chain.ChainLevelDiagram.For(design, budget)!,
+                                                               $"{Path.GetFileNameWithoutExtension(path)}: levels at each node"))
+                return JsonRun.Fail(CliDiagnostics.ChainLevelDiagramKind(levels));
+            Console.WriteLine($"Wrote {levels}");
+            JsonRun.AddOutput(JsonRun.KindOf(levels), levels);
         }
 
         if (!toSchematic) return 0;

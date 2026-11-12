@@ -1,23 +1,32 @@
 // ================================================================
-//  ChainLevelDiagramTests.cs — the RF Chain Budget's level plots, and their one window rule
+//  ChainLevelDiagramTests.cs — the RF Chain Budget's level diagram, and the level plots' one window rule
 //
 //    - the window rule frames every finite level and drops a sentinel (the ±300 a bench writes for none, a dB of nothing);
 //    - the window's Levels plots take that window (the refill used to drop a plot's stated window and autoscale), and so do
-//      the bench's Levels display, which draws the IM3 only from the first node that has one.
+//      the bench's Levels display, which draws the IM3 only from the first node that has one;
+//    - the level diagram frames every level it draws, the link's EIRP and ceiling included, and no blocker a filter's zero
+//      has taken away;
+//    - circuitrf chain --level-diagram writes the figure as a .png or an .svg, and refuses any other kind.
 // ================================================================
 
 using System;
 using System.IO;
 using System.Linq;
+using CircuitRF.Cli;
 using CircuitRF.Design.Chain;
+using CircuitRF.Render.Chain;
 using CircuitRF.Render.DataDisplay;
 using CircuitRF.Ui.Chain;
 using Xunit;
 
 namespace CircuitRF.Ui.Tests.Chain;
 
-public sealed class ChainLevelDiagramTests
+public sealed class ChainLevelDiagramTests : IDisposable
 {
+    private readonly string _ws = Path.Combine(Path.GetTempPath(), "crf-chainlv-" + Guid.NewGuid().ToString("N")[..8]);
+
+    public void Dispose() { try { Directory.Delete(_ws, true); } catch (IOException) { } }
+
     private static ChainDesign Example(string chain) => ChainDesignIo.LoadFromFile(
         Path.Combine(CircuitRF.Ui.Tests.Examples.ChainBudgetExampleTests.Workspace, chain + ChainDesignIo.Extension));
 
@@ -79,5 +88,42 @@ public sealed class ChainLevelDiagramTests
         }
         var dbm = Finite([.. lv.SelectMany(n => new[] { n.SignalDbm, n.NoiseDbm, n.Im3Dbm, n.InterferenceDbm }.Concat(n.BlockerDbm))]);
         Assert.Equal(ChainBudgetDisplay.LevelWindow(dbm), (levels.Axes!.WindowY, levels.Axes.WindowY + levels.Axes.WindowHeight));
+    }
+
+    [Theory]
+    [InlineData("Superhet")]
+    [InlineData("26 GHz Link")]
+    public void TheLevelDiagram_FramesEveryLevelItDraws_AndNoSentinel(string chain)
+    {
+        var d = chain == "Superhet" ? SuperhetWithAnAbsentBlocker() : Example(chain);
+        var plan = ChainLevelDiagram.For(d, ChainBudget.Evaluate(d))!;
+
+        var drawn = Finite([.. plan.Nodes.SelectMany(n => new[] { n.SignalDbm, n.NoiseDbm, n.SensitivityDbm, n.Im3Dbm, n.InterferenceDbm,
+                                                                  n.CompressionDbm, n.NoiseDbm + n.SfdrDb }.Concat(n.BlockerDbm))]);
+        if (plan.Link is { } l) drawn = [.. drawn, l.EirpDbm, l.PrxDbm, l.CeilingDbm];
+        Assert.All(drawn, v => Assert.InRange(v, plan.Lo, plan.Hi));
+        Assert.True(plan.Lo > -ChainBudgetDisplay.Sentinel);
+        Assert.Equal(ChainBudgetDisplay.LevelWindow(drawn), (plan.Lo, plan.Hi));
+        // The link stands in front: its EIRP is the figure's top.
+        if (chain != "Superhet") Assert.True(plan.Link!.EirpDbm > plan.Nodes.Max(n => n.SignalDbm));
+    }
+
+    [Fact]
+    public void TheVerb_WritesTheLevelDiagram_AsAPngOrAnSvg()
+    {
+        Directory.CreateDirectory(_ws);
+        string path = Path.Combine(_ws, "Rx.cchain"), png = Path.Combine(_ws, "levels.png"), svg = Path.Combine(_ws, "levels.svg");
+        ChainDesignIo.SaveToFile(path, Example("26 GHz Link"));
+        // Its path loss reads a table beside it.
+        File.Copy(Path.Combine(CircuitRF.Ui.Tests.Examples.ChainBudgetExampleTests.Workspace, "Atmospheric attenuation.csv"),
+                  Path.Combine(_ws, "Atmospheric attenuation.csv"));
+
+        Assert.Equal(0, CliEntry.Run(["chain", path, "--level-diagram", png]));
+        Assert.Equal(new byte[] { 0x89, (byte)'P', (byte)'N', (byte)'G' }, File.ReadAllBytes(png)[..4]);
+        Assert.Equal(0, CliEntry.Run(["chain", path, "--level-diagram", svg]));
+        string text = File.ReadAllText(svg);
+        Assert.StartsWith("<?xml", text, StringComparison.Ordinal);
+        Assert.Contains("EIRP", text, StringComparison.Ordinal);
+        Assert.Equal(1, CliEntry.Run(["chain", path, "--level-diagram", Path.Combine(_ws, "levels.pdf")]));
     }
 }

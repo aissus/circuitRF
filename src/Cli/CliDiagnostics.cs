@@ -4271,8 +4271,12 @@ internal static class CliDiagnostics
 
     public static Diagnostic ChainUnknownOption(string option) => Diagnostic.Create(
         "chain.option.unknown", DiagnosticSeverity.Error,
-        "chain does not take '{option}'. It takes a .cchain, -o, --to-schematic [dir], --name and --replace.",
+        "chain does not take '{option}'. It takes a .cchain, -o, --level-diagram, --to-schematic [dir], --name and --replace.",
         ("option", option));
+
+    public static Diagnostic ChainLevelDiagramKind(string path) => Diagnostic.Create(
+        "chain.level-diagram.kind", DiagnosticSeverity.Error,
+        "--level-diagram writes a .png or an .svg, not '{path}'.", ("path", path));
 
     public static Diagnostic ChainUnreadable(string path, string why) => Diagnostic.Create(
         "chain.document.unreadable", DiagnosticSeverity.Error,

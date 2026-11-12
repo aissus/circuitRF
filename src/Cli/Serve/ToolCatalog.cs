@@ -550,6 +550,9 @@ internal static class ToolCatalog
                 new("chain", ["chain"],
                     [new("path", true, "The .cchain to budget.")],
                     [new("output", "-o", OptKind.Path, "Where the budget is written as a DataSet: .npy, .mat or .txt."),
+                     new("levelDiagram", "--level-diagram", OptKind.Path, "Where the chain's level diagram is drawn, a .png or an .svg: "
+                       + "the signal, noise floor, sensitivity, IM3, blockers and P1dB at every node, the SNR, headroom and SFDR between "
+                       + "them, a link's EIRP and path in front."),
                      new("toSchematic", "--to-schematic", OptKind.Flag, "Also write the chain's test benches beside the .cchain: "
                        + "<name> 1-Tone (S-parameter noise, or harmonic-balance noise with a mixer, and a compression sweep), <name> 2-Tone "
                        + "(two-tone intercepts) and <name> Envelope (SNR and EVM with noise); for an array also <name> Steering (the "

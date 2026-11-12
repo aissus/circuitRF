@@ -423,6 +423,7 @@ public sealed class CliStructuredOutputTests(ITestOutputHelper output) : IDispos
         "chain.bench.left-out",
         "chain.document.refused",
         "chain.document.unreadable",
+        "chain.level-diagram.kind",
         "chain.note",
         "chain.option.unknown",
         "chain.path.not-a-chain",

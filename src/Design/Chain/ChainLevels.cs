@@ -11,6 +11,9 @@
 //                                                          moving f_b to |f_b − Flo|)
 //   margin      OP1dB − max(signal, blockers)            (before anything compresses, the whole chain's IP1dB − Pin)
 //   SNR         signal − noise
+//   compression OP1dB                                    (the stages up to the node; none before anything compresses)
+//   sensitivity MDS + SNR_req + G                        (the input the chain needs, carried to the node)
+//   SFDR        (2/3)·(OIP3 − noise)                     (the stages up to the node; none before anything is nonlinear)
 
 using CircuitRF.Core.Matching;
 using CircuitRF.Core.Systems;
@@ -19,8 +22,13 @@ using RfCore.Data;
 namespace CircuitRF.Design.Chain;
 
 /// <summary>One node's levels: the chain's input (node 0) or a stage's output.</summary>
+/// <param name="CompressionDbm">The OP1dB of the stages up to the node, at the node; NaN before anything compresses.</param>
+/// <param name="SensitivityDbm">The chain's sensitivity, MDS + the required SNR, carried to the node by its gain.</param>
+/// <param name="SfdrDb">The spurious-free range at the node, from its noise floor to where the IM3 would reach it; NaN
+/// before anything is nonlinear.</param>
 public sealed record ChainNodeLevel(string Node, double SignalDbm, double NoiseDbm, double NfDb, double Im3Dbm,
-                                    IReadOnlyList<double> BlockerDbm, double InterferenceDbm, double MarginDb, double SnrDb);
+                                    IReadOnlyList<double> BlockerDbm, double InterferenceDbm, double MarginDb, double SnrDb,
+                                    double CompressionDbm, double SensitivityDbm, double SfdrDb);
 
 public static class ChainLevels
 {
@@ -39,8 +47,9 @@ public static class ChainLevels
         double interference = double.NaN;
         // Where nothing has compressed yet, the margin is the whole chain's, referred to its input.
         double inMargin = double.IsFinite(r.Totals.Ip1dbDbm) ? r.Totals.Ip1dbDbm - (nb > 0 ? Math.Max(d.InputPowerDbm, blk.Max()) : d.InputPowerDbm) : double.NaN;
+        double sens = r.Totals.SensitivityDbm;
         nodes.Add(new ChainNodeLevel("IN", d.InputPowerDbm, inNoise, 0, double.NaN, [.. blk], double.NaN, inMargin,
-                                     d.InputPowerDbm - inNoise));
+                                     d.InputPowerDbm - inNoise, double.NaN, sens, double.NaN));
         for (int i = 0; i < r.Stages.Count; i++)
         {
             var st = d.Stages[i];
@@ -60,7 +69,10 @@ public static class ChainLevels
                 double.IsFinite(row.Oip3Dbm) ? 3 * row.PoutDbm - 2 * row.Oip3Dbm : double.NaN,
                 [.. blk], interference,
                 double.IsFinite(row.Op1dbDbm) ? row.Op1dbDbm - strongest : inMargin,
-                row.PoutDbm - row.NoiseOutDbm));
+                row.PoutDbm - row.NoiseOutDbm,
+                double.IsFinite(row.Op1dbDbm) ? row.Op1dbDbm : double.NaN,
+                sens + row.GainDb,
+                double.IsFinite(row.Oip3Dbm) ? 2.0 / 3.0 * (row.Oip3Dbm - row.NoiseOutDbm) : double.NaN));
         }
         return nodes;
     }
