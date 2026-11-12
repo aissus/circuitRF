@@ -327,6 +327,28 @@ public sealed record ModelProvenance
     /// bias point(s)</c> (brief-modelcomposer-17) — so a model whose charges are constant capacitances is never taken for a
     /// nonlinear one. Empty, and not written, otherwise.</summary>
     public string Charges          { get; init; } = "";
+    /// <summary>Set when the model is a quasi-static stand-in for a device circuitRF sampled itself (<c>model sample</c>):
+    /// what it stands in for and over what. Null, and not written, for every other model.</summary>
+    public StandInProvenance? StandIn { get; init; }
 }
 
 public sealed record ModelSource(string Path, string Sha256);
+
+/// <summary>
+/// What a stand-in was sampled from (<c>model sample</c>): the device's instance text as it ran (a model file by its name
+/// only), the SHA-256 of that text and of the model file it names, the bias region (<c>[lo, hi]</c>, volts) and the grid
+/// over it (<c>[vgs count, vds count]</c>), the small-signal frequency the charges come from, the temperatures, and whether
+/// the device's thermal node was held at the ambient. A stand-in is one instance: it does not scale (<c>N</c> must be
+/// <c>N0</c>), and it warns once when a run leaves the sampled region (<see cref="ComposedCoreModel"/>).
+/// </summary>
+public sealed record StandInProvenance
+{
+    public string Device { get; init; } = "";
+    public string Sha256 { get; init; } = "";
+    public IReadOnlyList<double> Vgs { get; init; } = [];
+    public IReadOnlyList<double> Vds { get; init; } = [];
+    public IReadOnlyList<int> Grid { get; init; } = [];
+    public double FrequencyHz { get; init; }
+    public IReadOnlyList<double> Temperatures { get; init; } = [];
+    public bool Isothermal { get; init; }
+}

@@ -610,7 +610,12 @@ public static class CircuitEvaluation
     }
 
     private static IReadOnlyList<string> DrainWarnings(ElaboratedNetlist nl)
-        => nl.Warnings.Count > 0 ? [.. nl.Warnings] : [];
+    {
+        // The engines drain a model's queue as they stamp it, which is before a nonlinear model has been evaluated; what
+        // the evaluations queued (a stand-in leaving its sampled region) is drained here, once the run is over.
+        foreach (var ec in nl.Components) nl.DrainModelWarnings(ec.Model);
+        return nl.Warnings.Count > 0 ? [.. nl.Warnings] : [];
+    }
 
     private static IReadOnlyList<string> DrainNotes(ElaboratedNetlist nl)
         => nl.Notes.Count > 0 ? [.. nl.Notes] : [];

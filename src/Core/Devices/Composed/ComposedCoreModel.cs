@@ -65,8 +65,14 @@ namespace CircuitRF.Core.Devices.Composed;
 /// the model. The whole charge is then read with its temperature and trap inputs at the frozen point's values — the
 /// surface <c>Q̃(vgs, vds)</c> the construction acts on, in the terminal frame, so a line across <c>vds = 0</c> under
 /// <c>Exchange</c> needs nothing special.</para>
+///
+/// <para><b>A stand-in says when it leaves its data</b> (<see cref="ModelProvenance.StandIn"/>, <c>model sample</c>). A
+/// stand-in replaces a device the run could have simulated, so an evaluation outside its sampled region is an answer the
+/// device never gave: the core counts them (<see cref="GuidedExtrapolation.OutsideOnThisThread"/>, around its own calls)
+/// and reports one keyed warning per run. Any other model keeps extrapolating silently, as guided extrapolation is
+/// designed to.</para>
 /// </summary>
-public sealed class ComposedCoreModel : ComponentModel, IBiasFrozen
+public sealed class ComposedCoreModel : ComponentModel, IBiasFrozen, IReportsWarnings
 {
     private readonly ComposedCoreProgram _p;
     private readonly double _scale;
@@ -86,6 +92,8 @@ public sealed class ComposedCoreModel : ComponentModel, IBiasFrozen
     private readonly ChargeBranches _branches;   // the branches held at the bias point, none under LinearC
     private Frozen? _frozen;
     private readonly double _rth, _cth;   // the instance's thermal overrides, NaN for the model's own
+    private readonly StandInProvenance? _standIn;
+    private long _outside, _evaluations;  // a stand-in's evaluations outside its sampled region, and all of them
 
     /// <summary>The model this core evaluates.</summary>
     public LoadedComposedModel Loaded { get; }
@@ -113,6 +121,7 @@ public sealed class ComposedCoreModel : ComponentModel, IBiasFrozen
     {
         _rth = rth;
         _cth = cth;
+        _standIn = loaded.Model.Provenance.StandIn;
         Loaded   = loaded;
         N        = n;
         Switches = switches ?? ComposedSwitches.Default;
@@ -388,6 +397,7 @@ public sealed class ComposedCoreModel : ComponentModel, IBiasFrozen
 
     protected override void EvaluateInto(in PortVoltages v, double[] i, double[] q, double[,] dg, double[,] dc)
     {
+        long before = GuidedExtrapolation.OutsideOnThisThread;
         int n = PortCount;
         Span<double> ri = stackalloc double[MaxPorts], rq = stackalloc double[MaxPorts],
                      rg = stackalloc double[MaxPorts * MaxPorts], rc = stackalloc double[MaxPorts * MaxPorts];
@@ -400,6 +410,31 @@ public sealed class ComposedCoreModel : ComponentModel, IBiasFrozen
             q[p] = rq[p];
             for (int col = 0; col < n; col++) { dg[p, col] = rg[p * n + col]; dc[p, col] = rc[p * n + col]; }
         }
+        CountOutside(before, 1);
+    }
+
+    /// <summary>A stand-in's tally of the evaluations since <paramref name="before"/> that left its sampled region.</summary>
+    private void CountOutside(long before, int samples)
+    {
+        if (_standIn is null) return;
+        Interlocked.Add(ref _evaluations, samples);
+        if (GuidedExtrapolation.OutsideOnThisThread - before is > 0 and var outside) Interlocked.Add(ref _outside, outside);
+    }
+
+    /// <summary>The words every stand-in warning carries — what validation looks for in a run's warnings.</summary>
+    public const string OutsideSentence = "the stand-in was evaluated outside the region it was sampled over";
+
+    /// <summary>One warning per run when a stand-in has been evaluated outside the region it was sampled over.</summary>
+    public IReadOnlyList<(string Key, string Message)> DrainWarnings()
+    {
+        long outside = Interlocked.Read(ref _outside);
+        if (_standIn is not { } s || outside == 0) return [];
+        static string R(IReadOnlyList<double> r) => r.Count == 2
+            ? $"{r[0].ToString("G4", System.Globalization.CultureInfo.InvariantCulture)} to {r[1].ToString("G4", System.Globalization.CultureInfo.InvariantCulture)} V" : "?";
+        return [($"composed.standin-outside:{Label}",
+                 $"'{Label}': {OutsideSentence} (vgs {R(s.Vgs)}, vds {R(s.Vds)}) " +
+                 $"at {outside} of {Interlocked.Read(ref _evaluations)} evaluation(s) so far; there it is continued linearly, not the " +
+                 "device it stands in for. Sample wider, or check the result against the device.")];
     }
 
     /// <summary>
@@ -410,6 +445,7 @@ public sealed class ComposedCoreModel : ComponentModel, IBiasFrozen
     public override void EvaluateGrid(ReadOnlySpan<double> portVoltages, ReadOnlySpan<double> controlCurrents,
                                       int sampleCount, GridResult into)
     {
+        long before = GuidedExtrapolation.OutsideOnThisThread;
         int n = PortCount;
         into.EnsureShape(n, 0, sampleCount);
         into.ResetTerms();
@@ -433,6 +469,7 @@ public sealed class ComposedCoreModel : ComponentModel, IBiasFrozen
                 }
             }
         }
+        CountOutside(before, sampleCount);
     }
 
     /// <summary>

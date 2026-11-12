@@ -234,6 +234,7 @@ public static class ModelValidation
         foreach (var set in sets)
         {
             rc?.ThrowIfCancellationRequested();
+            int warned = ctx.StandInWarnings.Count;
             try
             {
                 var item = set.Kind switch
@@ -254,6 +255,8 @@ public static class ModelValidation
                 else items.Add(item);
             }
             catch (ModelingException ex) { notes.Add($"{set.Name}: not validated — {ex.Message}"); }
+            // A stand-in that left its sampled region says so beside the item it left it in: a miss there is the data's edge.
+            notes.AddRange(ctx.StandInWarnings.Skip(warned).Distinct().Select(w => $"{set.Name}: {w}"));
         }
         return new ValidationResult(cmodelPath, items, notes);
     }
@@ -284,6 +287,8 @@ public static class ModelValidation
         private IntrinsicResult? _intrinsic;
         public IntrinsicResult Intrinsic => _intrinsic ??= new IntrinsicExtraction(CmcPath).Run(Doc, Data, rc: Rc);
         public string Device(bool intrinsic, string g, string d) => ValidationBench.Device(ModelPath, N, intrinsic, g, d);
+        /// <summary>A stand-in's warnings from the runs so far (<see cref="ComposedCoreModel.OutsideSentence"/>), in order.</summary>
+        public List<string> StandInWarnings { get; } = [];
     }
 
     private static NormalisedData DataOf(Context ctx, CmcDataSet set) =>
@@ -519,6 +524,8 @@ public static class ModelValidation
                                            new CircuitEvaluationRequest { Measurements = false, Control = ctx.Rc?.Child() });
         if (r.Status == RunStatus.Cancelled) throw new OperationCanceledException();
         if (r.Status != RunStatus.Success) throw new ModelingException(what, r.StatusMessage);
+        lock (ctx.StandInWarnings)
+            ctx.StandInWarnings.AddRange(r.Warnings.Where(w => w.Contains(ComposedCoreModel.OutsideSentence, StringComparison.Ordinal)));
         return r.Results.FirstOrDefault(x => x.Data.Contains(cube))?.Data
                ?? throw new ModelingException(what, $"the run produced no {cube}.");
     }

@@ -238,6 +238,7 @@ public static class CmodelFile
                 Sources          = sources,
                 SettingsDigest   = OptStr(pv, "SettingsDigest"),
                 Charges          = OptStr(pv, "Charges"),
+                StandIn          = pv.TryGetProperty("StandIn", out var si) ? si.Deserialize<StandInProvenance>() : null,
             };
         }
 
@@ -1070,6 +1071,11 @@ public static class CmodelFile
             w.WriteEndArray();
             w.WriteString("SettingsDigest", m.Provenance.SettingsDigest);
             if (m.Provenance.Charges.Length > 0) w.WriteString("Charges", m.Provenance.Charges);
+            if (m.Provenance.StandIn is { } standIn)
+            {
+                w.WritePropertyName("StandIn");
+                JsonSerializer.Serialize(w, standIn);
+            }
             w.WriteEndObject();
 
             w.WriteEndObject();

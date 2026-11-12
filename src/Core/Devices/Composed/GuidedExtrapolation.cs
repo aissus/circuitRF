@@ -216,6 +216,13 @@ public sealed class GuidedExtrapolation
         return Math.Min(Math.Sqrt(a * a + floor * floor), gx);
     }
 
+    /// <summary>How many evaluations on this thread have fallen outside a training domain — any constituent's, every
+    /// model's. Per thread so that counting costs no synchronisation: a caller reads it before and after its own call and
+    /// takes the difference (<see cref="ComposedCoreModel"/>'s stand-in warning).</summary>
+    public static long OutsideOnThisThread => t_outside;
+
+    [ThreadStatic] private static long t_outside;
+
     private readonly RuntimeEvaluator _f;
     private readonly DomainGeometry _domain;
     private readonly double _gx;
@@ -262,6 +269,7 @@ public sealed class GuidedExtrapolation
 
         _domain.ToNormalised(p, u);
         if (_domain.Project(u, ub, jac)) return _f.Evaluate(p, grad);
+        t_outside++;
 
         Span<double> pb = stackalloc double[RuntimeEvaluator.MaxInputs];
         Span<double> wp = stackalloc double[RuntimeEvaluator.MaxInputs];
