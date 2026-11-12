@@ -41,7 +41,7 @@ public sealed class ChainBudgetExampleTests(ITestOutputHelper output) : IDisposa
     public const string Folder = "RF Chain Budget";
     public static string Workspace => Path.Combine(PalaceBackendTests.RepoRoot(), "examples", Folder);
 
-    private static readonly string[] Chains = ["Superhet", "Array", "Front End", "Dual Conversion", "26 GHz Link"];
+    private static readonly string[] Chains = ["Superhet", "Array", "Front End", "Dual Conversion", "26 GHz Link", "Linear TX"];
 
     /// <summary>The benches Transfer writes for a shipped chain: a dual-conversion chain's mostly once per conversion.</summary>
     private static IReadOnlyList<ChainBenchText> Benches(string root, string chain)
@@ -342,6 +342,92 @@ public sealed class ChainBudgetExampleTests(ITestOutputHelper output) : IDisposa
     }
 
     private static double M0(DataSet ds, string name) => ds[name].RealValues[0];
+
+    // ── the linear transmitter ───────────────────────────────────────────────
+
+    /// <summary>The transmitter's readouts are the README's, worked out by hand from their textbook forms, the PA's 1 dB
+    /// point and saturation by root-finding Rapp's own AM-AM.</summary>
+    [Fact]
+    public void LinearTx_TheBudget_IsTheHandCheck()
+    {
+        var x = ChainTransmit.Read(ChainBudget.Evaluate(ChainDesignIo.LoadFromFile(Path.Combine(Workspace, "Linear TX.cchain"))))!;
+        Assert.Equal(27.999832, x.PoutDbm, 5);
+        Assert.Equal(27.945698, x.PoutCwDbm, 5);
+        Assert.Equal(6.043250, x.BackoffP1dbDb, 5);
+        Assert.Equal(36.4, x.PsatDbm, 9);
+        Assert.Equal(8.400168, x.BackoffPsatDb, 5);
+        Assert.Equal(44.647399, x.Oip3Dbm, 5);
+        Assert.Equal(-38.066347, x.AclrDbc, 5);
+        Assert.Equal(-117.837909, x.NoisePsdDbmHz, 5);
+        Assert.Equal(-156.502192, x.RxNoisePsdDbmHz, 4);
+        Assert.Equal(-83.491892, x.RxNoiseDbm, 4);
+        Assert.Equal(-167.823758, x.ImageDbc, 4);
+        Assert.Equal(-90.267760, x.LoLeakDbc, 4);
+    }
+
+    /// <summary>The PA bench: Rapp's AM-AM over the drive to round-off, its 1 dB point on the closed form to the
+    /// three-point interpolation's 0.01 dB, its efficiency the power it adds over its 10 W; and the NR carrier's ACLR
+    /// through the PA alone, beside the budget's estimate for the whole chain.</summary>
+    [Fact]
+    [Trait("Category", "Benchmark")]
+    public void LinearTx_PA_CompressesOnTheLaw()
+    {
+        var ds = Simulate("Linear TX PA");
+        Assert.InRange(ds["measurements.AMAM_err"].RealValues.Max(Math.Abs), 0, 1e-6);
+        Assert.InRange(ds["measurements.AMPM_err"].RealValues.Max(Math.Abs), 0, 1e-6);
+        Assert.InRange(M(ds, "IP1dB_err"), -0.02, 0.02);
+        Assert.InRange(M(ds, "Pout_op_err"), -1e-6, 1e-6);
+        output.WriteLine($"Linear TX PA: NR carrier {M(ds, "Penv_sim"):0.##} dBm out, ACLR {M(ds, "ACLR_L_sim"):0.##} / " +
+                         $"{M(ds, "ACLR_U_sim"):0.##} dBc, EVM {M(ds, "EVM_sim"):0.##} %, PAE {M(ds, "PAE_env_sim"):0.##} %");
+        Assert.InRange(M(ds, "ACLR_L_sim"), -40, -35);
+        Assert.InRange(M(ds, "PAE_env_sim"), 6, 8);
+    }
+
+    /// <summary>The 1-Tone bench: the output over the drive on the budget's CW output through each stage's compression,
+    /// from 20 dB back to 18 dB over the operating point; the 1 dB point the cascade formula's; the IQ modulator's image
+    /// and LO at its own output on their closed forms; and the noise in band and in the receive band 0.13 to 0.15 dB
+    /// under the budget, half of it amplitude noise, which the PA's differential gain at its operating point takes down.</summary>
+    [Fact]
+    [Trait("Category", "Benchmark")]
+    public void LinearTx_1Tone_TheOutputAndItsSpurs_OnTheBudget()
+    {
+        var ds = Simulate("Linear TX 1-Tone");
+        Assert.InRange(ds["measurements.Pout_err"].RealValues.Max(Math.Abs), 0, 1e-3);
+        Assert.InRange(M(ds, "Ptop_err"), -1e-3, 1e-3);
+        Assert.InRange(M(ds, "IP1dB_err"), 0, 0.15);
+        Assert.InRange(M(ds, "ImageIq_sim") - M(ds, "ImageIq_calc"), -1e-3, 1e-3);
+        Assert.InRange(M(ds, "LoIq_sim") - M(ds, "LoIq_calc"), -0.01, 0.01);
+        Assert.InRange(M(ds, "LoLeak_sim") - M(ds, "LoLeak_calc"), -0.2, 0.2);
+        Assert.InRange(M(ds, "Noise_err"), -0.25, 0);
+        Assert.InRange(M(ds, "RxNoise_err"), -0.25, 0);
+    }
+
+    /// <summary>The 2-Tone bench: at the operating point the IM3 at or under the budget's, the cubic with the PA's 1 dB
+    /// point being the pessimistic one for a Rapp law of p = 2; 20 dB down the PA's IM3 falls at five times the drive, and
+    /// the intercept read there is the other stages'.</summary>
+    [Fact]
+    [Trait("Category", "Benchmark")]
+    public void LinearTx_2Tone_TheIm3AtOrUnderTheEstimate()
+    {
+        var ds = Simulate("Linear TX 2-Tone");
+        output.WriteLine($"Linear TX 2-Tone: IM3 at the operating point {M(ds, "IM3_op_sim"):0.##} dBc against {M(ds, "IM3_op_calc"):0.##}; " +
+                         $"OIP3 20 dB down {M(ds, "OIP3_lo_sim"):0.##} dBm against {M(ds, "OIP3_calc"):0.##}");
+        Assert.InRange(M(ds, "IM3_op_err"), -6, 0);
+        Assert.True(M(ds, "OIP3_lo_sim") > M(ds, "OIP3_calc"));
+    }
+
+    /// <summary>The Envelope bench: the NR carrier's ACLR at the operating point beside the budget's estimate from the
+    /// intercept, its output under the linear budget by the compression its peaks see.</summary>
+    [Fact]
+    [Trait("Category", "Benchmark")]
+    public void LinearTx_Envelope_TheAclrBesideTheEstimate()
+    {
+        var ds = Simulate("Linear TX Envelope");
+        output.WriteLine($"Linear TX Envelope: ACLR {M(ds, "ACLR_op_sim"):0.##} dBc against {M(ds, "ACLR_op_calc"):0.##}, " +
+                         $"Pout {M(ds, "Pout_op_err"):0.###} dB from the budget, EVM {M(ds, "EVM_op_sim"):0.##} %");
+        Assert.InRange(M(ds, "ACLR_op_err"), -2, 2);
+        Assert.InRange(M(ds, "Pout_op_err"), -0.5, 0);
+    }
 
     /// <summary>The verb's report heads the cascade with the input the budget used: with a link, the power it delivers,
     /// the same number the link line ends with, not the stated input.</summary>

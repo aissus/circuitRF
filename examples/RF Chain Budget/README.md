@@ -23,6 +23,9 @@ dual-conversion receiver has one blocker on each mixer's image, and asks for the
 And a link: **`26 GHz Link.cchain`**, a 16-element transmitter 200 m from an 8-element receiver at 26 GHz, in NR band
 n258 (24.25 to 27.5 GHz), whose stages scale with the frequency. See [The 26 GHz link](#the-26-ghz-link).
 
+And a transmitter: **`Linear TX.cchain`**, a 3.5 GHz chain for a 100 MHz NR carrier at 30 kHz subcarrier spacing, from an
+IQ modulator to a PA with Rapp's law and a band filter. See [The linear transmitter](#the-linear-transmitter).
+
 The formulas, the parts and the benches are in *Reference ▸ RF Chain Budget*.
 
 ## The chains
@@ -249,6 +252,63 @@ RF filter and the roofing filter pass it, MIX1 moves it to 308.2 MHz, IMGBPF tak
 inside the second IF's channel, 27.0 dB under the signal. Exactly on the image, it would land on the same frequency as
 blocker 1 after MIX2, which a harmonic-balance run cannot tell apart, and Transfer would leave that Blockers bench out
 and say so.
+
+## The linear transmitter
+
+`Linear TX.cchain` is a transmit chain (**Direction** Transmit): driven at its input, read at its output.
+
+| Stage | Part | Gain | NF | Compression |
+|---|---|---|---|---|
+| IQ | `IQMod`: a 90° hybrid, two mixers and their LO's quadrature, 3.3 GHz at 7 dBm, the upper sideband; 0.2 dB and 1.5° of imbalance, 50 dB of LO isolation | −5.90 dB | 12 dB | IIP3 18.01 dBm |
+| BPF1 | `Filter`, 5th-order Butterworth, 3.4 to 3.6 GHz | −1.5 dB | 1.5 dB | |
+| DRV | `Amp` | 20 dB | 4 dB | OIP3 32 dBm |
+| PA | `Amp`, `Law` Rapp: `Psat` 37 dBm, `P` 2; `Pdc` 10 W | 30 dB | 6 dB | IP1dB 5.84 dBm |
+| BPF2 | `Filter`, 5th-order 0.1 dB Chebyshev, 3.4 to 3.6 GHz | −0.6 dB | 0.6 dB | |
+
+Its input is a 200 MHz IF at −14 dBm, high enough that the LO, 200 MHz below the carrier, and the image, 400 MHz below,
+clear the 100 MHz carrier's adjacent channels; the band filters then take both down. Its receive band is 20 MHz wide,
+200 MHz above the carrier.
+
+| | Linear TX |
+|---|---|
+| Gain, NF | 42.00 dB, 14.14 dB |
+| Output | 28.00 dBm; a CW carrier 27.95 dBm, 0.05 dB into compression |
+| Back-off | 6.04 dB from OP1dB 34.04 dBm, 8.40 dB from Psat 36.40 dBm |
+| OIP3, ACLR | 44.65 dBm, −38.07 dBc by 2·(Pout − OIP3) − 4.77 dB |
+| Noise | −117.84 dBm/Hz at the output; −83.49 dBm in the receive band |
+| Image, LO | rejected 35.17 dB at the modulator, −167.82 dBc at the output; −23.22 dBc at the modulator, −90.27 dBc at the output |
+
+**The PA's intercept is the cubic's at its 1 dB point.** Rapp's law at `P` = 2 has no third-order term: its IM3 rises
+5 dB per dB. The budget gives it the intercept a cubic compressing where it does would have, 15.47 dBm in, and the ACLR
+estimate follows from that. The benches show what the law does instead: the 2-Tone bench's IM3 at the operating point
+is −43.41 dBc against the estimate's −39.32, and 20 dB down the IM3 is the driver's and the mixers', their
+intercept 57.15 dBm; the Envelope bench's NR carrier reads −39.07 dBc of ACLR against the estimate's −38.07,
+1.0 dB better: the estimate errs on the pessimistic side here too, by less, since the carrier's peaks reach the 1 dB point where the cubic is close to the law.
+
+**Its benches**, each against the budget:
+
+- **`Linear TX 1-Tone`**: the output over the drive, from 20 dB back to 10 dB past saturation, on the budget's CW output to
+  5×10⁻⁴ dB, the Chebyshev filter's ripple at 3.5 GHz; the 1 dB point 0.10 dB later than the cascaded formula's; the
+  modulator's image and LO on their closed forms at its own output (behind an isolator, the bench's: the filter
+  reflects both); the noise 0.15 dB under the budget 1 MHz off the carrier and 0.13 dB in the receive band, half of it
+  amplitude noise, which the PA's differential gain at its operating point takes down 0.25 dB.
+- **`Linear TX 2-Tone`**: two tones at three levels, the IQ modulator's LO the third tone of the run: at the operating
+  point the IM3 4.1 dB under the cubic's estimate, and 20 dB down the other stages' third order, an intercept of
+  57.15 dBm.
+- **`Linear TX Envelope`**: the NR carrier at the operating point and 3 dB either side: at the operating point 27.65 dBm,
+  0.35 dB under the linear budget as its peaks compress, ACLR −39.07 dBc and 4.09 % EVM, the IQ modulator's 35 dB image
+  rejection in it.
+- **`Linear TX PA`**: the PA alone at its own input, from a MOD_Source: the harmonic-balance sweep of its AM-AM and
+  AM-PM on Rapp's law to 10⁻⁹, its 1 dB point within 0.01 dB, its efficiency the power it adds over its 10 W; and the
+  NR carrier through it, 28.38 dBm out, −37.73 and −37.86 dBc of ACLR, 2.53 % EVM, 6.88 % efficiency.
+
+The 2-Tone bench takes several minutes (three tones in harmonic balance at the order its IM3 needs) and the Envelope
+bench a few (two fundamentals, the carrier and the LO).
+
+**Try it.** Set the PA's `P` to 3 and its 1 dB point moves to 0.01 dB under its saturated input: a harder PA, the same
+back-off, and the budget's estimate rises with its cubic. Set `Law` to Saleh with `PhiSat` 10° and `PhiMax` 20°, and
+its intercept takes the AM-PM into its third-order term. Set the IQ modulator's `PhaseImb` to 0 and `GainImb` to 0 and
+the image goes; set `IsoLO_IF` to 200 and so does the LO.
 
 ## What the displays show
 
