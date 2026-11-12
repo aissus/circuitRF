@@ -31,3 +31,16 @@ public interface IReportsWarnings
     /// within this model's own per-instance reporter.</summary>
     IReadOnlyList<(string Key, string Message)> DrainWarnings();
 }
+
+/// <summary>
+/// What a model has to say about a whole run, read once the run is over (<c>ElaboratedNetlist.DrainAllModelWarnings</c>)
+/// rather than each time it is stamped: a count only the end of the run makes whole — a stand-in's evaluations outside the
+/// region it was sampled over. The engines drain <see cref="IReportsWarnings"/> right after stamping, before a nonlinear
+/// model has been evaluated and, in harmonic balance, again at every solve, so a count read there would be a snapshot of
+/// part of the run, and the first one would win the key. The same contract otherwise: each call returns and clears what
+/// has accrued since the last, keyed for <c>AddWarningOnce</c>.
+/// </summary>
+public interface IReportsRunWarnings
+{
+    IReadOnlyList<(string Key, string Message)> DrainRunWarnings();
+}

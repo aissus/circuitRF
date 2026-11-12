@@ -173,6 +173,7 @@ public sealed class ElaboratedNetlist : IDisposable
     public void MergeDiagnosticsFrom(ElaboratedNetlist other)
     {
         if (ReferenceEquals(other, this)) return;
+        other.DrainAllModelWarnings();
         foreach (var (key, message) in other._keyedWarnings) AddWarningOnce(key, message);
         foreach (var (key, message) in other._keyedNotes)    AddNoteOnce(key, message);
     }
@@ -189,6 +190,23 @@ public sealed class ElaboratedNetlist : IDisposable
         if (model is IReportsWarnings rw)
             foreach (var (key, message) in rw.DrainWarnings())
                 AddWarningOnce(key, message);
+    }
+
+    /// <summary>
+    /// Drains every component's queue, and what each has to say about the whole run (<see cref="IReportsRunWarnings"/>) —
+    /// what a run's owner calls once the run is over. The engines drain a model as they stamp it, which is before a
+    /// nonlinear model has been evaluated, so what the evaluations accrued (a stand-in leaving its sampled region) reaches
+    /// <see cref="Warnings"/> only through this: <c>CircuitEvaluation</c>, the CLI's warning printer, and
+    /// <see cref="MergeDiagnosticsFrom"/> on the copy it folds in.
+    /// </summary>
+    public void DrainAllModelWarnings()
+    {
+        foreach (var ec in Components)
+        {
+            DrainModelWarnings(ec.Model);
+            if (ec.Model is IReportsRunWarnings run)
+                foreach (var (key, message) in run.DrainRunWarnings()) AddWarningOnce(key, message);
+        }
     }
 
     /// <summary>

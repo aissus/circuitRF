@@ -2996,6 +2996,9 @@ static string[] TakeKitFolders(string[] args, out List<string> folders)
 /// </summary>
 static (int Notes, int Warnings) PrintWarnings(ElaboratedNetlist nl, (int Notes, int Warnings) from = default)
 {
+    // What the models queued while they were evaluated (a stand-in leaving its sampled region) is drained here; the
+    // engines drain only as they stamp.
+    nl.DrainAllModelWarnings();
     for (; from.Notes < nl.Notes.Count; from.Notes++)
     {
         Console.Error.WriteLine($"[circuitRF] {nl.Notes[from.Notes]}");

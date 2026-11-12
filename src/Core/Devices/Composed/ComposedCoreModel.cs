@@ -68,11 +68,12 @@ namespace CircuitRF.Core.Devices.Composed;
 ///
 /// <para><b>A stand-in says when it leaves its data</b> (<see cref="ModelProvenance.StandIn"/>, <c>model sample</c>). A
 /// stand-in replaces a device the run could have simulated, so an evaluation outside its sampled region is an answer the
-/// device never gave: the core counts them (<see cref="GuidedExtrapolation.OutsideOnThisThread"/>, around its own calls)
-/// and reports one keyed warning per run. Any other model keeps extrapolating silently, as guided extrapolation is
-/// designed to.</para>
+/// device never gave: the core counts the samples that left it (<see cref="GuidedExtrapolation.OutsideOnThisThread"/>, read
+/// around each operating point it evaluates) and reports one keyed warning per run, once the run is over
+/// (<see cref="IReportsRunWarnings"/>), with the run's total. Any other model keeps extrapolating silently, as guided
+/// extrapolation is designed to.</para>
 /// </summary>
-public sealed class ComposedCoreModel : ComponentModel, IBiasFrozen, IReportsWarnings
+public sealed class ComposedCoreModel : ComponentModel, IBiasFrozen, IReportsRunWarnings
 {
     private readonly ComposedCoreProgram _p;
     private readonly double _scale;
@@ -93,7 +94,7 @@ public sealed class ComposedCoreModel : ComponentModel, IBiasFrozen, IReportsWar
     private Frozen? _frozen;
     private readonly double _rth, _cth;   // the instance's thermal overrides, NaN for the model's own
     private readonly StandInProvenance? _standIn;
-    private long _outside, _evaluations;  // a stand-in's evaluations outside its sampled region, and all of them
+    private long _outside, _evaluations, _pending;  // a stand-in's samples outside its region, all of them, and the outside ones not yet reported
 
     /// <summary>The model this core evaluates.</summary>
     public LoadedComposedModel Loaded { get; }
@@ -410,31 +411,35 @@ public sealed class ComposedCoreModel : ComponentModel, IBiasFrozen, IReportsWar
             q[p] = rq[p];
             for (int col = 0; col < n; col++) { dg[p, col] = rg[p * n + col]; dc[p, col] = rc[p * n + col]; }
         }
-        CountOutside(before, 1);
+        Tally(GuidedExtrapolation.OutsideOnThisThread != before ? 1 : 0, 1);
     }
 
-    /// <summary>A stand-in's tally of the evaluations since <paramref name="before"/> that left its sampled region.</summary>
-    private void CountOutside(long before, int samples)
+    /// <summary>A stand-in's tally: <paramref name="samples"/> operating points evaluated, <paramref name="outside"/> of them
+    /// outside the sampled region — a point counts once however many of its constituents left their domains.</summary>
+    private void Tally(int outside, int samples)
     {
         if (_standIn is null) return;
         Interlocked.Add(ref _evaluations, samples);
-        if (GuidedExtrapolation.OutsideOnThisThread - before is > 0 and var outside) Interlocked.Add(ref _outside, outside);
+        if (outside == 0) return;
+        Interlocked.Add(ref _outside, outside);
+        Interlocked.Add(ref _pending, outside);
     }
 
     /// <summary>The words every stand-in warning carries — what validation looks for in a run's warnings.</summary>
     public const string OutsideSentence = "the stand-in was evaluated outside the region it was sampled over";
 
-    /// <summary>One warning per run when a stand-in has been evaluated outside the region it was sampled over.</summary>
-    public IReadOnlyList<(string Key, string Message)> DrainWarnings()
+    /// <summary>A stand-in's warning when samples have left its region since the last drain, with the run's totals so far —
+    /// the whole run's when, as intended, it is read once the run is over. Clears what it reports.</summary>
+    public IReadOnlyList<(string Key, string Message)> DrainRunWarnings()
     {
-        long outside = Interlocked.Read(ref _outside);
-        if (_standIn is not { } s || outside == 0) return [];
-        static string R(IReadOnlyList<double> r) => r.Count == 2
-            ? $"{r[0].ToString("G4", System.Globalization.CultureInfo.InvariantCulture)} to {r[1].ToString("G4", System.Globalization.CultureInfo.InvariantCulture)} V" : "?";
+        if (_standIn is not { } s || Interlocked.Exchange(ref _pending, 0) == 0) return [];
+        long outside = Interlocked.Read(ref _outside), all = Interlocked.Read(ref _evaluations);
+        var inv = System.Globalization.CultureInfo.InvariantCulture;
+        string R(IReadOnlyList<double> r) => r.Count == 2 ? $"{r[0].ToString("G4", inv)} to {r[1].ToString("G4", inv)} V" : "?";
         return [($"composed.standin-outside:{Label}",
-                 $"'{Label}': {OutsideSentence} (vgs {R(s.Vgs)}, vds {R(s.Vds)}) " +
-                 $"at {outside} of {Interlocked.Read(ref _evaluations)} evaluation(s) so far; there it is continued linearly, not the " +
-                 "device it stands in for. Sample wider, or check the result against the device.")];
+                 $"'{Label}': {OutsideSentence} (vgs {R(s.Vgs)}, vds {R(s.Vds)}) at {outside} of {all} operating point(s) " +
+                 $"({(100.0 * outside / Math.Max(all, 1)).ToString("G3", inv)} %); there it is continued linearly, not the device it " +
+                 "stands in for. Sample wider, or check the result against the device.")];
     }
 
     /// <summary>
@@ -445,8 +450,7 @@ public sealed class ComposedCoreModel : ComponentModel, IBiasFrozen, IReportsWar
     public override void EvaluateGrid(ReadOnlySpan<double> portVoltages, ReadOnlySpan<double> controlCurrents,
                                       int sampleCount, GridResult into)
     {
-        long before = GuidedExtrapolation.OutsideOnThisThread;
-        int n = PortCount;
+        int n = PortCount, outside = 0;
         into.EnsureShape(n, 0, sampleCount);
         into.ResetTerms();
         Span<double> ri = stackalloc double[MaxPorts], rq = stackalloc double[MaxPorts],
@@ -456,8 +460,10 @@ public sealed class ComposedCoreModel : ComponentModel, IBiasFrozen, IReportsWar
         for (int t = 0; t < sampleCount; t++)
         {
             for (int k = 0; k < _trapCount; k++) state[k] = portVoltages[(2 + k) * sampleCount + t];
+            long before = GuidedExtrapolation.OutsideOnThisThread;
             Core(portVoltages[t], portVoltages[sampleCount + t], _dispersive ? portVoltages[2 * sampleCount + t] : 0.0, state,
                  _thermal ? portVoltages[th * sampleCount + t] : 0.0, ri, rq, rg, rc);
+            if (GuidedExtrapolation.OutsideOnThisThread != before) outside++;
             for (int p = 0; p < n; p++)
             {
                 into.I[into.PortBase(p) + t] = ri[p];
@@ -469,7 +475,7 @@ public sealed class ComposedCoreModel : ComponentModel, IBiasFrozen, IReportsWar
                 }
             }
         }
-        CountOutside(before, sampleCount);
+        Tally(outside, sampleCount);
     }
 
     /// <summary>

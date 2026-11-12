@@ -730,6 +730,13 @@ public static class ComponentModelFactory
         int n = loaded.N0;
         if (parameters.TryGetValue("N", out var nv))
             n = ComposedFingerCount(nv);
+        // A stand-in (model sample) is one sampled instance, not a family: N scales nothing it was sampled from. Here, where
+        // both a ComposedFET's core and a ComposedCore placed directly are made, so neither placement gets round it. M, the
+        // simulator's multiplier of whole devices, stays.
+        if (n != loaded.N0 && loaded.Model.Provenance.StandIn is not null)
+            throw new ParameterRefusalException(
+                $"'{Path.GetFileName(file)}' is a stand-in for one device, sampled at N0 = {loaded.N0}; it does not scale, so N is " +
+                $"{loaded.N0}. Sample the device at the size you need.");
         // Temp is the device's own temperature (a ComposedFET passes its instance's); Dtemp is deliberately not read.
         double deviceC = parameters.TryGetValue(Temperature.AbsoluteParamName, out var tv) && tv.Kind == ValueKind.Real ? tv.AsReal() : ambientC;
         double Thermal(string name) => parameters.TryGetValue(name, out var v) && v.Kind == ValueKind.Real ? v.AsReal() : double.NaN;

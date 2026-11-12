@@ -2507,11 +2507,6 @@ public sealed class Elaborator
             try { n = ComponentModelFactory.ComposedFingerCount(EvalOverride(inst, nOv, parentScope)); }
             catch (ParameterRefusalException ex) { throw new ParameterRefusalException($"'{childPath}': {ex.Message}"); }
         }
-        // A stand-in (model sample) is one sampled instance, not a family: N scales nothing it was sampled from.
-        if (n != loaded.N0 && loaded.Model.Provenance.StandIn is not null)
-            throw new ParameterRefusalException(
-                $"'{childPath}': '{Path.GetFileName(file)}' is a stand-in for one device, sampled at N0 = {loaded.N0}; it does not " +
-                $"scale, so N is {loaded.N0}. Sample the device at the size you need.");
 
         double m = 1.0;
         foreach (string mName in (string[])[MultiplierParamName, "M"])

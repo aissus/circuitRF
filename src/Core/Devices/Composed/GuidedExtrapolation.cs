@@ -216,9 +216,10 @@ public sealed class GuidedExtrapolation
         return Math.Min(Math.Sqrt(a * a + floor * floor), gx);
     }
 
-    /// <summary>How many evaluations on this thread have fallen outside a training domain — any constituent's, every
-    /// model's. Per thread so that counting costs no synchronisation: a caller reads it before and after its own call and
-    /// takes the difference (<see cref="ComposedCoreModel"/>'s stand-in warning).</summary>
+    /// <summary>How many constituent evaluations on this thread have fallen outside a training domain — any constituent's,
+    /// every model's, so one operating point can add several. Per thread so that counting costs no synchronisation: a caller
+    /// reads it before and after one operating point and asks only whether it moved (<see cref="ComposedCoreModel"/>'s
+    /// stand-in warning counts operating points).</summary>
     public static long OutsideOnThisThread => t_outside;
 
     [ThreadStatic] private static long t_outside;
