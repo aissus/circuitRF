@@ -28,9 +28,9 @@ using CircuitRF.Design.Layout;
 // UiSnapshot <file.cdd> -o <out.png> [--view canvas|inspector|display] [--plot n] [--size WxH] [--results <dir>]
 //            [--click x,y] [--drag x0,y0:x1,y1] [--key <Key>] [--shot <png>] ...
 // UiSnapshot --signal "<carrier>" [--signal "<carrier>"] -o <out.png> [--tab n] [--fc <expr>] [--size WxH] [steps]
-// UiSnapshot --chain <file.cchain> -o <out.png> [--select <stage>] [--levels] [--blocks-png <png>] [--size WxH] [steps]
-//   the RF Chain Budget window; --levels turns the Blocks view's Levels strip on; --blocks-png also writes the Blocks
-//   view's Copy picture, the clipboard's 2x bitmap
+// UiSnapshot --chain <file.cchain> -o <out.png> [--select <stage>] [--levels] [--dark] [--blocks-png <png>] [--size WxH] [steps]
+//   the RF Chain Budget window; --levels turns the Blocks view's Levels strip on, and prints where each of its nodes
+//   stands against the blocks' gaps; --blocks-png also writes the Blocks view's Copy picture, the clipboard's 2x bitmap
 // UiSnapshot --snp <file.sNp> -o <out.png> [--size WxH] [steps]
 // UiSnapshot --standalone [--iq <file>] -o <out.png> [--tab n] [--size WxH] [steps]
 // UiSnapshot --tuning <file.csch> -o <out.png> [--size WxH] [steps]
@@ -1345,10 +1345,32 @@ else if (chainFile is not null)
         File.WriteAllBytes(chainBlocksPng, CircuitRF.Render.DataDisplay.PlotDocumentWriter.BuildPngBytes(compose, page, CircuitRF.Ui.Chain.ChainBlocksGraphicExport.BitmapScale)!);
         Console.WriteLine($"wrote {chainBlocksPng} ({page.Width:0} x {page.Height:0} pt page)");
     }
-    host = new CircuitRF.Ui.Views.Chain.ChainBudgetWindow { DataContext = chainVm };
+    if (dark && Application.Current is { } chainApp) chainApp.RequestedThemeVariant = Avalonia.Styling.ThemeVariant.Dark;
+    var chainWindow = new CircuitRF.Ui.Views.Chain.ChainBudgetWindow { DataContext = chainVm };
+    host = chainWindow;
     if (sizeGiven) { host.Width = width; host.Height = height; }
     host.Show();
     Pump();
+    // The window's own placement of the strip's nodes, read back: each must stand in the gap between two blocks.
+    if (chainLevels && chainWindow.FindControl<CircuitRF.Ui.Views.Chain.ChainLevelStrip>("LevelStrip") is { NodeX: { } nodeX } strip
+        && chainWindow.FindControl<ItemsControl>("BlockItems") is { } items)
+    {
+        var edges = new List<(double L, double R)>();
+        for (int i = 0; i < chainVm.Stages.Count; i++)
+            if (items.ContainerFromIndex(i) is Control cont
+                && cont.GetVisualDescendants().OfType<Border>().FirstOrDefault(b => b.Classes.Contains("block")) is { } block
+                && block.TranslatePoint(default, strip) is { } at)
+                edges.Add((at.X, at.X + block.Bounds.Width));
+        int off = 0;
+        for (int k = 0; k < nodeX.Count; k++)
+        {
+            double lo = k == 0 ? double.NegativeInfinity : edges[k - 1].R, hi = k == edges.Count ? double.PositiveInfinity : edges[k].L;
+            bool inGap = nodeX[k] > lo && nodeX[k] < hi;
+            if (!inGap) off++;
+            Console.WriteLine($"strip node {k}: x {nodeX[k]:0.0}, gap {lo:0.0}..{hi:0.0} {(inGap ? "ok" : "OFF")}");
+        }
+        Console.WriteLine($"strip: {nodeX.Count} nodes, {off} off their gap; strip {strip.Bounds.Width:0} x {strip.Bounds.Height:0}");
+    }
 }
 else if (signal.Count > 0)
 {

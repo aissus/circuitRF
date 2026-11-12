@@ -56,6 +56,7 @@ public partial class ChainBudgetWindow : Window, ICrfMenuWindow
         {
             var plot = p;
             plot.ContainerProvider = () => Vm?.PlotHost.Plots.FirstOrDefault(c => ReferenceEquals(c.PlotVM.Plot, plot.Plot));
+            plot.SizeChanged += (_, _) => HoldText(plot);
         }
         // The Blocks view's menu acts where it was opened: the right-click is recorded on the way down, before a block's
         // own press handler takes it.
@@ -82,7 +83,10 @@ public partial class ChainBudgetWindow : Window, ICrfMenuWindow
         // enough for it, once the panes have their height.
         if (BlocksRow is { } blocksRow) blocksRow.LayoutUpdated += (_, _) => PlaceLevelStrip();
         if (Panes is { } panes)
+        {
             panes.Loaded += (_, _) => Avalonia.Threading.Dispatcher.UIThread.Post(FitBlocksPane, Avalonia.Threading.DispatcherPriority.Background);
+            panes.SizeChanged += (_, e) => { if (e.HeightChanged) FitBlocksPane(); };
+        }
         // Back to the window after simulating a bench: its levels pick up the new results.
         Activated += (_, _) => Vm?.Recompute();
         Closed += (_, _) =>
@@ -92,6 +96,34 @@ public partial class ChainBudgetWindow : Window, ICrfMenuWindow
     }
 
     private ChainBudgetViewModel? Vm => DataContext as ChainBudgetViewModel;
+
+    /// <summary>The text unit every plot here is drawn at at least: the renderer's own is min(width, height)/200, which in
+    /// these panes, a couple of hundred pixels tall, made 5 to 6 px tick numbers and legends. At 1.8 they are 9 px or more,
+    /// as the S-Parameter Viewer holds its plots' (its StrokeUnit); a larger plot keeps its own larger text.</summary>
+    private const double TextUnit = 1.8, BaseTickFont = 6, BaseLabelFont = 6;
+
+    /// <summary>
+    /// Holds a plot's text at <see cref="TextUnit"/>, and sizes its container as it is shown, so its Copy is the picture
+    /// on the screen rather than the container's opening size.
+    /// </summary>
+    private void HoldText(CircuitRF.Ui.DataDisplay.Controls.PlotControl pc)
+    {
+        if (pc.Plot is not { } plot || pc.Bounds.Width < 2 || pc.Bounds.Height < 2) return;
+        double k = Math.Max(1, TextUnit / (Math.Min(pc.Bounds.Width, pc.Bounds.Height) / 200.0));
+        var ax = plot.Axes;
+        if (Math.Abs(ax.FontSizeTicks - BaseTickFont * k) > 0.04)
+        {
+            ax.FontSizeTicks = BaseTickFont * k;
+            ax.FontSizeLabel = BaseLabelFont * k;
+            pc.InvalidateVisual();
+        }
+        if (Vm?.PlotHost.Plots.FirstOrDefault(c => ReferenceEquals(c.PlotVM.Plot, plot)) is { } container
+            && (Math.Abs(container.Width - pc.Bounds.Width) > 0.5 || Math.Abs(container.Height - pc.Bounds.Height) > 0.5))
+        {
+            container.Width = pc.Bounds.Width;
+            container.Height = pc.Bounds.Height;
+        }
+    }
 
     // ── the Blocks view's Levels strip ───────────────────────────────────────────────────────────────────────────────
 
@@ -122,17 +154,48 @@ public partial class ChainBudgetWindow : Window, ICrfMenuWindow
         if (strip.NodeX is not { } old || !old.SequenceEqual(xs)) strip.NodeX = xs;
         double width = xs[^1] + ChainLevelDiagram.EndGutter;
         if (!(Math.Abs(strip.Width - width) <= 0.5)) strip.Width = width;   // an unset Width is NaN
+        // The strip takes the pane's height under the blocks, so it opens without a scroll where the pane allows.
+        if (BlocksScroller is { } scroller && scroller.Viewport.Height > 0)
+        {
+            double height = Math.Clamp(scroller.Viewport.Height - row.Bounds.Height - strip.Margin.Top - 2, StripMin, StripMax);
+            if (!(Math.Abs(strip.Height - height) <= 0.5)) strip.Height = height;
+        }
     }
 
-    /// <summary>The Blocks pane opens taller with its Levels strip, as much as the stage list's and the results' floors
-    /// leave, and back to its own height without.</summary>
+    /// <summary>The strip's height: as much as the pane leaves under the blocks, within these.</summary>
+    private const double StripMin = 140, StripMax = 260;
+
+    /// <summary>Three stage rows (a filter's parameters wrap to two lines at the window's opening width) and the list's
+    /// heading: what the stage list keeps however the Blocks pane grows, where the window is tall enough (from
+    /// <see cref="TallPanes"/>); below that, two.</summary>
+    private const double StageRows = 220, StageRowsShort = 150, TallPanes = 700;
+
+    /// <summary>The results' floor: the Levels plots' text, held at 9 px, needs about this much to leave a plot; with the
+    /// Levels strip on, the blocks' own figure is the one being read, and the results keep less.</summary>
+    private const double ResultsFloor = 180, ResultsFloorUnderStrip = 120;
+
+    /// <summary>
+    /// The Blocks pane's height: its own 290, taller with its Levels strip — about 45 % of the panes' height, or what the
+    /// lineup and the strip's least height need — and never so tall that the stage list keeps fewer than three rows (two
+    /// in a short window) or the results less than their floor. Set when the strip is turned on or off and when the
+    /// window's height changes.
+    /// </summary>
     private void FitBlocksPane()
     {
-        if (Vm is not { } vm || Panes is not { } grid) return;
+        if (Vm is not { } vm || Panes is not { } grid || grid.Bounds.Height <= 0) return;
         var row = grid.RowDefinitions[0];
-        double want = vm.ShowLevels ? 520 : 290;
-        double room = grid.Bounds.Height - grid.RowDefinitions[2].MinHeight - grid.RowDefinitions[4].MinHeight - 8;
-        row.Height = new GridLength(Math.Max(row.MinHeight, room > row.MinHeight ? Math.Min(want, room) : want));
+        double h = grid.Bounds.Height;
+        double list = h >= TallPanes ? StageRows : StageRowsShort;
+        double results = vm.ShowLevels ? ResultsFloorUnderStrip : ResultsFloor;
+        grid.RowDefinitions[2].MinHeight = list;
+        grid.RowDefinitions[4].MinHeight = results;
+        // What the pane spends around its scroller's view (the tab strip, the padding, a scroll bar), measured where it can
+        // be; then the lineup, the strip's margin and its least height.
+        double chrome = BlocksScroller is { Viewport.Height: > 0 } sv ? row.ActualHeight - sv.Viewport.Height : 80;
+        double need = chrome + (BlocksRow?.Bounds.Height ?? 150) + 8 + StripMin + 2;
+        double want = vm.ShowLevels ? Math.Min(520, Math.Max(0.45 * h, need)) : 290;
+        double height = Math.Max(row.MinHeight, Math.Min(want, h - list - results - 8));
+        if (Math.Abs(row.Height.Value - height) > 0.5) row.Height = new GridLength(height);
     }
 
     private void SyncPlotTheme()

@@ -284,8 +284,12 @@ public sealed partial class ChainBudgetViewModel : ObservableObject
         plot.Traces.Clear();
         var source = new CircuitRF.Render.DataDisplay.ChainBudgetDisplay.Source(sourceName, data);
         foreach (var tc in pc.Traces)
+        {
+            // A cube the data does not hold (a bench not simulated yet) would be a legend entry with nothing to draw.
+            if (tc.CubeName is { Length: > 0 } cube && !data.Contains(cube)) continue;
             if (CircuitRF.Render.DataDisplay.PlotConfigLoader.LoadTrace(tc, pc.PlotType, pc.FreqUnit, source) is { } t)
                 plot.Traces.Add(t);
+        }
         plot.CustomTitle = pc.CustomTitle;
         plot.CustomTitleOn = pc.CustomTitleOn;
         plot.Legend = pc.Legend;

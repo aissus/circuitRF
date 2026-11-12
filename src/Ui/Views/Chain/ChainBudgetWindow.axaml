@@ -237,16 +237,17 @@
 
         <!-- The three panes share the height, and the gaps between them drag: the Match Designer's and railRF's grippers,
              a 4 px transparent GridSplitter in an Auto row, with no line of its own because the panes already have
-             edges. The blocks open at a fixed height (taller with their Levels strip); the stage list and the results
-             share the rest, two to three, so the results' plots grow with the window. Nothing is remembered. Each row
-             keeps a floor, so a drag cannot squeeze a pane to nothing. -->
+             edges. The blocks open at a fixed height (taller with their Levels strip, about 45 % of the height); the
+             stage list and the results share the rest, two to three, so the results' plots grow with the window. Nothing
+             is remembered. Each row keeps a floor (the stage list three rows in a tall window, set by FitBlocksPane), so a
+             drag cannot squeeze a pane to nothing. -->
         <Grid Name="Panes">
             <Grid.RowDefinitions>
                 <RowDefinition Height="290" MinHeight="120"/>
                 <RowDefinition Height="Auto"/>
-                <RowDefinition Height="*" MinHeight="90"/>
+                <RowDefinition Height="*" MinHeight="150"/>
                 <RowDefinition Height="Auto"/>
-                <RowDefinition Height="1.5*" MinHeight="120"/>
+                <RowDefinition Height="1.5*" MinHeight="180"/>
             </Grid.RowDefinitions>
             <!-- The chain, two ways, one selection. Blocks: an idealised block per stage with its System block's symbol, its
                  own numbers and the cascade at its output; an array's branch once, "× N", into one combiner block drawn
