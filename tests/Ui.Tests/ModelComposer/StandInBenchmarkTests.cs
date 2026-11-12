@@ -89,14 +89,15 @@ public sealed class StandInBenchmarkTests(ITestOutputHelper output) : IDisposabl
             rows.Add($"{g},{R(gamma.Real)},{R(gamma.Imaginary)}," + string.Join(",", Figures.SelectMany(f => new[]
                 { R(at[$"{f}@compression.meas"].RealValues[g]), R(at[$"{f}@compression.model"].RealValues[g]) })));
         }
-        string tables = Path.Combine(_root, ModelCommands.SampledFolder, "tables.npy");
+        string folder = ModelCommands.SampledFolderOf(cmc), tables = Path.Combine(_root, folder, "tables.npy");
+        // The frozen document names the frozen tables beside it; its loadpull set keeps the path sample wrote, a validation
+        // file this test does not read (the device's loadpull over the Hero-3 loads is run again above).
+        string Frozen(string text) => text.Replace($"{folder}/tables.npy", "hero2_sampled.npy");
         if (Write)
         {
             Directory.CreateDirectory(Path.GetDirectoryName(Golden("x"))!);
             File.Copy(tables, Golden("hero2_sampled.npy"), overwrite: true);
-            File.WriteAllText(Golden("hero2.cmc"), sampled.Replace($"{ModelCommands.SampledFolder}/tables.npy", "hero2_sampled.npy")
-                                                          .Replace($"{ModelCommands.SampledFolder}/loadpull.spl", "hero2_loadpull.spl"));
-            File.Copy(Path.Combine(_root, ModelCommands.SampledFolder, "loadpull.spl"), Golden("hero2_loadpull.spl"), overwrite: true);
+            File.WriteAllText(Golden("hero2.cmc"), Frozen(sampled));
             File.WriteAllLines(Golden("hero2_hero3_loads.csv"), rows);
             return;
         }
@@ -107,9 +108,7 @@ public sealed class StandInBenchmarkTests(ITestOutputHelper output) : IDisposabl
         foreach (string name in new[] { "id", "ig" })
             Assert.All(now[name].RealValues.Zip(then[name].RealValues), p => Assert.True(Same(p.First, p.Second), $"{name}: {p.First:R} against {p.Second:R}"));
         Assert.All(now["S"].ComplexValues.Zip(then["S"].ComplexValues), p => Assert.True(Complex.Abs(p.First - p.Second) <= 1e-9, $"S: {p.First} against {p.Second}"));
-        Assert.Equal(File.ReadAllText(Golden("hero2.cmc")),
-                     sampled.Replace($"{ModelCommands.SampledFolder}/tables.npy", "hero2_sampled.npy")
-                            .Replace($"{ModelCommands.SampledFolder}/loadpull.spl", "hero2_loadpull.spl"));
+        Assert.Equal(File.ReadAllText(Golden("hero2.cmc")), Frozen(sampled));
 
         // The comparison: each figure within a hundredth of the frozen one (a dB, a point of PAE, a degree).
         var frozen = File.ReadAllLines(Golden("hero2_hero3_loads.csv"));
@@ -177,11 +176,14 @@ public sealed class StandInBenchmarkTests(ITestOutputHelper output) : IDisposabl
         {
             var (ia, sa) = Run(twin, vgs, vds);
             var (ib, sb) = Run(stand, vgs, vds);
-            output.WriteLine($"vgs {vgs} vds {vds}: Id {ia:G5} / {ib:G5} A, S21 {sa:F4} / {sb:F4}");
+            // |ΔS21| over max(|S21|, 1): relative where the device has gain, absolute near pinch-off, where |S21| is a few
+            // hundredths and a relative error says little; the plain relative error is printed beside it.
+            output.WriteLine($"vgs {vgs} vds {vds}: Id {ia:G5} / {ib:G5} A, S21 {sa:F4} / {sb:F4}, " +
+                             $"|ΔS21|/|S21| {100 * Complex.Abs(sa - sb) / Complex.Abs(sa):F1} %");
             worstId = Math.Max(worstId, Math.Abs(ia - ib) / Math.Max(Math.Abs(ia), 1e-3));
             worstS = Math.Max(worstS, Complex.Abs(sa - sb) / Math.Max(Complex.Abs(sa), 1));
         }
-        output.WriteLine($"worst Id {100 * worstId:F2} %, worst |ΔS21| {100 * worstS:F2} % of |S21| (or of 1)");
+        output.WriteLine($"worst Id {100 * worstId:F2} %, worst |ΔS21|/max(|S21|, 1) {100 * worstS:F2} %");
         Assert.True(worstId < 0.01, $"Id differs by {100 * worstId:F2} %");
         Assert.True(worstS < 0.03, $"S21 differs by {100 * worstS:F2} %");
     }

@@ -74,39 +74,141 @@ public sealed class StandInSamplingTests(ITestOutputHelper output) : IDisposable
         Assert.False(Assert.Single(result.Items, i => i.Kind == ValidationKind.Loadpull).Passed);
     }
 
-    [Fact]
-    public void AStandIn_WarnsOnceWhenARunLeavesItsSampledRegion_AndAnOrdinaryModelDoesNot()
+    /// <summary>The small closed-form FET sampled over vgs −2…0 V and vds 0…6 V, fitted and exported: <c>small.cmodel</c>.</summary>
+    private string SmallStandIn(string name = "small")
     {
-        string cmc = Path.Combine(_root, "small.cmc");
+        string cmc = Path.Combine(_root, name + ".cmc");
         ModelCommands.Sample(cmc, new StandInSpec
         {
             Device = StandInFixture.SimpleFet, FrequencyHz = 1e8,
             Vgs = StandInSpec.Axis(-2, 0, 0.5), Vds = StandInSpec.Axis(0, 6, 1),
         });
         ModelCommands.Fit(cmc, "all");
-        string model = CmodelExport.Export(cmc, Path.Combine(_root, "small.cmodel"), created: Created).Path;
+        return CmodelExport.Export(cmc, Path.Combine(_root, name + ".cmodel"), created: Created).Path;
+    }
 
-        string Dc(string m, int n, double vgs, double vds) =>
-            $"Vdc:VG g 0 V={vgs}\nComposedFET:X1 g d 0 File=\"{m}\" N={n}\nVdc:VD d 0 V={vds}\nanalysis DC1 type=dc\n";
-        IReadOnlyList<string> Warnings(string cnl)
-        {
-            var r = CircuitEvaluation.Evaluate(PreparedCircuit.FromText(cnl, _root, _root), new CircuitEvaluationRequest { Measurements = false });
-            Assert.True(r.Status == RunStatus.Success, r.StatusMessage);
-            return [.. r.Warnings.Where(w => w.Contains("sampled over", StringComparison.Ordinal))];
-        }
-        Assert.Empty(Warnings(Dc(model, 1, -1, 3)));
-        Assert.Contains("vds 0 to 6 V", Assert.Single(Warnings(Dc(model, 1, -1, 9))), StringComparison.Ordinal);
+    private static string Dc(string model, string placement, double vgs, double vds) =>
+        $"Vdc:VG g 0 V={vgs}\n{placement}:X1 g d 0 File=\"{model}\"\nVdc:VD d 0 V={vds}\nanalysis DC1 type=dc\n";
+
+    private RunResult Run(string cnl) =>
+        CircuitEvaluation.Evaluate(PreparedCircuit.FromText(cnl, _root, _root), new CircuitEvaluationRequest { Measurements = false });
+
+    private IReadOnlyList<string> Outside(string cnl)
+    {
+        var r = Run(cnl);
+        Assert.True(r.Status == RunStatus.Success, r.StatusMessage);
+        return [.. r.Warnings.Where(w => w.Contains(ComposedCoreModel.OutsideSentence, StringComparison.Ordinal))];
+    }
+
+    [Fact]
+    public void AStandIn_WarnsOnceWhenARunLeavesItsSampledRegion_AndAnOrdinaryModelDoesNot()
+    {
+        string model = SmallStandIn();
+        Assert.Empty(Outside(Dc(model, "ComposedFET", -1, 3)));
+        string warning = Assert.Single(Outside(Dc(model, "ComposedFET", -1, 9)));
+        Assert.Contains("vds 0 to 6 V", warning, StringComparison.Ordinal);
+        // Operating points against operating points: the outside ones are a share of all of them, never more.
+        var m = System.Text.RegularExpressions.Regex.Match(warning, @"at (\d+) of (\d+) operating point");
+        Assert.True(m.Success, warning);
+        Assert.InRange(long.Parse(m.Groups[1].Value), 1, long.Parse(m.Groups[2].Value));
 
         // The same model without its record extrapolates silently, as guided extrapolation is meant to.
         string plain = Path.Combine(_root, "plain.cmodel");
         var m0 = CmodelFile.Read(model);
         CmodelFile.Write(m0 with { Provenance = m0.Provenance with { StandIn = null } }, plain);
-        Assert.Empty(Warnings(Dc(plain, 1, -1, 9)));
+        Assert.Empty(Outside(Dc(plain, "ComposedFET", -1, 9)));
+    }
 
-        // One sampled instance: N other than N0 is refused, by name.
-        var refused = CircuitEvaluation.Evaluate(PreparedCircuit.FromText(Dc(model, 2, -1, 3), _root, _root), new CircuitEvaluationRequest());
-        Assert.NotEqual(RunStatus.Success, refused.Status);
-        Assert.Contains("does not scale", refused.StatusMessage, StringComparison.Ordinal);
+    /// <summary>The CLI's run verbs print what the run's models reported once the run is over, and a sweep folds in the
+    /// warning of each point it ran on a netlist of its own — before, both lost it.</summary>
+    [Fact]
+    public void TheWarning_ReachesTheCliAndASweep()
+    {
+        string model = SmallStandIn();
+        File.WriteAllText(Path.Combine(_root, "out.cnl"), Dc(model, "ComposedFET", -1, 9));
+        File.WriteAllText(Path.Combine(_root, "in.cnl"), Dc(model, "ComposedFET", -1, 3));
+        var outside = ModelCliFixture.Run(_root, "dc", "out.cnl");
+        output.WriteLine(outside.StdErr);
+        Assert.Equal(0, outside.ExitCode);
+        Assert.Contains(ComposedCoreModel.OutsideSentence, outside.StdErr, StringComparison.Ordinal);
+        Assert.DoesNotContain(ComposedCoreModel.OutsideSentence, ModelCliFixture.Run(_root, "dc", "in.cnl").StdErr, StringComparison.Ordinal);
+
+        // A sweep whose every point is outside the region.
+        string sweep = $"vd = 3\nVdc:VG g 0 V=-1\nComposedFET:X1 g d 0 File=\"{model}\"\nVdc:VD d 0 V=vd\n" +
+                       "analysis DC1 type=dc\nanalysis SW1 type=parametric_sweep Var=vd Start=7 Stop=9 Npts=3 Inner=DC1\n";
+        Assert.Single(Outside(sweep));
+    }
+
+    /// <summary>One sampled instance: N other than N0 is refused whether the stand-in is placed as a ComposedFET or as its bare
+    /// core; the simulator's multiplier M still multiplies whole devices.</summary>
+    [Fact]
+    public void AStandIn_RefusesN_AsAComposedFetAndAsABareCore_AndTakesM()
+    {
+        string model = SmallStandIn();
+        foreach (string placement in new[] { "ComposedFET", "ComposedCore" })
+        {
+            var refused = Run(Dc(model, placement, -1, 3).Replace("\"\n", "\" N=2\n", StringComparison.Ordinal));
+            Assert.NotEqual(RunStatus.Success, refused.Status);
+            Assert.Contains("does not scale", refused.StatusMessage, StringComparison.Ordinal);
+            var multiplied = Run(Dc(model, placement, -1, 3).Replace("\"\n", "\" m=2\n", StringComparison.Ordinal));
+            Assert.True(multiplied.Status == RunStatus.Success, $"{placement} with m=2: {multiplied.StatusMessage}");
+        }
+    }
+
+    /// <summary>Two documents in one folder each sample into a folder of their own: the second does not overwrite the first's
+    /// tables while the first's record still claims its own grid.</summary>
+    [Fact]
+    public void TwoDocumentsInOneFolder_KeepTheirOwnSamples()
+    {
+        StandInSpec Spec(double vdsMax) => new()
+        {
+            Device = StandInFixture.SimpleFet, FrequencyHz = 1e8,
+            Vgs = StandInSpec.Axis(-2, 0, 1), Vds = StandInSpec.Axis(0, vdsMax, 1),
+        };
+        string a = Path.Combine(_root, "a10.cmc"), b = Path.Combine(_root, "a11.cmc");
+        ModelCommands.Sample(a, Spec(6));
+        ModelCommands.Sample(b, Spec(4));
+        foreach (var (cmc, n) in new[] { (a, 7), (b, 5) })
+        {
+            var set = CmcFile.Read(cmc).DataSets.Single(s => s.Name == "sampled");
+            Assert.Equal($"{ModelCommands.SampledFolderOf(cmc)}/tables.npy", Assert.Single(set.Sources));
+            var tables = RfCore.Export.DataSetImporter.Import(Path.Combine(_root, set.Sources[0])).DataSet;
+            Assert.Equal(n, tables["vds"].RealValues.Length);
+            Assert.Equal([3, n], ModelCommands.StandIn(CmcFile.Read(cmc))!.Grid);
+        }
+    }
+
+    /// <summary>What is not a device on g and d is refused by name, never sampled into an empty stand-in, and a line that does
+    /// not parse is a refusal rather than a crash.</summary>
+    [Theory]
+    [InlineData("garbage line")]
+    [InlineData("SDD:M1 G 0 D 0 I[1,0]=1e-3*_v1 I[2,0]=1e-3*_v2")]
+    [InlineData("SDD:M1 g 0 d 0 I[1,0]=_v1/(1+ I[2,0]=_v2")]
+    public void ADeviceThatIsNotOneOnGAndD_IsRefused(string line)
+    {
+        var ex = Assert.Throws<ModelingException>(() => ModelCommands.Sample(Path.Combine(_root, "bad.cmc"), new StandInSpec
+        {
+            Device = line, FrequencyHz = 1e8, Vgs = StandInSpec.Axis(-1, 0, 1), Vds = StandInSpec.Axis(0, 1, 1),
+        }));
+        output.WriteLine(ex.Message);
+        Assert.Equal("Device", ex.Input);
+    }
+
+    [Fact]
+    public void AnAxisWhoseStepDoesNotDivideItsSpan_IsRefused_AndADiscIsChecked()
+    {
+        Assert.Throws<ModelingException>(() => StandInSpec.Axis(0, 1, 0.35));
+        Assert.Equal(11, StandInSpec.Axis(0, 1, 0.1).Length);
+        Assert.Throws<ModelingException>(() => ModelCommands.Sample(Path.Combine(_root, "disc.cmc"), new StandInSpec
+        {
+            Device = StandInFixture.SimpleFet, FrequencyHz = 1e8, Disc = (1.2, 1, 4),
+            Vgs = StandInSpec.Axis(-1, 0, 1), Vds = StandInSpec.Axis(0, 1, 1),
+        }));
+        Assert.False(File.Exists(Path.Combine(_root, "disc.cmc")));
+        var run = ModelCliFixture.Run(_root, "model", "sample", "disc.cmc", "--device", StandInFixture.SimpleFet,
+                                      "--vgs", "-1,0,1", "--vds", "0,1,1", "--freq", "100MHz", "--disc", "0.2,1.5,4");
+        Assert.Equal(1, run.ExitCode);
+        Assert.Contains("--disc", run.StdErr + run.StdOut, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -133,6 +235,81 @@ public sealed class StandInSamplingTests(ITestOutputHelper output) : IDisposable
         foreach (string f in files)
             Assert.True(File.ReadAllBytes(Path.Combine(a, f)).AsSpan().SequenceEqual(File.ReadAllBytes(Path.Combine(b, f))),
                         $"{f} differs between the CLI and the in-process call.");
+    }
+}
+
+/// <summary>
+/// What a stand-in records of the device it was sampled from: the text with every model file by its name, never a path,
+/// quoted or not; a digest of that text anyone can recompute from it, whatever the line ends; a digest of the model file's
+/// bytes. Two folders holding the same bytes give the same record; a model file that is not there, or a provider that names
+/// none, is refused. Through the repository's own compiled fake (<c>tools/fake-osdi-model</c>), so the worker must be built.
+/// </summary>
+[Collection(ExternalDeviceRegistryCollection.Name)]
+public sealed class StandInProvenanceTests : IDisposable
+{
+    private const string Fake = "tools/fake-osdi-model/fake_osdi.osdi";
+    private const string HowTo = "run tools/osdi-worker/build.sh (needs a C compiler)";
+    private readonly string _root = Directory.CreateTempSubdirectory("crf-standin-prov-").FullName;
+    private readonly string _previousTools = Core.Devices.External.DeviceWorkerManifest.ToolsDirectory;
+
+    public StandInProvenanceTests()
+    {
+        if (CompilerAvailability.WorkerDirectory() is { } dir) Core.Devices.External.DeviceWorkerManifest.ToolsDirectory = dir;
+    }
+
+    public void Dispose()
+    {
+        Core.Devices.External.ExternalDeviceRegistry.ResetResolved();
+        Core.Devices.External.DeviceWorkerManifest.ToolsDirectory = _previousTools;
+        try { Directory.Delete(_root, true); } catch { /* best effort */ }
+    }
+
+    private const string Fet = "Model=crf_fet Pins=3 beta=0.06 vth=-2.5 lambda=0.02 alpha=1.5 delta=0.2 cgs=2e-12 cgd=2e-13 ggs=1e-6";
+
+    private StandInProvenance Sample(string folder, string device)
+    {
+        Directory.CreateDirectory(Path.Combine(_root, folder));
+        string cmc = Path.Combine(_root, folder, "fet.cmc");
+        ModelCommands.Sample(cmc, new StandInSpec
+        {
+            Device = device, FrequencyHz = 1e8, Vgs = StandInSpec.Axis(-2, 0, 1), Vds = StandInSpec.Axis(0, 2, 1),
+        });
+        return ModelCommands.StandIn(CmcFile.Read(cmc))!;
+    }
+
+    private string Copy(string folder)
+    {
+        string to = Path.Combine(_root, folder, "m.osdi");
+        Directory.CreateDirectory(Path.GetDirectoryName(to)!);
+        File.Copy(FixturePaths.Find(Fake)!, to);
+        return to;
+    }
+
+    [FixtureFact(Fake, HowTo)]
+    public void TheSameBytesInTwoFolders_RecordTheSame_WithNoPath_WhateverTheLineEnds()
+    {
+        Copy("A");
+        Copy("B");
+        var a = Sample("A", $"VerilogA:X1 g d 0 File=\"m.osdi\" {Fet}\nC:CX g 0 C=1e-15");
+        // B names its model by an unquoted absolute path and ends its lines CRLF: the record is A's.
+        var b = Sample("B", $"VerilogA:X1 g d 0 File={Path.Combine(_root, "B", "m.osdi")} {Fet}\r\nC:CX g 0 C=1e-15");
+        Assert.Equal(a.Device, b.Device);
+        Assert.DoesNotContain(_root, b.Device, StringComparison.Ordinal);
+        Assert.Contains("File=\"m.osdi\"", b.Device, StringComparison.Ordinal);
+        Assert.Equal(a.TextSha256, b.TextSha256);
+        Assert.Equal(Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(a.Device))), a.TextSha256);
+        Assert.Equal(Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(File.ReadAllBytes(FixturePaths.Find(Fake)!))), a.FileSha256);
+        Assert.Equal(a.FileSha256, b.FileSha256);
+        Assert.Null(a.ThermalNodeHeld);
+    }
+
+    [Fact]
+    public void AModelFileThatIsNotThere_OrAProviderNamingNone_IsRefused()
+    {
+        var missing = Assert.Throws<ModelingException>(() => Sample("C", $"VerilogA:X1 g d 0 File=\"nope.osdi\" {Fet}"));
+        Assert.Contains("nope.osdi", missing.Message, StringComparison.Ordinal);
+        var kit = Assert.Throws<ModelingException>(() => Sample("D", "ExtDevice:X1 g d 0 Provider=SomeKit Type=fet"));
+        Assert.Contains("names no model file", kit.Message, StringComparison.Ordinal);
     }
 }
 

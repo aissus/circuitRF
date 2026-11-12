@@ -335,20 +335,30 @@ public sealed record ModelProvenance
 public sealed record ModelSource(string Path, string Sha256);
 
 /// <summary>
-/// What a stand-in was sampled from (<c>model sample</c>): the device's instance text as it ran (a model file by its name
-/// only), the SHA-256 of that text and of the model file it names, the bias region (<c>[lo, hi]</c>, volts) and the grid
-/// over it (<c>[vgs count, vds count]</c>), the small-signal frequency the charges come from, the temperatures, and whether
-/// the device's thermal node was held at the ambient. A stand-in is one instance: it does not scale (<c>N</c> must be
-/// <c>N0</c>), and it warns once when a run leaves the sampled region (<see cref="ComposedCoreModel"/>).
+/// What a stand-in was sampled from (<c>model sample</c>). A stand-in is one instance: it does not scale (<c>N</c> must be
+/// <c>N0</c>), and it warns once per run when an evaluation leaves the sampled region (<see cref="ComposedCoreModel"/>).
 /// </summary>
 public sealed record StandInProvenance
 {
+    /// <summary>The device's instance text as it was sampled, every model file in it by its file name only.</summary>
     public string Device { get; init; } = "";
-    public string Sha256 { get; init; } = "";
+    /// <summary>SHA-256 of <see cref="Device"/> with its line ends made <c>\n</c>: anyone can recompute it from the text.</summary>
+    public string TextSha256 { get; init; } = "";
+    /// <summary>SHA-256 of the bytes of the model file the device names (of each, one after another, when it names
+    /// several); absent when it names none.</summary>
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public string? FileSha256 { get; init; }
+    /// <summary>The sampled region, <c>[lo, hi]</c> volts, and the grid over it, <c>[vgs count, vds count]</c>.</summary>
     public IReadOnlyList<double> Vgs { get; init; } = [];
     public IReadOnlyList<double> Vds { get; init; } = [];
     public IReadOnlyList<int> Grid { get; init; } = [];
+    /// <summary>The small-signal frequency the charges come from, Hz.</summary>
     public double FrequencyHz { get; init; }
     public IReadOnlyList<double> Temperatures { get; init; } = [];
-    public bool Isothermal { get; init; }
+    /// <summary>True when the device had a thermal node <c>t</c>, held at 0 K rise while sampling, so the tables are
+    /// isothermal; absent when it had none, and then the tables carry whatever heating the device does on its own.</summary>
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public bool? ThermalNodeHeld { get; init; }
+    /// <summary>How many points' DC solves reached 1e-6 A and not the sampler's 1e-12 A.</summary>
+    public int DcFallbacks { get; init; }
 }

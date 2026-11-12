@@ -8,7 +8,8 @@
 //
 // A three-terminal device of another kind maps onto the FET's terminals by its line: base on g, collector on d, emitter on
 // 0, so vgs is vbe and vds is vce. A fourth net named t is the device's thermal node; it is held at 0 K rise while
-// sampling, so the tables are isothermal, and floated once at the .charm's bias to read Rth.
+// sampling, so the tables are isothermal, and left to the device's own thermal network once, at the bias, to read Rth.
+// Each document samples into a folder of its own, sampled/<its name>/, so two stand-ins beside each other keep their data.
 
 using System.Globalization;
 using System.Numerics;
@@ -51,7 +52,11 @@ public sealed record StandInSpec
     public static double[] Axis(double start, double stop, double step)
     {
         if (!(step > 0) || !(stop > start)) throw new ModelingException("Sample", $"{G(start)},{G(stop)},{G(step)} is not start,stop,step with stop above start and a positive step.");
-        int n = (int)Math.Round((stop - start) / step) + 1;
+        // A step that does not divide the span would end the axis past stop, or short of it: refused, never rounded.
+        double steps = (stop - start) / step;
+        if (Math.Abs(steps - Math.Round(steps)) > 1e-9)
+            throw new ModelingException("Sample", $"{G(step)} V does not divide {G(start)} to {G(stop)} V into whole steps; choose a step that does.");
+        int n = (int)Math.Round(steps) + 1;
         if (n < 2 || n > 2001) throw new ModelingException("Sample", $"{n} values from {G(start)} to {G(stop)} V; an axis holds 2 to 2001.");
         return [.. Enumerable.Range(0, n).Select(k => Math.Round(start + k * step, 12))];
     }
@@ -61,8 +66,11 @@ public sealed record StandInSpec
 
 public static partial class ModelCommands
 {
-    /// <summary>The folder beside the <c>.cmc</c> the samples are written to.</summary>
+    /// <summary>The folder beside the <c>.cmc</c> each document's samples go into, in a folder of its own.</summary>
     public const string SampledFolder = "sampled";
+
+    /// <summary>Where <paramref name="cmcPath"/>'s samples go, relative to it with '/': <c>sampled/&lt;its name&gt;</c>.</summary>
+    public static string SampledFolderOf(string cmcPath) => $"{SampledFolder}/{Path.GetFileNameWithoutExtension(cmcPath)}";
 
     /// <summary>The block in <c>Steps</c> that records what a stand-in was sampled from; export copies it into
     /// <see cref="ModelProvenance.StandIn"/>.</summary>
@@ -70,9 +78,10 @@ public static partial class ModelCommands
 
     /// <summary>
     /// Samples a device into <paramref name="cmcPath"/> (a new document, or one holding no data yet — a network typed into
-    /// it is locked and removed from the samples): <c>sampled/tables.npy</c> imported as a <c>SimulatedTables</c> set at the
-    /// device plane, its terminals — with no network the whole device is the core — and with a <c>.charm</c> the device's own loadpull over a small disc about its load,
-    /// <c>sampled/loadpull.spl</c>, imported as a <c>LargeSignal</c> set; then the steps for a stand-in (Current and Charge
+    /// it is locked and removed from the samples): <c>sampled/&lt;name&gt;/tables.npy</c> imported as a <c>SimulatedTables</c> set
+    /// at the device plane, its terminals — with no network the whole device is the core — and with a <c>.charm</c> the
+    /// device's own loadpull over a small disc about its load, <c>sampled/&lt;name&gt;/loadpull.spl</c>, imported as a
+    /// <c>LargeSignal</c> set; then the steps for a stand-in (Current and Charge
     /// tables on the data's own grid, nothing held out; the network locked; Validate at the <c>.charm</c>'s harmonics and
     /// compression) and the record of what was sampled. The DC and small-signal solves run in parallel only where the
     /// device can be elaborated in parallel — a compiled model behind its worker cannot, and runs one point at a time.
@@ -87,6 +96,8 @@ public static partial class ModelCommands
         if (!(f > 0)) throw new ModelingException("FrequencyHz", "the small-signal frequency is not above 0 Hz.");
         if (spec.Temperatures.Count == 0 || spec.Temperatures.Distinct().Count() != spec.Temperatures.Count)
             throw new ModelingException("Temperatures", "state each temperature once.");
+        if (!(spec.Disc.Radius > 0 && spec.Disc.Radius < 1) || spec.Disc.Rings < 1 || spec.Disc.Spokes < 1)
+            throw new ModelingException("Disc", "the loadpull disc is a radius in Γ above 0 and below 1, and one or more rings and spokes.");
 
         var lines = new List<ModelLine>();
         if (File.Exists(cmcPath))
@@ -114,7 +125,7 @@ public static partial class ModelCommands
         var id = new double[n];
         var ig = new double[n];
         var s = new Complex[n * 4];
-        int failed = 0;
+        int failed = 0, loose = 0;
         var started = System.Diagnostics.Stopwatch.StartNew();
         rc?.BeginStage($"Sampling {device.Label}", n);
         void Point(int k)
@@ -127,7 +138,11 @@ public static partial class ModelCommands
             // an ampere-scale point above it, the run's default 1e-6 A is the answer rather than a hole in the grid.
             var used = settings;
             var dc = NonlinearDcEngine.Run(nl, used);
-            if (!dc.Converged) dc = NonlinearDcEngine.Run(nl, used = AnalysisSettings.Default);
+            if (!dc.Converged)
+            {
+                dc = NonlinearDcEngine.Run(nl, used = AnalysisSettings.Default);
+                if (dc.Converged) Interlocked.Increment(ref loose);
+            }
             if (!dc.Converged) { (id[k], ig[k]) = (double.NaN, double.NaN); Interlocked.Increment(ref failed); }
             else
             {
@@ -148,11 +163,12 @@ public static partial class ModelCommands
         lines.Add(new ModelLine("sample", device.Label,
             $"{device.Label}: {nG} × {nD}{(nT > 1 ? $" × {nT}" : "")} point(s), DC and S at {G(f / 1e9)} GHz, " +
             $"{(parallel ? "in parallel" : "one at a time (the device cannot be elaborated in parallel)")}, {G(started.Elapsed.TotalSeconds)} s" +
+            (loose > 0 ? $"; {loose} point(s) solved to 1e-6 A, not 1e-12 A" : "") +
             (failed > 0 ? $"; {failed} point(s) did not converge and are left out, so the tables are re-gridded: narrow the grid to where the device converges." : ".")));
         if (device.Thermal) lines.Add(new ModelLine("sample", device.Label, $"{device.Label}: thermal node t held at 0 K rise, so the tables are isothermal."));
 
         // ── 2. The tables, and 3. the SimulatedTables sets ──────────────────────────
-        string folder = Path.Combine(dir, SampledFolder);
+        string rel = SampledFolderOf(cmcPath), folder = Path.Combine(dir, rel);
         Directory.CreateDirectory(folder);
         var vgsAx = new Axis("vgs", [.. spec.Vgs], "V");
         var vdsAx = new Axis("vds", [.. spec.Vds], "V");
@@ -191,7 +207,7 @@ public static partial class ModelCommands
             {
                 Name = set,
                 Kind = DataSetKind.SimulatedTables,
-                Sources = [$"{SampledFolder}/{file}"],
+                Sources = [$"{rel}/{file}"],
                 Conditions = new DataConditions
                 {
                     ReferencePlane = ReferencePlane.Device,
@@ -210,7 +226,7 @@ public static partial class ModelCommands
         ValidationSettings? validation = null;
         if (device.Charm is { } charm)
         {
-            var (set, line, v) = DeviceLoadpull(dir, folder, device, charm, spec, rc);
+            var (set, line, v) = DeviceLoadpull(dir, rel, device, charm, spec, rc);
             lines.Add(line);
             lines.AddRange(Import(cmcPath, set, rc));
             validation = v;
@@ -246,10 +262,16 @@ public static partial class ModelCommands
         }
         else lines.Add(new ModelLine("network", "", "network: none — the whole device is the core, sampled at its terminals."));
         // Rth at the .charm's bias, or where the samples dissipate most at the first temperature: the largest rise to read.
-        int hot = Enumerable.Range(0, n).Where(k => k % nT == 0 && double.IsFinite(id[k]))
-                            .MaxBy(k => spec.Vgs[k / (nT * nD)] * ig[k] + spec.Vds[k / nT % nD] * id[k]);
-        if (device.Thermal && Rth(device, dir, settings, spec.Temperatures[0], device.Charm?.Bias.Vgs ?? spec.Vgs[hot / (nT * nD)],
-                                  device.Charm?.Bias.Vds ?? spec.Vds[hot / nT % nD]) is { } rth)
+        (double Vgs, double Vds)? hot = device.Charm is { } cb ? (cb.Bias.Vgs!.Value, cb.Bias.Vds) : null;
+        if (device.Thermal && hot is null)
+        {
+            var first = Enumerable.Range(0, n).Where(k => k % nT == 0 && double.IsFinite(id[k])).ToList();
+            if (first.Count == 0)
+                throw new ModelingException(device.Label, $"no point at {G(spec.Temperatures[0])} °C converged, so the thermal node's Rth cannot be read; check the device there.");
+            int k0 = first.MaxBy(k => spec.Vgs[k / (nT * nD)] * ig[k] + spec.Vds[k / nT % nD] * id[k]);
+            hot = (spec.Vgs[k0 / (nT * nD)], spec.Vds[k0 / nT % nD]);
+        }
+        if (device.Thermal && Rth(device, dir, settings, spec.Temperatures[0], hot!.Value.Vgs, hot.Value.Vds) is { } rth)
         {
             if (nT > 1)
             {
@@ -263,13 +285,15 @@ public static partial class ModelCommands
         var record = new StandInProvenance
         {
             Device = device.Recorded,
-            Sha256 = device.Sha256,
+            TextSha256 = device.TextSha256,
+            FileSha256 = device.FileSha256,
             Vgs = [spec.Vgs[0], spec.Vgs[^1]],
             Vds = [spec.Vds[0], spec.Vds[^1]],
             Grid = [nG, nD],
             FrequencyHz = f,
             Temperatures = [.. spec.Temperatures],
-            Isothermal = device.Thermal,
+            ThermalNodeHeld = device.Thermal ? true : null,
+            DcFallbacks = loose,
         };
         var steps = doc.Steps is JsonObject so ? (JsonObject)JsonNode.Parse(so.ToJsonString())! : new JsonObject();
         steps[StandInStep] = JsonSerializer.SerializeToNode(record);
@@ -287,11 +311,17 @@ public static partial class ModelCommands
     // ── The device ───────────────────────────────────────────────────────────────
 
     /// <param name="Held">The text the samples run: the device, and a source holding its thermal node at 0 K rise.</param>
-    /// <param name="Recorded">The text as the provenance records it: a model file by its name only.</param>
-    private sealed record SampledDevice(string Text, string Held, string Label, string Recorded, string Sha256, bool Thermal,
-                                        CircuitModel? Charm, TerminationSet? Terminations);
+    /// <param name="Recorded">The text as the provenance records it: every model file by its name only, line ends <c>\n</c>.</param>
+    private sealed record SampledDevice(string Text, string Held, string Label, string Recorded, string TextSha256, string? FileSha256,
+                                        bool Thermal, CircuitModel? Charm, TerminationSet? Terminations);
 
-    private static readonly Regex FileKey = new("File=\"([^\"]+)\"", RegexOptions.Compiled);
+    /// <summary>A model file a line names, quoted or not, and a worker provider's name, which carries its model file when it
+    /// is a compiled model's (<see cref="Core.Devices.External.VerilogAFileResolver"/>).</summary>
+    private static readonly Regex FileKey = new(@"\bFile=(?:""([^""]+)""|(\S+))", RegexOptions.Compiled);
+    private static readonly Regex ProviderKey = new(@"\bProvider=(?:""([^""]+)""|(\S+))", RegexOptions.Compiled);
+
+    /// <summary>The bench components <see cref="ValidationBench.Dc"/> puts around the device.</summary>
+    private static readonly string[] BenchParts = ["VG", "IPG", "IPD", "VD"];
 
     private static SampledDevice Resolve(StandInSpec spec, string dir)
     {
@@ -317,22 +347,51 @@ public static partial class ModelCommands
             label = text.Split(' ', 2)[0];
         }
 
-        // The model file a line names is part of what was sampled: its bytes go into the digest, its name into the record.
-        using var h = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
-        h.AppendData(Encoding.UTF8.GetBytes(text));
-        foreach (Match m in FileKey.Matches(text))
+        // What was sampled is the text and the model it names. The record keeps every model file by its name, never a path,
+        // and two digests: of that text with \n line ends, which anyone can recompute from it, and of the files' bytes, in
+        // the order the text names them. A file that is not there is refused: a digest that left it out would vouch for it.
+        var keys = FileKey.Matches(text).Select(m => (m.Index, Key: "File", m))
+            .Concat(ProviderKey.Matches(text).Select(m => (m.Index, Key: "Provider", m))).OrderBy(x => x.Index).ToList();
+        using var bytes = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
+        int files = 0;
+        foreach (var (_, key, m) in keys)
         {
-            string file = Path.IsPathRooted(m.Groups[1].Value) ? m.Groups[1].Value : Path.Combine(dir, m.Groups[1].Value);
-            if (File.Exists(file)) h.AppendData(File.ReadAllBytes(file));
+            string value = m.Groups[1].Success ? m.Groups[1].Value : m.Groups[2].Value;
+            string? file = key == "File" ? value : Core.Devices.External.VerilogAFileResolver.ModelFileIn(value);
+            if (file is null)
+                throw new ModelingException("Device", $"Provider={value} names no model file, so what was sampled cannot be recorded by its bytes; " +
+                                                      "place the compiled model itself (VerilogA File=…).");
+            string full = Path.IsPathRooted(file) ? file : Path.Combine(dir, file);
+            if (!File.Exists(full)) throw new ModelingException("Device", $"'{file}' does not exist (a relative path is relative to the .cmc).");
+            bytes.AppendData(File.ReadAllBytes(full));
+            files++;
         }
-        string recorded = FileKey.Replace(text, m => $"File=\"{Path.GetFileName(m.Groups[1].Value)}\"").TrimEnd();
+        string recorded = ProviderKey.Replace(FileKey.Replace(text, m => $"File=\"{Path.GetFileName(m.Groups[1].Success ? m.Groups[1].Value : m.Groups[2].Value)}\""),
+            m => Core.Devices.External.VerilogAFileResolver.ModelFileIn(m.Groups[1].Success ? m.Groups[1].Value : m.Groups[2].Value) is { } f
+                ? $"Provider=\"{Core.Devices.External.VerilogAFileResolver.Prefix}{Path.GetFileName(f)}\"" : m.Value)
+            .ReplaceLineEndings("\n").TrimEnd();
+        string textSha = Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(recorded)));
+        string? fileSha = files > 0 ? Convert.ToHexStringLower(bytes.GetHashAndReset()) : null;
 
-        // A net named t is the thermal node: found in the elaborated bench, not guessed from the line.
-        var (lib, tb) = new CnlReader().Read(ValidationBench.Dc("probe", text, spec.Temperatures.FirstOrDefault(25), spec.Vgs[0], spec.Vds[0]));
+        // The device must elaborate on g and d. A net named t is its thermal node: found in the elaborated bench, not guessed.
         bool thermal;
-        using (var nl = Elaborate(lib, tb, dir)) thermal = nl.Nodes.TryGetIndex("t", out _);
-        return new SampledDevice(text, thermal ? text + "Vdc:VTH t 0 V=0\n" : text, label, recorded,
-                                 Convert.ToHexStringLower(h.GetHashAndReset()), thermal, charm, terminations);
+        try
+        {
+            var (lib, tb) = new CnlReader().Read(ValidationBench.Dc("probe", text, spec.Temperatures.FirstOrDefault(25), spec.Vgs[0], spec.Vds[0]));
+            using var nl = Elaborate(lib, tb, dir);
+            bool Touched(string net) => nl.Nodes.TryGetIndex(net, out int i) &&
+                                        nl.Components.Any(c => !BenchParts.Contains(c.InstancePath) && c.Nodes.Contains(i));
+            if (!Touched("g") || !Touched("d"))
+                throw new ModelingException("Device", $"'{label}' connects to {(Touched("g") ? "no net d" : "no net g")}; the device sits on the nets g, d " +
+                                                      "and 0 (lower case), the gate or base on g and the drain or collector on d.");
+            thermal = nl.Nodes.TryGetIndex("t", out _);
+        }
+        catch (Exception ex) when (ex is not ModelingException and not OperationCanceledException)
+        {
+            throw new ModelingException("Device", $"'{label}' does not elaborate: {ex.Message}");
+        }
+        return new SampledDevice(text, thermal ? text + "Vdc:VTH t 0 V=0\n" : text, label, recorded, textSha, fileSha,
+                                 thermal, charm, terminations);
     }
 
     private static ElaboratedNetlist Elaborate(Core.Design.Library lib, Core.Design.TestBench tb, string dir) =>
@@ -357,11 +416,12 @@ public static partial class ModelCommands
     /// <summary>
     /// The device load-pulled over a disc about the <c>.charm</c>'s load (<see cref="ModelValidationReport.Disc"/>), through
     /// the loadpull engine and the bench validation generates, each load driven a decibel past the compression validation
-    /// compares at; written as <c>sampled/loadpull.spl</c> (its bench beside it) and returned as the set that imports it.
+    /// compares at; written as <c>sampled/&lt;name&gt;/loadpull.spl</c> (its bench beside it) and returned as the set that imports it.
     /// </summary>
     private static (CmcDataSet Set, ModelLine Line, ValidationSettings Validation) DeviceLoadpull(
-        string dir, string folder, SampledDevice device, CircuitModel charm, StandInSpec spec, RunControl? rc)
+        string dir, string rel, SampledDevice device, CircuitModel charm, StandInSpec spec, RunControl? rc)
     {
+        string folder = Path.Combine(dir, rel);
         var t = device.Terminations!;
         int k = charm.Settings.HarmonicCount;
         double f0 = charm.Settings.FrequencyHz, vgs = charm.Bias.Vgs!.Value, vds = charm.Bias.Vds;
@@ -397,7 +457,7 @@ public static partial class ModelCommands
         {
             Name = "loadpull",
             Kind = DataSetKind.LargeSignal,
-            Sources = [$"{SampledFolder}/loadpull.spl"],
+            Sources = [$"{rel}/loadpull.spl"],
             Conditions = new DataConditions
             {
                 AmbientC = ambient,

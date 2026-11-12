@@ -530,7 +530,13 @@ internal static class Model
         double? freq = null;
         if (a["--freq"] is { } ft) { if (!Number("--freq", ft, out double v, out r)) return r; freq = v; }
         var disc = (0.2, 1, 4);
-        if (a["--disc"] is { } dt) { if (!Numbers("--disc", dt, 3, out var x, out r)) return r; disc = (x[0], (int)x[1], (int)x[2]); }
+        if (a["--disc"] is { } dt)
+        {
+            if (!Numbers("--disc", dt, 3, out var x, out r)) return r;
+            if (x[1] != Math.Round(x[1]) || x[2] != Math.Round(x[2]) || x[1] > 100 || x[2] > 100)
+                return JsonRun.Fail(CliDiagnostics.ModelFlagValue("--disc", dt, "radius,rings,spokes with whole numbers of rings and spokes, e.g. 0.2,1,4"));
+            disc = (x[0], (int)x[1], (int)x[2]);
+        }
         if (!Periphery(a, "sample", out var periphery, out r)) return r;
         var spec = new StandInSpec
         {

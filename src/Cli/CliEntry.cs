@@ -3055,7 +3055,7 @@ static int PrintHelp()
     Console.WriteLine("  osc    <file.cnl|.csch> [--fguess f] [--aguess a]  (oscillator: Fosc, Aosc and the HB result at the oscillation)");
     Console.WriteLine("  opt    <file.cnl|.csch>   (optimize: the tune, goal and optimize lines; exit 3 = a goal unmet)");
     Console.WriteLine("  yield  mc|estimate|trial <file.cnl|.csch>   (Monte Carlo / yield; exit 3 = below --target)");
-    Console.WriteLine("  model  new|import|deembed|fit|check-charge|explain|export|validate|report <file.cmc>");
+    Console.WriteLine("  model  new|import|deembed|fit|check-charge|explain|export|validate|report|sample <file.cmc>");
     Console.WriteLine("           (the Model Composer: a FET model or a passive cell from data; exit 3 = a check failed)");
     Console.WriteLine("  rail   <file.crail> (railRF: the DC drop, the ranked breakdown, the vias)");
     Console.WriteLine("  smith  <file.csmith> (the matching cascade: the reading, and the walk node by node)");
