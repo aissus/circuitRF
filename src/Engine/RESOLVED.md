@@ -4381,3 +4381,19 @@ gate 5 lists only diode/BJT shot and series-R thermal.
 - `OscEngine.Startup` linearises every device at its DC point (`StampLinearized`) and never called `BiasFreeze`, so an
   oscillator built on a composed FET with `LinearC=true` would have met the unfrozen core's refusal. It freezes at the DC
   solution it has just solved, as `SParameterEngine` does. Gate: `BiasFreezeTests.EveryEngineEntryPointThatReadsCharge_Freezes`.
+
+## Weighted terms reach the single-tone Newton only; a bandpass amplifier's quadrature is a linear companion (2026-11-12)
+
+A device's weighted terms (`NonlinearResult.Terms`, the `H[w]` buckets for w ≥ 2: an SDD's own weights, a 90° hybrid's
+passive-intermod quadrature) are carried by `HbNewton` (single tone) and therefore by the single-fundamental envelope,
+which builds on it. `HbNewton2D`, `HbNewtonNd` and the multi-fundamental envelope take a device's conduction and charge
+only (`PortTermTimes2D/Nd` have W0 and W1), and **drop the rest without a word**: a hybrid with a PIM level in a two-tone
+run loses its quadrature half. Not fixed here.
+
+The System Amplifier's Rapp and Saleh laws need the input's Hilbert transform at every frequency every analysis solves
+at, multi-tone included. It is therefore not a weighted term of the amplifier but a LINEAR companion,
+`AmplifierQuadratureModel`, which the Elaborator places beside an amplifier with such a law: i_q = G·(v_q + j·sign(ω)·v_in)
+on a net it mints, the amplifier's third port. Every engine stamps the linear network per frequency, so the quadrature
+is exact everywhere; it is zero below 1 kHz, where DC and the envelope's baseband product (stamped at 1 and 2 Hz) are.
+Measured: one tone's AM-AM and AM-PM on the closed forms to 10⁻⁶ dB and 10⁻⁶°, two tones' third-order products on
+the law's third-order term to 10⁻³ dB through `HbNewton2D` (`AmplifierLawHbTests`).

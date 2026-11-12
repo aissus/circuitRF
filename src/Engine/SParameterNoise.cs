@@ -295,6 +295,7 @@ public static class SParameterNoise
     {
         PortModel or TermModel => "a port: the run's own noiseless termination",
         TunerModel             => "a tuner: the loadpull's own noiseless termination",
+        AmplifierQuadratureModel q => $"the quadrature {q.Amplifier}'s law reads: its noise is the amplifier's NF",
         _                      => "an independent source, zeroed in a small-signal run",
     };
 
@@ -335,7 +336,8 @@ public static class SParameterNoise
     /// <summary>Ports (the run's noiseless terminations, or inert when buried), tuners (a loadpull's terminations: noiseless
     /// by definition, as a port is — brief NZ-6) and independent sources (zeroed).</summary>
     private static bool IsNoiselessByDefinition(ElaboratedComponent ec) =>
-        ec.Model is PortModel or TermModel or TunerModel or VdcModel or IDriveScalable;   // IDriveScalable: P1Tone, ModSource, PnTone, tones
+        ec.Model is PortModel or TermModel or TunerModel or VdcModel or IDriveScalable   // IDriveScalable: P1Tone, ModSource, PnTone, tones
+            or AmplifierQuadratureModel;
 
     /// <summary>A linear part with no dependent source: thermal noise at its own temperature. A passive S-parameter block
     /// with no noise data is one (its activity is measured on its file), and so is a passive system block carrying a
@@ -367,7 +369,7 @@ public static class SParameterNoise
         for (int i = 0; i < 2; i++)
             for (int j = 0; j < 2; j++)
                 s[i, j] = sAt[i, j];
-        var y  = NoiseMetrics.PowerWaveAdmittance(s, [.. amp.Z0At(0.0)]);
+        var y  = NoiseMetrics.PowerWaveAdmittance(s, [.. amp.Z0At(0.0).Take(2)]);   // a bandpass law's quadrature port is not in it
         var cy = NoiseMetrics.AdmittanceFromChain(NoiseMetrics.ChainCorrelation(amp.NoiseParameters!.Value), y);
         var currents = AcrossPairs(new Complex(ec.Multiplicity, 0) * cy, [(ec.Nodes[0], ec.Nodes[1]), (ec.Nodes[2], ec.Nodes[3])]);
         return _ => currents;

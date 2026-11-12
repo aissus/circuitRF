@@ -92,7 +92,9 @@ public static class InstanceNetContract
         ChainModel                                                                            => 4,
 
         // ── Ideal system blocks: every RF port is a signal net and a reference net ──
-        // Atten is 2 ports → 4 nets; Balun and Circulator 3 → 6; Coupler 4 → 8.
+        // Atten is 2 ports → 4 nets; Balun and Circulator 3 → 6; Coupler 4 → 8. An amplifier with a bandpass law has a
+        // third port, its quadrature, whose net the elaborator mints: its line binds the two RF ports' four.
+        AmplifierModel                                                                        => 4,
         IdealSBlockModel sb                                                                   => 2 * sb.PortCount,
         DuplexerModel dx                                                                      => 2 * dx.PortCount,
         MixerModel mx                                                                         => 2 * mx.PortCount,

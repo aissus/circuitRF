@@ -109,6 +109,8 @@ public sealed class AmplifierModel : IdealSBlockModel
 
     private readonly Complex _s11, _s12, _s21, _s22;
     private readonly double  _vsat;              // forward soft-limit scale, volts (0 = exactly linear)
+    private readonly AmplifierLaw? _law;         // a bandpass law in place of the limiter (null = tanh or linear)
+    private readonly double  _kappa;             // volts² of envelope to watts of available input power
     private readonly double[,] _y = new double[2, 2];
     private bool _degenerate;   // set once, by the BuildAdmittance the constructor calls
 
@@ -127,13 +129,19 @@ public sealed class AmplifierModel : IdealSBlockModel
     /// <param name="s12Db">Reverse isolation; ≥ 150 dB means unilateral, and no entry is stamped.</param>
     /// <param name="noise">The noise specification (<c>NF</c>, <c>NFopt</c>, <c>Rn</c>, <c>Gopt</c>), or null: a noiseless
     /// amplifier, as one with no <c>NF=</c> has always been. See <see cref="AmplifierNoiseSpec"/>.</param>
+    /// <param name="law">A bandpass compression law (<c>Law=Rapp</c> or <c>Saleh</c>) in place of the tanh limiter, or
+    /// null: the tanh limiter on <paramref name="ip3Dbm"/>, as before. With one, the intercept is not read, and the
+    /// amplifier has a third port, <c>[q+, q−]</c>, which the Elaborator ties to a net its
+    /// <see cref="AmplifierQuadratureModel"/> holds at the input's Hilbert transform (see <see cref="AmplifierLaw"/>).</param>
     public AmplifierModel(double gainDb, double ip3Dbm, Ip3Reference ip3Ref,
                           Complex zIn, Complex zOut,
                           double rlInDb, double rlOutDb, double s12Db,
-                          AmplifierNoiseSpec? noise = null)
+                          AmplifierNoiseSpec? noise = null, AmplifierLaw? law = null)
         // CONJUGATED, exactly as FilterModel's are and for the same reason: Zin/Zout name what the
         // port PRESENTS, and the stamp works in the reference impedance. A real pair is unchanged.
-        : base([Complex.Conjugate(zIn), Complex.Conjugate(zOut)])
+        // A bandpass law's quadrature port is a sense port of its own reference, matched and isolated.
+        : base(law is null ? [Complex.Conjugate(zIn), Complex.Conjugate(zOut)]
+                           : [Complex.Conjugate(zIn), Complex.Conjugate(zOut), new Complex(50, 0)])
     {
         // A gain is not a suppression and never snaps to zero: an amplifier set to −200 dB is a
         // 200 dB pad, and stamping it as one is the honest answer. The other three ARE suppressions.
@@ -142,7 +150,15 @@ public sealed class AmplifierModel : IdealSBlockModel
         _s22 = new Complex(SuppressedAmplitude(rlOutDb),  0);
         _s12 = new Complex(SuppressedAmplitude(s12Db),    0);
 
-        if (ip3Dbm < InterceptOffDbm)
+        if (law is not null)
+        {
+            // The same refusal and the same available-power reference as the tanh limiter's below.
+            RefuseComplexZ0($"a {law.Kind} law");
+            _law = law;
+            double gIn = 1.0 + _s11.Real;
+            _kappa = 1.0 / (2.0 * Z0Of(0).Real * gIn * gIn);
+        }
+        else if (ip3Dbm < InterceptOffDbm)
         {
             // The compression below is a real i = f(v) built from a real admittance matrix, which a
             // complex reference impedance would make complex. Refused by name, here, where the
@@ -194,7 +210,14 @@ public sealed class AmplifierModel : IdealSBlockModel
     protected override bool PortParameterIsPresentedImpedance => true;
 
     /// <inheritdoc/>
-    protected override bool HasOwnNonlinearity => _vsat > 0.0;
+    protected override bool HasOwnNonlinearity => _vsat > 0.0 || _law is not null;
+
+    /// <summary>The bandpass law in place of the limiter, or null.</summary>
+    public AmplifierLaw? Law => _law;
+
+    /// <summary>Whether the amplifier reads its input's quadrature on a third port (a bandpass law), which the Elaborator
+    /// then gives a net and an <see cref="AmplifierQuadratureModel"/>.</summary>
+    public bool NeedsQuadrature => _law is not null;
 
     /// <summary>Unilateral, so the two ports are NOT interchangeable and are named rather than numbered.</summary>
     public override string[] TerminalNames => ["in+", "in-", "out+", "out-"];
@@ -220,7 +243,7 @@ public sealed class AmplifierModel : IdealSBlockModel
     /// transfer <c>∂I_out/∂V_in</c>. The reverse term <c>∂I_in/∂V_out</c> is the isolation and stays,
     /// exactly as <c>S12</c> does above.
     /// </summary>
-    public override IReadOnlyList<(int P, int Q)> ControlledConductances => [(1, 0)];
+    public override IReadOnlyList<(int P, int Q)> ControlledConductances => _law is null ? [(1, 0)] : [(1, 0), (1, 2)];
 
     protected override void FillS(double omega, Complex[,] s)
     {
@@ -271,19 +294,20 @@ public sealed class AmplifierModel : IdealSBlockModel
     /// <inheritdoc/>
     public override NonlinearResult Evaluate(in PortVoltages v)
     {
-        var i  = new double[2];
-        var q  = new double[2];
-        var dg = new double[2, 2];
-        var dc = new double[2, 2];
+        int n  = PortCount;
+        var i  = new double[n];
+        var q  = new double[n];
+        var dg = new double[n, n];
+        var dc = new double[n, n];
         EvaluateInto(v, i, q, dg, dc);
         return new NonlinearResult(i, q, dg, dc);
     }
 
     /// <inheritdoc/>
-    public override bool PrefersGridEvaluate => _vsat > 0.0;
+    public override bool PrefersGridEvaluate => _vsat > 0.0 || _law is not null;
 
     /// <inheritdoc/>
-    protected override bool HasEvaluateInto => _vsat > 0.0;
+    protected override bool HasEvaluateInto => _vsat > 0.0 || _law is not null;
 
     /// <summary>
     /// The refusal, in one place because it is raised from two: at construction when a nonlinearity
@@ -304,6 +328,7 @@ public sealed class AmplifierModel : IdealSBlockModel
     protected override void EvaluateInto(in PortVoltages v, double[] i, double[] q, double[,] dg, double[,] dc)
     {
         if (_degenerate) RefuseNoAdmittanceForm();
+        if (_law is not null) { EvaluateLaw(v, i, q, dg, dc); return; }
 
         double vin = v[0], vout = v[1];
         ThirdOrderLimiter.Apply(_vsat, vin, out double u, out double du);
@@ -319,6 +344,35 @@ public sealed class AmplifierModel : IdealSBlockModel
         dg[1, 0] = _y[1, 0] * du;  dg[1, 1] = _y[1, 1];
 
         dc[0, 0] = dc[0, 1] = dc[1, 0] = dc[1, 1] = 0.0;
+    }
+
+    /// <summary>
+    /// The bandpass law on the analytic signal (<see cref="AmplifierLaw"/>): <c>u = Re{F(s)·(x + j·x̂)}</c> with x the
+    /// input port's voltage, x̂ the quadrature port's and s = κ·(x² + x̂²), in place of ψ(x); the quadrature port draws
+    /// nothing. With D = s·dF/ds, ∂u/∂x = Re F + (2x/r²)·(x·Re D − x̂·Im D) and ∂u/∂x̂ = −Im F + (2x̂/r²)·(x·Re D − x̂·Im D),
+    /// both finite at r = 0 for any smoothness.
+    /// </summary>
+    private void EvaluateLaw(in PortVoltages v, double[] i, double[] q, double[,] dg, double[,] dc)
+    {
+        double x = v[0], vout = v[1], xh = v[2];
+        double r2 = x * x + xh * xh;
+        var f = _law!.Gain(_kappa * r2, out var d);
+        double w = r2 > 0 ? 2.0 / r2 : 0.0, t = x * d.Real - xh * d.Imaginary;
+        double u = f.Real * x - f.Imaginary * xh;
+
+        i[0] = _y[0, 0] * x + _y[0, 1] * vout;
+        i[1] = _y[1, 0] * u + _y[1, 1] * vout;
+        i[2] = 0.0;
+        for (int p = 0; p < 3; p++)
+        {
+            q[p] = 0.0;
+            for (int c = 0; c < 3; c++) { dg[p, c] = 0.0; dc[p, c] = 0.0; }
+        }
+        dg[0, 0] = _y[0, 0];
+        dg[0, 1] = _y[0, 1];
+        dg[1, 0] = _y[1, 0] * (f.Real + w * x * t);
+        dg[1, 1] = _y[1, 1];
+        dg[1, 2] = _y[1, 0] * (-f.Imaginary + w * xh * t);
     }
 }
 

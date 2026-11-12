@@ -4821,6 +4821,11 @@ compression together.</p>
 <tr><td>NFopt</td><td>&mdash;</td><td>dB</td><td>&mdash;</td><td>Minimum noise figure, for an amplifier whose noise match is not its power match. Blank takes NF. With NF also stated and Gopt away from Zin, Rn follows from the two.</td></tr>
 <tr><td>Rn</td><td>&mdash;</td><td>Ω</td><td>&mdash;</td><td>Equivalent noise resistance: how fast the noise figure rises away from the noise match. Blank derives it - from NF and NFopt when both are stated, otherwise the value one input noise wave has.</td></tr>
 <tr><td>Gopt</td><td>&mdash;</td><td>&mdash;</td><td>&mdash;</td><td>The source reflection coefficient that gives NFopt, referenced to the real part of Zin; complex, e.g. 0.2+j0.25. Blank means Zin itself.</td></tr>
+<tr><td>Law</td><td><code>Tanh</code></td><td>&mdash;</td><td>&mdash;</td><td>The compression law. Tanh, the default, is the soft limiter on IP3: IM3, the 1 dB point (IIP3 - 8.96 dB) and saturation (OIP3 - 3.92 dB) from the one number. Rapp and Saleh are bandpass laws on the envelope, set by Psat, and IP3 is not read: Rapp&#39;s smoothness P (1 soft, 3 or more near a hard clip), Saleh&#39;s AM-AM peaking at Psat with the AM-PM PhiSat and PhiMax. A bandpass law makes no harmonics.</td></tr>
+<tr><td>Psat</td><td>&mdash;</td><td>dBm</td><td>&mdash;</td><td>A Rapp or Saleh law&#39;s saturated output power: Rapp&#39;s asymptote, Saleh&#39;s peak, reached 6.02 dB into compression. Blank: 30 dBm. Not read by the Tanh law, whose saturation follows from IP3.</td></tr>
+<tr><td>P</td><td>&mdash;</td><td>&mdash;</td><td>&mdash;</td><td>A Rapp law&#39;s smoothness p. The 1 dB point sits (10/p)&#183;log10(10^(p/10) - 1) dB from the saturated input: 5.87 dB below it at p = 1, 1.16 dB at 2, 0.01 dB at 3. Blank: 2.</td></tr>
+<tr><td>PhiSat</td><td>&mdash;</td><td>deg</td><td>&mdash;</td><td>A Saleh law&#39;s AM-PM at the drive that saturates it (where the output peaks at Psat). Blank or 0: no AM-PM.</td></tr>
+<tr><td>PhiMax</td><td>&mdash;</td><td>deg</td><td>&mdash;</td><td>A Saleh law&#39;s AM-PM in the limit of large drive: beyond PhiSat, on the same side of 0. The phase is PhiMax&#183;v/(v + PhiMax/PhiSat - 1), v the drive over the saturating drive.</td></tr>
 </tbody></table>
 <h3 id="coupler">Directional Coupler</h3>
 <figure class="symbol"><span class="frame">
