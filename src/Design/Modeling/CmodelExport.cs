@@ -189,6 +189,7 @@ public static class CmodelExport
             CircuitRfVersion = Version,
             Sources = sources,
             SettingsDigest = SettingsDigest(doc),
+            StandIn = ModelCommands.StandIn(doc),
         };
     }
 

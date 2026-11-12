@@ -47,6 +47,7 @@ internal static class Model
         ("export",       "Writes the model: an Active document (or a .cmodel) as -o's extension says, .cmodel or Verilog-A .va; a Passive one as a cell (--cell)."),
         ("validate",     "Compares a model with the document's data at the measurement plane; exit 3 when a tolerance is missed."),
         ("report",       "Writes the Model Validation Report into a folder, with the document's stored options unless flags change them."),
+        ("sample",       "Samples a device circuitRF runs (a .charm's DUT with --from, or --device on g d 0) over --vgs and --vds into a stand-in's data and steps."),
     ];
 
     /// <summary>Every flag and the nouns that read it. A flag given to a noun not in its list is refused by name.</summary>
@@ -54,8 +55,8 @@ internal static class Model
     [
         ("--kind",           "active|passive",            ["new"]),
         ("--network",        "stock id|path.csch",        ["new"]),
-        ("--fingers",        "N0",                        ["new", "fit"]),
-        ("--unit-width",     "W0",                        ["new", "fit"]),
+        ("--fingers",        "N0",                        ["new", "fit", "sample"]),
+        ("--unit-width",     "W0",                        ["new", "fit", "sample"]),
         ("--as",             "kind",                      ["import"]),
         ("--name",           "name",                      ["import", "export"]),
         ("--format",         "touchstone|csv|npy|mat|npz|ds|loadpull", ["import"]),
@@ -71,11 +72,15 @@ internal static class Model
         ("--method",         "method",                    ["fit"]),
         ("--seed",           "n",                         ["fit"]),
         ("--topology",       "id|path.csch",              ["fit"]),
-        ("--device",         "instance",                  ["check-charge"]),
+        ("--device",         "instance",                  ["check-charge", "sample"]),
+        ("--from",           "x.charm",                   ["sample"]),
+        ("--vgs",            "start,stop,step",           ["sample"]),
+        ("--vds",            "start,stop,step",           ["sample"]),
+        ("--temps",          "t,t",                       ["sample"]),
         ("--threshold",      "p%",                        ["check-charge"]),
         ("--bias",           "vgs,vds",                   ["check-charge", "report"]),
         ("--region",         "vgs0,vgs1,vds0,vds1",       ["check-charge"]),
-        ("--freq",           "f",                         ["check-charge", "import", "report"]),
+        ("--freq",           "f",                         ["check-charge", "import", "report", "sample"]),
         ("-o",               "path",                      ["export", "report"]),
         ("--cell",           "workspace [name]",          ["export"]),
         ("--symbol",         "name|path.csym",            ["export"]),
@@ -90,10 +95,10 @@ internal static class Model
         ("--classes",        "B,J,F,FInverse",            ["report"]),
         ("--source-2f0",     "re,im",                     ["report"]),
         ("--ropt",           "ohms",                      ["report"]),
-        ("--disc",           "radius,rings,spokes",       ["report"]),
+        ("--disc",           "radius,rings,spokes",       ["report", "sample"]),
         ("--pin",            "start,step,max",            ["report"]),
         ("--compression",    "dB",                        ["validate", "report"]),
-        ("-q",               "",                          ["new", "import", "deembed", "fit", "check-charge", "explain", "export", "validate", "report"]),
+        ("-q",               "",                          ["new", "import", "deembed", "fit", "check-charge", "explain", "export", "validate", "report", "sample"]),
     ];
 
     private sealed class Args
@@ -163,7 +168,7 @@ internal static class Model
             return JsonRun.Fail(CliDiagnostics.ModelExtraPath(noun, a.Positionals[1]));
         // A dry run reads the sources and writes nothing, so it needs no document yet: the data can be checked first.
         bool dryRun = noun == "import" && a.Given.Contains("--dry-run");
-        if (noun != "new" && !dryRun && !File.Exists(path)) return JsonRun.Fail(CliDiagnostics.ModelNotFound(path));
+        if (noun is not ("new" or "sample") && !dryRun && !File.Exists(path)) return JsonRun.Fail(CliDiagnostics.ModelNotFound(path));
 
         var rc = Control(a.Quiet);
         try
@@ -178,6 +183,7 @@ internal static class Model
                 "explain"      => Report(noun, path, WithExportSpellings(path, ModelCommands.Explain(path, rc))),
                 "export"       => Export(path, a, rc),
                 "validate"     => Validate(path, a, rc),
+                "sample"       => Sample(path, a, rc),
                 _              => ReportNoun(path, a, rc),
             };
         }
@@ -187,7 +193,8 @@ internal static class Model
             return 130;
         }
         catch (Exception ex) when (ex is ModelingException or CmcFormatException or DataImportException or CmodelFormatException
-                                       or VerilogAExportException or InvalidDataException or IOException or UnauthorizedAccessException or ArgumentException)
+                                       or VerilogAExportException or InvalidDataException or IOException or UnauthorizedAccessException or ArgumentException
+                                       or System.Text.Json.JsonException)
         {
             return JsonRun.Fail(CliDiagnostics.ModelRefused(noun, ex.Message));
         }
@@ -505,6 +512,38 @@ internal static class Model
         items.AddRange(card.Scores.Select(r => new ModelLine("scorecard", $"{r.Section} · {r.Test}", $"{r.Grade}: {r.Result}")));
         items.AddRange(report.Sections.SelectMany(s => s.Lines.Select(l => new ModelLine("section", s.Name, l))));
         return Report("report", path, items, written: [.. written]);
+    }
+
+    private static int Sample(string path, Args a, RunControl rc)
+    {
+        if (a["--from"] is null && a["--device"] is null)
+            return Missing("sample", "--from", "name the device: --from <x.charm> (its DUT, bias and fundamental) or --device \"<instance on g d 0>\"");
+        if (a["--vgs"] is not { } vgsText) return Missing("sample", "--vgs", "give the gate axis as start,stop,step in volts, e.g. --vgs -5,1,0.1");
+        if (a["--vds"] is not { } vdsText) return Missing("sample", "--vds", "give the drain axis as start,stop,step in volts, e.g. --vds 0,60,1");
+        if (!Numbers("--vgs", vgsText, 3, out var g, out int r) || !Numbers("--vds", vdsText, 3, out var d, out r)) return r;
+        var temps = new List<double>();
+        foreach (string t in Split(a["--temps"] ?? "25"))
+        {
+            if (!Number("--temps", t, out double v, out r)) return r;
+            temps.Add(v);
+        }
+        double? freq = null;
+        if (a["--freq"] is { } ft) { if (!Number("--freq", ft, out double v, out r)) return r; freq = v; }
+        var disc = (0.2, 1, 4);
+        if (a["--disc"] is { } dt) { if (!Numbers("--disc", dt, 3, out var x, out r)) return r; disc = (x[0], (int)x[1], (int)x[2]); }
+        if (!Periphery(a, "sample", out var periphery, out r)) return r;
+        var spec = new StandInSpec
+        {
+            From = a["--from"] is { } from ? Path.GetFullPath(from) : null,
+            Device = a["--device"],
+            Vgs = StandInSpec.Axis(g[0], g[1], g[2]),
+            Vds = StandInSpec.Axis(d[0], d[1], d[2]),
+            Temperatures = temps,
+            FrequencyHz = freq,
+            Disc = disc,
+            Periphery = periphery,
+        };
+        return Report("sample", path, ModelCommands.Sample(path, spec, rc), written: [path]);
     }
 
     // ── reporting ────────────────────────────────────────────────────────────────

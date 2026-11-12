@@ -26,7 +26,7 @@ public sealed class ModelCliNoLogicTests
     private static readonly string[] SharedCalls =
     [
         "ModelCommands.New(", "ModelCommands.Import(", "ModelCommands.Deembed(", "ModelCommands.Fit(", "ModelCommands.Explain(",
-        "ModelCommands.ExportCell(", "CmodelExport.Export(", "ModelValidation.RunFile(", "ModelValidationReport.Generate(",
+        "ModelCommands.ExportCell(", "ModelCommands.Sample(", "CmodelExport.Export(", "ModelValidation.RunFile(", "ModelValidationReport.Generate(",
         "ModelValidationReport.Write(", "ConservationCheck.RunFile(", "ConservationCheck.RunDevice(", "CmodelVerilogA.Export(",
     ];
 

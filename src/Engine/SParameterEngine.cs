@@ -373,10 +373,11 @@ public static class SParameterEngine
     private static bool CanRunInParallel(ElaboratedNetlist netlist) => CanElaborateInParallel(netlist);
 
     /// <inheritdoc cref="CanRunInParallel"/>
-    /// <remarks>Internal because the WSProbe's harmonic-balance small-signal sweep asks the same
-    /// question of the same netlist for the same reason (brief-wsprobe-8 R-wsp8-9), and a second
-    /// copy of this list would be a second thing to keep in step.</remarks>
-    internal static bool CanElaborateInParallel(ElaboratedNetlist netlist)
+    /// <remarks>Shared because the WSProbe's harmonic-balance small-signal sweep asks the same
+    /// question of the same netlist for the same reason (brief-wsprobe-8 R-wsp8-9), and so does the Model
+    /// Composer's stand-in sampling (<c>model sample</c>): a second copy of this list would be a second
+    /// thing to keep in step.</remarks>
+    public static bool CanElaborateInParallel(ElaboratedNetlist netlist)
     {
         foreach (var ec in netlist.Components)
         {

@@ -194,6 +194,18 @@ public sealed class HarmonicaNetlist
         return sb.ToString();
     }
 
+    /// <summary>
+    /// The DUT alone on <paramref name="gate"/>, <paramref name="drain"/> and <paramref name="source"/> — an SDD's scope
+    /// variables, the instance line and an SDD's own Cgs/Cdg/Cds, exactly as every harmonicaRF netlist carries it. What the
+    /// Model Composer samples when it makes a stand-in for a <c>.charm</c>'s DUT (<c>model sample --from</c>).
+    /// </summary>
+    public static string DutText(CircuitModel model, string gate, string drain, string source)
+    {
+        var sb = new StringBuilder();
+        AppendDut(sb, model, gate, drain, source);
+        return sb.ToString();
+    }
+
     /// <summary>The DUT and what belongs to it: an SDD's scope variables, the instance line, and an SDD's own Cgs/Cdg/Cds.</summary>
     private static void AppendDut(StringBuilder sb, CircuitModel model, string gate, string drain, string sourceTerminal)
     {
