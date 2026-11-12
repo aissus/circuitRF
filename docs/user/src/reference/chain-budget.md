@@ -556,10 +556,12 @@ noise gain). In the window they appear once those benches have been simulated be
 they are its points, the budget its lines. The displays plot against a variable `nodeix` that each bench sweeps
 around a trivial DC solve, which is how one number per node becomes one curve.
 
-Both plots, in the window and in the display, are framed to every level they draw and 10 dB beyond, rounded out to
-10 dB, and half a node beyond the input and the output. A level that does not exist is left out rather than drawn at a
-stand-in: the IM3 before anything is nonlinear, the interference before the canceller, a blocker a filter has taken
-to nothing.
+The dBm plots, in the window and in the display, reach 10 dB over the highest level they draw and 20 dB under the lowest
+level but the IM3, each rounded out to 10 dB, and half a node beyond the input and the output. Two tones far under the
+noise floor would otherwise take most of the height, so an IM3 under the frame is clipped there and its legend entry
+says so: **IM3 (clipped)**. The dB plot reaches 10 dB beyond its NF, SNR and margin. A level that does not exist is left
+out, never drawn at a stand-in: the IM3 before anything is nonlinear, the interference before the canceller, and a
+blocker from the stage on that passes nothing of it (a band-pass filter at 0 Hz, where a mixer can put one).
 
 ### The level diagram {#level-diagram}
 
@@ -581,7 +583,10 @@ At every node, in dBm:
 
 Shaded between them: the **SNR**, from the noise floor up to the signal; the **headroom**, from the signal up to the
 P1dB; and, hatched, the **SFDR**, from the noise floor up to where the IM3 would reach it, (2/3)·(OIP3 − noise). The key
-under the plot gives each at the output. Each line is named at the output with its last value. Over the plot, the
+under the plot gives the SNR and the SFDR at the output, and the **margin to P1dB** there as the Levels tab gives it: from
+the strongest carrier, which it names (the signal, or a blocker). Each line is named at the output with its last value.
+The figure is framed as the Levels tab is, and its window also holds the P1dB, the sensitivity and a link's EIRP; an
+IM3 under it is a ▼ on the bottom edge at its node, and its name at the output keeps its value. Over the plot, the
 frequency of each run of nodes, a dashed line at each mixer; in an array, the nodes that carry one element's levels are
 marked **each of N elements**: the branch the blocks draw once, "× N", up to the combiner.
 

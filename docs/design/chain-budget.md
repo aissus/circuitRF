@@ -212,16 +212,18 @@ at each, in dBm, the signal, the noise floor, the sensitivity (MDS + the require
 every blocker, a canceller's interference and the compression limit (the cumulative OP1dB at the node, from the first
 stage that compresses); between them the SNR (noise to signal) and the headroom (signal to P1dB) filled, and the SFDR,
 (2/3)·(OIP3 − noise) above the noise floor, hatched, because it overlaps both and three tints over each other read as
-one grey. The signal's, the noise floor's and the P1dB's values are written at every node, every line's at the output,
-and the bands' widths at the output in a key. The numbers are `ChainLevels`' own: it gained the compression, the
+one grey. A band at one node alone is a narrow bar, so the key never names a band nobody can see. The signal's, the
+noise floor's and the P1dB's values are written at every node on a halo of the page, so they read over a band's tint,
+every line's at the output, and in a key the SNR, the SFDR and the budget's margin to P1dB at the output, naming the
+carrier that sets it. The numbers are `ChainLevels`' own: it gained the compression, the
 sensitivity and the SFDR per node, and nothing in the renderer computes a level. The Blocks view's Levels strip draws
 it with each node on a gap between two blocks; `circuitrf chain --level-diagram` and the docs draw it on its own, the
 nodes evenly spaced. `ChainLevelDiagram.NodesBetween` is the one rule for where a node stands under a lineup — the
 window applies it to the blocks as laid out, the Copy's picture to the blocks as it draws them.
 
 **Not a Data Display plot**, because a level plan shades between its lines, writes its values at the nodes and, under
-the blocks, puts its nodes where the gaps are, which a linear axis cannot. Its window is the Data Display's rule
-(`ChainBudgetDisplay.LevelWindow`), so the two frame one chain alike.
+the blocks, puts its nodes where the gaps are, which a linear axis cannot. It takes the same window rule
+(`ChainBudgetDisplay.LevelWindow`); the diagram's window also holds the P1dB, the sensitivity and the EIRP.
 
 **What the figure handles.**
 - *An array*: the nodes up to the combiner carry one element's levels, as the blocks draw that branch once ("× N"),
@@ -232,13 +234,17 @@ the blocks, puts its nodes where the gaps are, which a linear axis cannot. Its w
   receives with the path's loss written on it, and the ceiling is marked at the input. Where the arrival is above the
   ceiling it is drawn hollow and held down to it, as the budget holds the input.
 
-**The window rule** (`LevelWindow`, `NodeWindow`): every finite level that is not a sentinel, 10 dB beyond each end,
-rounded out to 10 dB; x half a node beyond the input and the output. A sentinel is anything at ±299 dB or beyond: the
-−300 a bench writes for a level that does not exist (an IM3 before anything is nonlinear, the interference before the
-canceller) and the +300 of a margin that never compresses, the −300 dB `ChainLevels.GainAt` gives a filter's exact zero
-(a blocker a mixer has put at 0 Hz, in front of a band-pass), and a dB of nothing. The bench's Levels display, the
-window's Levels tab and the diagram take it, and the display draws the IM3, the interference and the margin only over
-the nodes where they exist (a kept range of the node axis), so no line falls out of the window to a stand-in.
+**The window rule** (`LevelWindow`, `NodeWindow`): the top 10 dB over every level drawn, the bottom 20 dB under every
+level but the IM3, each rounded out to 10 dB; x half a node beyond the input and the output. The IM3 reaches the top
+only because two tones far under the noise floor took a third to two thirds of the height (63 % on a 30-stage chain);
+a plot clips it and its legend says "IM3 (clipped)", and the diagram puts a ▼ on its bottom edge at the node, so a
+real IM3, even at −374 dBm on a 200 km link, never vanishes. Only finite levels count. **The budget has no stand-in**:
+an absent level is NaN or −∞. A filter that passes nothing at a blocker's frequency (a band-pass at 0 Hz, where a mixer
+put it) gives `ChainLevels.GainAt` −∞, which absorbs every gain after it; it was −300 dB, which a 60 dB IF amplifier
+brought back as a blocker at −260 dBm. A bench's measurement row needs a number, so the bench alone writes
+`ChainBenches.Absent`, −300 (+300 for a margin that never compresses), and the window reads exactly that value of a
+bench's results as none. The display draws the IM3, the interference and the margin only over the nodes where they
+exist (a kept range of the node axis). The dB plot reaches 10 dB beyond its NF, SNR and margin (`DbWindow`).
 
 **Format version 2** is written only when a chain uses what version 1 does not have (a new field, an expression, a table
 or a budget-only parameter), so a 1.8.2 reader refuses such a chain rather than dropping the fields on save, and a

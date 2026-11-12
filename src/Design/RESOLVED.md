@@ -31000,3 +31000,23 @@ Building the diagram:
   `dotnet run --project src/Cli` stops at loading `libSkiaSharp`.
 
 Gate: `tests/Ui.Tests/Chain/ChainLevelDiagramTests.cs`.
+
+After review:
+- **The pane was not the lever.** The 1.5* results row came out about 275 px at the window's opening 1300 × 960, against
+  the old 280, so the plots there were no more readable. The text is now held instead: each Rect plot's tick and label
+  sizes are scaled so its text is drawn at a unit of at least 1.8 (9 px tick numbers), the S-Parameter Viewer's
+  StrokeUnit, and its container takes the size shown, so a plot's Copy is the picture on the screen. A legend entry for a
+  cube the data does not hold (a bench not simulated yet) is no longer drawn, and the window's plots drop their "node"
+  x label, which overlapped the node names at that text size. The panes are fitted to the window's height: the stage
+  list keeps three rows (two in a short window), the results 180 px (120 while the Levels strip is the figure being
+  read), and the Blocks pane with its strip about 45 % of the height, or what the lineup and the strip's least height
+  need: an array's lineup is taller, and at 45 % its strip was cut.
+- **The IM3 set the bottom of every level plot.** Two tones at the input power put their products 100 dB and more under
+  the noise floor: a third to two thirds of the height (63 % on a 30-stage chain) went to one line nobody reads a number
+  from. The bottom is now 20 dB under every level but the IM3; a plot clips the IM3 and says so in its legend, and the
+  diagram marks it with a ▼ at its node. ("IM3 (below the frame)" was the first wording; a docked legend's cell holds
+  about fifteen characters at the held text size, so it read "IM3 (below the fra…": the entry is "IM3 (clipped)".)
+- **A stand-in by size hid real levels and kept fake ones.** The −300 `GainAt` gave a filter's exact zero was added to
+  every gain after it: through a 60 dB IF amplifier the absent blocker came back at −260 dBm, which no "≤ −299" test
+  catches, while a real IM3 at −374 dBm on a 200 km link was dropped as one. The budget's absent level is now −∞ (it
+  absorbs), so nothing finite is a stand-in; only a bench's own results carry one, `ChainBenches.Absent`, matched exactly.
