@@ -190,10 +190,21 @@
                         <mi:MaterialIcon Kind="ChevronDown" Width="12" Height="12"/>
                         <Button.Flyout>
                             <Flyout Placement="BottomEdgeAlignedLeft">
-                                <CheckBox IsChecked="{Binding Demo}"
-                                          ToolTip.Tip="Transfer also writes the Demo bench: the chain demodulated end to end, NR and DBPSK from the Signal Designer's source, the LO with a phase-noise mask, the constellation and the EVM against the input power">
-                                    <TextBlock Text="include a modulated-signal demo" FontSize="12"/>
-                                </CheckBox>
+                                <StackPanel Spacing="2">
+                                    <CheckBox IsChecked="{Binding Demo}"
+                                              ToolTip.Tip="Transfer also writes the Demo bench: the chain demodulated end to end, NR and DBPSK from the Signal Designer's source, the LO with a phase-noise mask, the constellation and the EVM against the input power">
+                                        <TextBlock Text="include a modulated-signal demo" FontSize="12"/>
+                                    </CheckBox>
+                                    <CheckBox IsChecked="{Binding DynamicRange}"
+                                              ToolTip.Tip="Transfer also writes the dynamic-range checks: an SFDR bench, two tones swept to where their IM3 meets the noise floor, and on the Blockers bench the signal's gain each blocker takes">
+                                        <TextBlock Text="include the dynamic-range checks: SFDR, desensitisation" FontSize="12"/>
+                                    </CheckBox>
+                                    <StackPanel Orientation="Horizontal" Spacing="6"
+                                                ToolTip.Tip="The noise records the Envelope and Demo benches average, each its own seed: one record's SNR is good to about ±0.12 dB, N records' to ±0.12/√N">
+                                        <TextBlock Text="noise records" FontSize="12" VerticalAlignment="Center"/>
+                                        <TextBox Text="{Binding Records}" Width="48" FontSize="12"/>
+                                    </StackPanel>
+                                </StackPanel>
                             </Flyout>
                         </Button.Flyout>
                     </Button>
@@ -445,12 +456,15 @@
                     <TabItem Header="Levels" FontSize="13">
                         <DockPanel>
                             <TextBlock DockPanel.Dock="Bottom" Text="{Binding LevelsNote}" FontSize="11" Opacity="0.75" TextWrapping="Wrap"/>
-                            <Grid ColumnDefinitions="*,4,*">
+                            <Grid ColumnDefinitions="*,4,*,4,0.7*">
                                 <ddc:PlotControl Grid.Column="0" Name="LevelsPlotControl" ClipToBounds="True"
                                                  Plot="{Binding LevelsPlot}" Library="{Binding PlotHost.Library}"
                                                  CanDeletePlot="False" CanEditPlotProperties="False" CanAddMarkers="False"/>
                                 <ddc:PlotControl Grid.Column="2" Name="LevelsDbPlotControl" ClipToBounds="True"
                                                  Plot="{Binding LevelsDbPlot}" Library="{Binding PlotHost.Library}"
+                                                 CanDeletePlot="False" CanEditPlotProperties="False" CanAddMarkers="False"/>
+                                <ddc:PlotControl Grid.Column="4" Name="LevelsEvmPlotControl" ClipToBounds="True"
+                                                 Plot="{Binding LevelsEvmPlot}" Library="{Binding PlotHost.Library}"
                                                  CanDeletePlot="False" CanEditPlotProperties="False" CanAddMarkers="False"/>
                             </Grid>
                         </DockPanel>

@@ -212,9 +212,10 @@ public sealed partial class ChainBudgetViewModel : ObservableObject
 
     // ── the levels and the canceller: Data Display plots over the budget's own data ──
 
-    private CircuitRF.Ui.DataDisplay.ViewModels.PlotContainerViewModel? _levels, _levelsDb, _depthPhase, _depthBand;
+    private CircuitRF.Ui.DataDisplay.ViewModels.PlotContainerViewModel? _levels, _levelsDb, _levelsEvm, _depthPhase, _depthBand;
     public CircuitRF.Render.DataDisplay.Plot? LevelsPlot => _levels?.PlotVM.Plot;
     public CircuitRF.Render.DataDisplay.Plot? LevelsDbPlot => _levelsDb?.PlotVM.Plot;
+    public CircuitRF.Render.DataDisplay.Plot? LevelsEvmPlot => _levelsEvm?.PlotVM.Plot;
     public CircuitRF.Render.DataDisplay.Plot? DepthPhasePlot => _depthPhase?.PlotVM.Plot;
     public CircuitRF.Render.DataDisplay.Plot? DepthBandPlot => _depthBand?.PlotVM.Plot;
 
@@ -375,6 +376,7 @@ public sealed partial class ChainBudgetViewModel : ObservableObject
         var cfg = CircuitRF.Render.DataDisplay.ChainBudgetDisplay.WindowLevels(d, lv);
         Refill(ref _levels, nameof(LevelsPlot), cfg[0], BudgetSource, data);
         Refill(ref _levelsDb, nameof(LevelsDbPlot), cfg[1], BudgetSource, data);
+        Refill(ref _levelsEvm, nameof(LevelsEvmPlot), cfg[2], BudgetSource, data);
     }
 
     /// <summary>The canceller's depth in closed form: against the phase error for a few amplitude errors, and against
@@ -532,6 +534,8 @@ public sealed partial class ChainBudgetViewModel : ObservableObject
         Blockers = FormatBlockers(d.Blockers);
         Demo = d.Demo;
         Mismatch = d.Mismatch;
+        DynamicRange = d.DynamicRange;
+        Records = d.Records.ToString(CultureInfo.InvariantCulture);
         HasLink = d.Link is not null;
         FillLink(d);
         Stages.Clear();
@@ -564,6 +568,8 @@ public sealed partial class ChainBudgetViewModel : ObservableObject
         Sweeps = ParseSweeps(),
         Response = ParseResponse(),
         Mismatch = Mismatch,
+        DynamicRange = DynamicRange,
+        Records = int.TryParse(Records.Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out int rec) ? rec : 0,
         Direction = Tr("Direction").Trim() is { Length: > 0 } dir ? dir : ChainDesign.Receive,
         RxBandOffsetHz = Tr("RxOffset").Trim().Length == 0 ? null : Mhz(Tr("RxOffset")),
         RxBandHz = Mhz(Tr("RxBandwidth")),
@@ -606,6 +612,14 @@ public sealed partial class ChainBudgetViewModel : ObservableObject
     /// <summary>The cascade with mismatch: every stage's two-port S and noise, cascaded (<see cref="ChainDesign.Mismatch"/>).</summary>
     [ObservableProperty] private bool _mismatch;
     partial void OnMismatchChanged(bool value) => Edited(null);
+
+    /// <summary>Transfer also writes the dynamic-range checks (<see cref="ChainDesign.DynamicRange"/>).</summary>
+    [ObservableProperty] private bool _dynamicRange;
+    partial void OnDynamicRangeChanged(bool value) => Edited(null);
+
+    /// <summary>The noise records the Envelope and Demo benches average (<see cref="ChainDesign.Records"/>), as typed.</summary>
+    [ObservableProperty] private string _records = "1";
+    partial void OnRecordsChanged(string value) => Edited(nameof(Records));
 
     public ObservableCollection<ChainParamViewModel> LinkTx { get; } = [];
     public ObservableCollection<ChainParamViewModel> LinkPath { get; } = [];
@@ -723,7 +737,7 @@ public sealed partial class ChainBudgetViewModel : ObservableObject
     /// <summary>The document's content, compared to decide dirtiness; the selection rides beside it.</summary>
     private sealed record UndoContent(string Frequency, string Bandwidth, string InputPower, string Temperature,
                                       string RequiredSnr, string Blockers, bool Demo, string Stages, bool HasLink = false,
-                                      string Link = "", bool Mismatch = false);
+                                      string Link = "", bool Mismatch = false, bool DynamicRange = false, string Records = "1");
 
     private sealed record UndoState(UndoContent Content, int Selected);
 
@@ -749,7 +763,7 @@ public sealed partial class ChainBudgetViewModel : ObservableObject
     private UndoState Capture() => new(new UndoContent(
         Frequency, BandwidthMHz, InputPowerDbm, TemperatureK, RequiredSnrDb, Blockers, Demo,
         System.Text.Json.JsonSerializer.Serialize(Stages.Select(st => st.ToStage()).Select(st => new { st.Name, st.Part, st.Parameters })),
-        HasLink, LinkSnapshot(), Mismatch),
+        HasLink, LinkSnapshot(), Mismatch, DynamicRange, Records),
         SelectedStageIndex);
 
     /// <summary>A document just opened, made or loaded: nothing to undo, and this content is the clean state.</summary>
@@ -841,6 +855,8 @@ public sealed partial class ChainBudgetViewModel : ObservableObject
                 (c.Frequency, c.Bandwidth, c.InputPower, c.Temperature, c.RequiredSnr, c.Blockers, c.Demo);
             HasLink = c.HasLink;
             Mismatch = c.Mismatch;
+            DynamicRange = c.DynamicRange;
+            Records = c.Records;
             FillLink(new ChainDesign(), System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, string>>(c.Link));
             Stages.Clear();
             foreach (var st in System.Text.Json.JsonSerializer.Deserialize<List<ChainStage>>(c.Stages) ?? [])
