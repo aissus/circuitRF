@@ -335,10 +335,11 @@ public static class ChainLevelDiagram
         // The lines: the quiet ones first, the signal on top.
         var series = new List<Series>();
         if (p.Tx is null) series.Add(new("sensitivity", Palette(theme, 3), Of(x => x.SensitivityDbm), 1.2f, true, false, false));
-        series.Add(new("noise floor", cNoise, noise, 2f, false, true, true));
-        // An LO's phase noise and the blockers' reciprocal mixing, in the channel, from the mixer that states its mask on.
-        if (p.Nodes.Any(x => Level(PhaseNoiseFloor(x)))) series.Add(new("LO phase noise", cNoise, Of(PhaseNoiseFloor), 1.4f, true, false, false));
+        // An LO's phase noise and the blockers' reciprocal mixing, in the channel, from the mixer that states its mask on;
+        // under the noise floor, whose values are written over them.
+        if (p.Nodes.Any(x => Level(PhaseNoiseFloor(x)))) series.Add(new("LO phase noise", Palette(theme, 8), Of(PhaseNoiseFloor), 1.4f, true, false, false));
         if (p.Nodes.Any(x => Level(ReciprocalMixing(x)))) series.Add(new("reciprocal mixing", Palette(theme, 9), Of(ReciprocalMixing), 1.4f, true, false, false));
+        series.Add(new("noise floor", cNoise, noise, 2f, false, true, true));
         // A transmitter's ceiling over its P1dB, dashed in the compression's colour; named at the output, not at each node.
         if (p.PsatDbm is { } ps) series.Add(new("Psat", cComp, [.. ps], 1.4f, true, true, false));
         series.Add(new("P1dB", cComp, comp, 1.6f, false, true, true));

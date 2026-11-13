@@ -31056,6 +31056,26 @@ After review:
 Gates: `tests/Ui.Tests/Chain/ChainFidelityTests.cs`, `tests/Ui.Tests/Examples/ChainBudgetExampleTests.cs` (`Wideband_*`),
 `testdata/chain/fidelity_reference.py`.
 
+## The chain budget's LO phase noise, blockers and dynamic range (CH-5b, 2026-11-13)
+
+- **A mask read as a number.** `ChainScaling.Resolve` replaces every stage parameter that parses as an expression in
+  `freq` by its value, and a mask with a space where its colon belongs, `10kHz -90`, parses: 10 kHz less 90, 9910. The
+  mask then reached the budget as "9910" and was refused as a mask with no colon, naming a number nobody typed. A Mixer's
+  `PhaseNoise` is now passed by, as a choice and a file are; the refusal names the text as written.
+- **What a bench's phase record resolves.** An envelope run plays a mask over the signal's record, 0.5 ms here, as bins
+  2 kHz apart from 2 kHz: the sum over them is the mask's integral by the midpoint rule from 1 kHz. Where the mask still
+  falls at its first point (the demo's own shape, −15 dB/decade at 1 kHz) the midpoint rule reads 0.3 dB under the
+  integral; flat there, a synthesizer's in-loop plateau, it is exact. The superhet's mask is flat to 100 kHz, so the
+  budget's integral from the mask's first offset is what the bench plays.
+- **The SFDR bench's floor is the budget's.** A harmonic-balance noise run takes a port for its input (a Port, a Term or
+  a P1Tone with `Num`), and the two tones are a PnTone's, which has none; and every source's tones must be on the run's
+  lattice, so a P1Tone beside the PnTone would put its tone on the two-tone run too. The bench reads its IM3 against the
+  budget's floor, which the 1-Tone bench checks to 10⁻⁴ dB.
+- **The Blockers bench with the signal in it.** The signal rides as the first tone of the blockers' own run: a second run
+  of the signal and one blocker would need its own source, and the other source's tones would then be off its lattice.
+  On the superhet that is five tones (the signal, three blockers, the LO), 341 mixing products at MaxMixOrder 4, and the
+  run takes about five minutes in a debug build where three tones took seconds; its test is a benchmark now.
+
 ## The chain budget's transmit chains, the amplifier's laws and the IQ modulator (CH-2, 2026-11-12)
 
 - **A parameter that has a value meaning "as before" must say so, or every chain changes.** An Amplifier's new `Law`,

@@ -229,8 +229,10 @@ public sealed class ChainBudgetExampleTests(ITestOutputHelper output) : IDisposa
     }
 
     /// <summary>The signal and its IM3 at every node; every blocker at every node, its own and the others' compression
-    /// under it; and the signal's gain the blockers take, the dynamic-range check, on the budget's desensitisation.</summary>
+    /// under it; and the signal's gain the blockers take, the dynamic-range check, on the budget's desensitisation. The
+    /// Blockers run carries five tones (the signal, three blockers and the LO), minutes in a debug build.</summary>
     [Fact]
+    [Trait("Category", "Benchmark")]
     public void Superhet_LevelsAndBlockers_EveryNodeOnTheBudget()
     {
         var lev = Simulate("Superhet Levels");
