@@ -134,6 +134,10 @@ public static class ChainBenches
     /// <summary>A transmit chain's Envelope bench's drives about its input power, dB.</summary>
     public static readonly double[] TxEnvelopeStepsDb = [-3, 0, 3];
 
+    /// <summary>The arriving angle's step on a Steering bench through a mixer, degrees: each point is a harmonic-balance
+    /// run with every element's mixer, about a second, where the S-parameter bench's 1° steps cost milliseconds.</summary>
+    public const double HbSteerStepDeg = 5;
+
     /// <summary>The steer angles the Steering bench sweeps, degrees from broadside.</summary>
     public static readonly double[] SteerAnglesDeg = [-30, 0, 30];
 
@@ -143,9 +147,10 @@ public static class ChainBenches
 
     /// <summary>
     /// The benches a chain transfers to: 1-Tone, 2-Tone, Envelope and Levels always; Blockers when it has blockers, Demo
-    /// when it asks for it, Canceller when it has a canceller; for an array whose branch is linear (no
-    /// mixer before the combiner, so an S-parameter run reaches the combiner), Combiners, and Steering when a phase
-    /// shifter in the branch has something to steer with. <paramref name="why"/> says what was left out and why.
+    /// when it asks for it, Canceller when it has a canceller; for an array, Combiners, and Steering when a phase shifter
+    /// in the branch has something to steer with. An array with a mixer before its combiner has them as harmonic-balance
+    /// runs with a common LO, since no S-parameter run reaches the combiner. <paramref name="why"/> says what was left out
+    /// and why.
     /// </summary>
     public static IReadOnlyList<ChainBench> BenchesFor(ChainDesign d, List<string>? why = null)
     {
@@ -165,16 +170,25 @@ public static class ChainBenches
         if (d.Link is not null) b.Add(ChainBench.Transmitter);
         int cmb = d.Stages.FindIndex(s => s.Part == ChainParts.Combiner);
         if (cmb < 0) return b;
-        if (d.Stages.Take(cmb).Any(s => s.Part == ChainParts.Mixer))
+        if (d.Stages.Take(cmb).Any(s => s.Part == ChainParts.IqMod))
         {
-            why?.Add("The branch before the combiner has a mixer, so no S-parameter run reaches the combiner: there is no " +
-                     "Steering or Combiners bench.");
+            why?.Add("The branch before the combiner has an IQ modulator, whose quadrature LO the array benches do not " +
+                     "share: there is no Steering or Combiners bench.");
             return b;
         }
         if (d.Stages.Take(cmb).Any(s => s.Part == ChainParts.PhaseShifter)) b.Add(ChainBench.Steering);
         else why?.Add("The branch has no PhaseShifter to steer with, so there is no Steering bench.");
         b.Add(ChainBench.Combiners);
         return b;
+    }
+
+    /// <summary>The variants the Combiners bench sets side by side for <paramref name="combiner"/>: all four when a tree can
+    /// be made of 2:1 levels alone (N a power of 2) or the combiner is a tree of its own (its Ways), the direct two
+    /// otherwise.</summary>
+    public static IEnumerable<(string Topology, string Kind, string Code)> VariantsFor(ChainStage combiner)
+    {
+        var c = ChainParts.ReadCombiner(combiner);
+        return CombinerVariants.Where(v => (c.N & (c.N - 1)) == 0 || c.Tree || v.Topology == "Direct");
     }
 
     /// <summary>The chain up to and including its combiner, with the combiner's topology and kind set: what one
@@ -188,10 +202,12 @@ public static class ChainBenches
         var p = v.Stages[cmb].Parameters;
         p["Topology"] = topology;
         p["Kind"] = kind;
-        if (kind == "Active") p.Remove("PathIL");
         if (topology == "Direct")
+        {
+            p.Remove("Ways");
             foreach (string key in new[] { "IL", "Gain", "NF", "IIP3" })
                 if (p.TryGetValue(key, out var text) && text.Split([',', ';']) is { Length: > 1 } items) p[key] = items[0].Trim();
+        }
         return v;
     }
 
@@ -608,9 +624,13 @@ public static class ChainBenches
         private static string F(double v) => ChainValue.Format(v);
         private static string G(double v) => v.ToString("R", CultureInfo.InvariantCulture);
 
-        private int N => d.Stages.FirstOrDefault(s => s.Part == ChainParts.Combiner) is { } c
-                         ? Math.Max(2, (int)Math.Round(ChainValue.Or(c.Get("N"), 2))) : 1;
+        /// <summary>The array's elements: every Combiner's N multiplied, 1 without one.</summary>
+        private int N => d.Copies(-1);
         private int Branch => d.Stages.FindIndex(s => s.Part == ChainParts.Combiner) is >= 0 and var i ? i : 0;
+        /// <summary>The last Combiner, where the array benches read the array; -1 without one.</summary>
+        private int LastCombiner => d.Stages.FindLastIndex(s => s.Part == ChainParts.Combiner);
+        /// <summary>The converters up to and including <paramref name="last"/>, each an LO tone of the run.</summary>
+        private List<ChainStage> MixersTo(int last) => [.. d.Stages.Take(last + 1).Where(s => ChainParts.Converts(s.Part))];
         private double Steer => d.Stages.FirstOrDefault(s => s.Part == ChainParts.Combiner) is { } c ? ChainValue.Or(c.Get("Steer"), 0) : 0;
         private int Mixers => d.Stages.Count(s => ChainParts.Converts(s.Part));
 
@@ -733,23 +753,11 @@ public static class ChainBenches
             }
             v1 = v1b; v3 = v3b; f = fb;
 
-            // ── the combiner, and the rest of the chain on its output's row ──
+            // ── the combiner(s), level by level, and the rest of the chain on the output's row ──
             _y = 0;
             _x = rowX;
-            string cur = branchOut[0];
-            for (int j = nb; j < d.Stages.Count; j++)
-            {
-                var s = d.Stages[j];
-                string net = j == d.Stages.Count - 1 ? "out" : $"n_{s.Name}";
-                List<string> parts;
-                _stage = j;
-                if (s.Part == ChainParts.Combiner) parts = Combiner(s, branchOut, net);
-                else parts = Stage(s, s.Name, cur, net, ref f, v1, v3, ref lo, 1, 1);
-                stageNet[j] = net; stageIdx[j] = ((int[])v1.Clone(), (int[])v3.Clone()); stageFreq[j] = f; stageParts[j] = parts;
-                cur = j == d.Stages.Count - 1 ? net : Forward(net, s.Name);
-                _stage = -1;
-            }
-            if (cur != "out") { /* the last stage always writes "out" */ }
+            Combine(branchOut, [.. Enumerable.Range(0, n).Select(k => (double)k * BranchPitch)], d.Stages.Count - 1, "out", "",
+                    ref f, v1, v3, ref lo, stageNet, stageIdx, stageParts, stageFreq);
             Load(n);
             if (!diagram) Measurements(stageNet, stageIdx, stageParts, stageFreq, v1, v3, f, n);
             else _vars.Clear();
@@ -769,6 +777,63 @@ public static class ChainBenches
             foreach (var m in _meas) sb.AppendLine("measure " + m);
             return new ChainBenchText(bench, CellName(chain, bench), sb.ToString(),
                                       new ExactPlacement { Instances = _at, AutoRoute = true }, chain, d, r);
+        }
+
+        /// <summary>
+        /// The stages from the first Combiner (<see cref="Branch"/>) to <paramref name="last"/>, level by level. A Combiner
+        /// takes its N consecutive inputs, once for each copy the array has of it; a stage between two Combiners is placed
+        /// once a sub-array, on its sub-array's row, named with its number (<c>SA_2</c>). <paramref name="nets"/> and
+        /// <paramref name="ys"/> are the element branches' outputs and rows. The last writes <paramref name="outNet"/>.
+        /// The per-stage arrays, when given, take sub-array 1's net, products and frequency, and every copy's noisy parts.
+        /// Leaves <c>_x</c> and <c>_y</c> after the last on its row.
+        /// </summary>
+        private void Combine(string[] nets, double[] ys, int last, string outNet, string suffix, ref double f, int[] v1, int[] v3,
+                             ref int lo, string[]? stageNet = null, (int[] V1, int[] V3)[]? stageIdx = null,
+                             List<string>[]? stageParts = null, double[]? stageFreq = null)
+        {
+            int nb = Branch;
+            for (int j = nb; j <= last; j++)
+            {
+                var s = d.Stages[j];
+                int copies = d.Copies(j), w = nets.Length / copies;
+                bool end = j == last;
+                double x0 = _x, xEnd = _x, fIn = f;
+                int loIn = lo;
+                int[] v1In = (int[])v1.Clone(), v3In = (int[])v3.Clone();
+                var outs = new string[copies];
+                var oy = new double[copies];
+                var parts = new List<string>();
+                string first = "";
+                _stage = j;
+                for (int g = 0; g < copies; g++)
+                {
+                    _x = x0; _y = ys[g * w];
+                    string tag = copies > 1 ? $"_{g + 1}" : "";
+                    string net = end ? outNet : $"n_{s.Name}{tag}{suffix}";
+                    if (s.Part == ChainParts.Combiner)
+                        parts.AddRange(Combiner(s, nets[(g * w)..((g + 1) * w)], net, tag + suffix, ys[(g * w)..((g + 1) * w)],
+                                                j == nb ? g * w : -1, nets.Length));
+                    else if (g == 0)
+                        parts.AddRange(Stage(s, s.Name + tag + suffix, nets[g], net, ref f, v1, v3, ref lo, 1, 1));
+                    else
+                    {
+                        // Every sub-array's copy is the same; the first carries the tracked products on.
+                        double fg = fIn; int lg = loIn;
+                        parts.AddRange(Stage(s, s.Name + tag + suffix, nets[g], net, ref fg, (int[])v1In.Clone(), (int[])v3In.Clone(), ref lg, 1, 1));
+                    }
+                    if (g == 0) first = net;
+                    outs[g] = end ? net : Forward(net, s.Name + tag + suffix);
+                    oy[g] = _y;
+                    xEnd = Math.Max(xEnd, _x);
+                }
+                if (stageNet is not null)
+                {
+                    stageNet[j] = first; stageIdx![j] = ((int[])v1.Clone(), (int[])v3.Clone()); stageFreq![j] = f; stageParts![j] = parts;
+                }
+                nets = outs; ys = oy;
+                _x = xEnd; _y = ys[0];
+                _stage = -1;
+            }
         }
 
         // ── the array benches ────────────────────────────────────────────────
@@ -791,14 +856,15 @@ public static class ChainBenches
         /// <summary>
         /// One element per row from a wave's split, each element's branch placed with <paramref name="suffix"/> on its
         /// names; returns the branch outputs. The wave is a Port into a Combiner used as a splitter, its path k carrying
-        /// <paramref name="phase"/>(k) (null: none).
+        /// <paramref name="phase"/>(k) (null: none); through a mixer, a P1Tone of the VAR Pw instead, since the run is
+        /// harmonic balance. <paramref name="v1"/> and <paramref name="lo"/> are the tracked product and the next LO tone.
         /// </summary>
-        private string[] WaveAndBranches(string port, int num, string suffix, Func<int, string?> phase)
+        private string[] WaveAndBranches(int n, string port, int num, string suffix, Func<int, string?> phase, int[] v1, ref int lo, ref double f)
         {
-            int n = N, nb = Branch;
+            int nb = Branch;
             double yc = _yBase + (n - 1) * BranchPitch / 2;
             string w = $"w{suffix}";
-            Line($"Port:{port}  {w}  0  Num={num}  Z=50 Ohm");
+            Line(_hb ? $"P1Tone:{port}  {w}  0  Num={num}  Freq=Frf  Pavl=Pw dBm  Z=50 Ohm" : $"Port:{port}  {w}  0  Num={num}  Z=50 Ohm");
             Place(port, 0, yc + 200);
             var ph = Enumerable.Range(1, n).Select(k => phase(k) is { } p ? $"  Phase[{k}]={p} deg" : "");
             Line($"Combiner:WAVE{suffix}  {w}  0  {string.Join("  ", Enumerable.Range(1, n).Select(k => $"in{k}{suffix}  0"))}  N={n}" +
@@ -806,80 +872,143 @@ public static class ChainBenches
             Place($"WAVE{suffix}", 900, yc, mirror: true);
             var outs = new string[n];
             double rowX = 0;
+            int[] v1n = v1;
+            int lon = lo;
+            double fn = f;
             for (int k = 1; k <= n; k++)
             {
                 _x = 1900; _y = _yBase + (k - 1) * BranchPitch;
                 string prev = $"in{k}{suffix}";
-                double fb = d.FrequencyHz; int lo = 1; int[] v1 = [1], v3 = [0];
+                double fb = f; int lb = lo; int[] b1 = (int[])v1.Clone(), b3 = new int[v1.Length];
                 for (int j = 0; j < nb; j++)
                 {
                     string net = $"b{k}_{d.Stages[j].Name}{suffix}";
                     _stage = j;
-                    Stage(d.Stages[j], $"{d.Stages[j].Name}_{k}{suffix}", prev, net, ref fb, v1, v3, ref lo, k, n);
+                    Stage(d.Stages[j], $"{d.Stages[j].Name}_{k}{suffix}", prev, net, ref fb, b1, b3, ref lb, k, n);
                     prev = net;
                     _stage = -1;
                 }
                 outs[k - 1] = prev;
                 rowX = Math.Max(rowX, _x);
+                if (k == 1) { v1n = b1; lon = lb; fn = fb; }
             }
+            Array.Copy(v1n, v1, v1.Length);
+            lo = lon; f = fn;
             _x = rowX;
             return outs;
         }
 
+        /// <summary>The array benches' harmonic-balance tones through a mixer: the wave's and each LO's, and their
+        /// variables; and the small-signal wave, <c>Pw</c>, 40 dB under <paramref name="ip1dbDbm"/>, the input P1dB of
+        /// one element there, the whole wave split among its <paramref name="n"/> elements.</summary>
+        private (string Tones, double[] Hz) HbArrayTones(int last, int n, double ip1dbDbm)
+        {
+            var mix = MixersTo(last);
+            for (int i = 0; i < mix.Count; i++) _vars.Add($"Flo{i + 1} = {G(ChainValue.Or(mix[i].Get("Flo"), 0))}");
+            _vars.Add($"Pw = {F(Finite(ip1dbDbm, 0) - CompressionBackoffDb + 10 * Math.Log10(n))}");
+            var names = new List<string> { "Frf" };
+            names.AddRange(Enumerable.Range(1, mix.Count).Select(i => $"Flo{i}"));
+            return ($"NumFreqs={names.Count} " + string.Join(" ", names.Select((t, i) => $"Tone[{i + 1}]=\"{t}\" ToneUnit[{i + 1}]=Hz")),
+                    [d.FrequencyHz, .. mix.Select(m => ChainValue.Or(m.Get("Flo"), 0))]);
+        }
+
+        /// <summary>A harmonic-balance noise run from port <paramref name="pin"/> to <paramref name="pout"/> at the IF the
+        /// tracked product <paramref name="v1"/> lands on, at <paramref name="fout"/>: the 1-Tone bench's own.</summary>
+        private string HbNoise(string name, string tones, double[] hz, int[] v1, double fout, int pin, int pout)
+        {
+            int mix = hz.Length - 1;
+            var sb = Enumerable.Range(0, v1.Length).Select(i => i == 0 ? 0 : -v1[i]);
+            return $"analysis {name} type=hb {tones} MaxHarm=3 MaxMixOrder={Order(name, hz, 1 + 2 * mix, 1 + 2 * mix, "each mixer's image sideband", [v1], noise: true)} " +
+                   $"Tol=1e-12 SSStart=\"{G(fout + 1e3)}\" SSStop=\"{G(fout + 1e3)}\" SSNpts=1 Noise=yes NoiseIn={pin} NoiseOut={pout} " +
+                   $"NoiseSideband=\"{string.Join(",", sb)}\"";
+        }
+
         /// <summary>
         /// The Steering bench: a plane wave from theta_in into the elements, steered by their phase shifters from
-        /// theta_steer, combined, and read at the combiner's output; a sweep of theta_in within a sweep of theta_steer
-        /// over <see cref="SteerAnglesDeg"/>. The pattern is the simulated gain over the budget's at the combiner, beside
-        /// the closed-form array factor |Σ a_k·e^(−j(k−1)(ψ_in − ψ_s))| / Σ a_k, with a_k each path's weight and the VAR
-        /// taper's. At each steer angle's own peak: the gain, the NF from the wave's port, and the array gain.
+        /// theta_steer, combined level by level, and read at the last combiner's output; a sweep of theta_in within a sweep
+        /// of theta_steer over <see cref="SteerAnglesDeg"/>. The pattern is the simulated gain over the budget's at the
+        /// combiner, beside the closed-form array factor |Σ t_k·e^(−j(k−1)(ψ_in − ψ_s))| / Σ t_k, with t_k each element's
+        /// own amplitude to the output (its weights, its tree's parts, the VAR taper). At each steer angle's own peak: the
+        /// gain, the NF from the wave's port, and the array gain. Through a mixer it is harmonic balance with a common LO:
+        /// the gain at the IF over the sweeps, and the NF from a noise run swept over theta_steer at theta_in = theta_steer.
         /// </summary>
         private ChainBenchText EmitSteering()
         {
-            int n = N, nb = Branch;
-            var row = r.Stages[nb];
-            var c = ChainParts.ReadCombiner(d.Stages[nb]);
-            _vars.AddRange([$"Frf = {G(d.FrequencyHz)}", "theta_in = 0", "theta_steer = 0", "d_over_lambda = 0.5", "taper = 0",
+            int n = N, nb = Branch, last = LastCombiner;
+            var row = r.Stages[last];
+            _hb = MixersTo(last).Count > 0;
+            _vars.AddRange([$"Frf = {G(d.FrequencyHz)}", _hb ? "theta_in = theta_steer" : "theta_in = 0", "theta_steer = 0", "d_over_lambda = 0.5", "taper = 0",
                             "psi_in = 360*d_over_lambda*sin(theta_in*pi/180)",
                             "dphi = 360*d_over_lambda*sin(theta_steer*pi/180)"]);
-            var outs = WaveAndBranches("P1", 1, "", k => k > 1 ? $"-{k - 1}*psi_in" : null);
+            var (tones, hz) = _hb ? HbArrayTones(last, n, row.Ip1dbDbm) : ("", []);
+            int lo = 1;
+            double f = d.FrequencyHz;
+            int[] v1 = new int[1 + MixersTo(last).Count]; v1[0] = 1;
+            var outs = WaveAndBranches(n, "P1", 1, "", k => k > 1 ? $"-{k - 1}*psi_in" : null, v1, ref lo, ref f);
             _y = 0;
-            _stage = nb;
-            Combiner(d.Stages[nb], outs, "out");
-            _stage = -1;
+            Combine(outs, [.. Enumerable.Range(0, n).Select(k => (double)k * BranchPitch)], last, "out", "", ref f, v1, new int[v1.Length], ref lo);
             Line("Port:P2  out  0  Num=2  Z=50 Ohm");
             Place("P2", _x, _y + 200);
-
-            _analyses.Add("analysis SP1 type=sparam start=\"Frf\" stop=\"Frf\" npts=1 Noise=yes");
-            _analyses.Add("analysis SWI type=parametric_sweep Var=theta_in Start=-90 Stop=90 Step=1 Inner=SP1");
-            _analyses.Add($"analysis SWS type=parametric_sweep Var=theta_steer Values={string.Join(",", SteerAnglesDeg.Select(F))} Inner=SWI");
+            CommonLos();
 
             double nDb = 10 * Math.Log10(n);
+            if (_hb)
+            {
+                _analyses.Add($"analysis HB1 type=hb {tones} MaxHarm=3 MaxMixOrder={Order("HB1", hz, 1 + 2 * (hz.Length - 1), 1 + (hz.Length - 1), "the IF", [v1])} Tol=1e-12");
+                _analyses.Add($"analysis SWI type=parametric_sweep Var=theta_in Start=-90 Stop=90 Step={F(HbSteerStepDeg)} Inner=HB1");
+                _analyses.Add($"analysis SWS type=parametric_sweep Var=theta_steer Values={string.Join(",", SteerAnglesDeg.Select(F))} Inner=SWI");
+                _analyses.Add(HbNoise("HBN", tones, hz, v1, f, 1, 2));
+                _analyses.Add($"analysis SWP type=parametric_sweep Var=theta_steer Values={string.Join(",", SteerAnglesDeg.Select(F))} Inner=HBN");
+            }
+            else
+            {
+                _analyses.Add("analysis SP1 type=sparam start=\"Frf\" stop=\"Frf\" npts=1 Noise=yes");
+                _analyses.Add("analysis SWI type=parametric_sweep Var=theta_in Start=-90 Stop=90 Step=1 Inner=SP1");
+                _analyses.Add($"analysis SWS type=parametric_sweep Var=theta_steer Values={string.Join(",", SteerAnglesDeg.Select(F))} Inner=SWI");
+            }
+
             _meas.Add($"G_calc = {G(row.GainDb)}");
             _meas.Add($"NF_calc = {G(row.NfDb)}");
             // From the wave's port the elements see equal shares of it, so unequal paths cost their taper loss: N/A.
             _meas.Add($"NFw_calc = {G(row.NfDb + nDb - row.ArrayGainDb)}");
             _meas.Add($"A_calc = {G(row.ArrayGainDb)}");
-            _meas.Add($"G_sim = at(dB(SP1.S(2,1)), \"freq\", 0) + {G(nDb)}");
-            _meas.Add("NF_sim = at(SP1.NF, \"freq\", 0)");
+            if (_hb)
+            {
+                _meas.Add($"G_sim = dB(HB1.V(\"out\",{Idx(v1)})) + 10 - Pw + {G(nDb)}");
+                _meas.Add("NF_sim = at(10*log10(HBN.Fn), \"ssfreq\", 0)");
+            }
+            else
+            {
+                _meas.Add($"G_sim = at(dB(SP1.S(2,1)), \"freq\", 0) + {G(nDb)}");
+                _meas.Add("NF_sim = at(SP1.NF, \"freq\", 0)");
+            }
             _meas.Add($"u_in = imag({Euler}^(j*theta_in*pi/180))");
             _meas.Add($"u_s = imag({Euler}^(j*theta_steer*pi/180))");
             _meas.Add("psd = 2*pi*d_over_lambda*(u_in - u_s)");
+            // Each element's weight: its first combiner's PathIL and the taper, times what its tree's parts, its amplifiers
+            // and any later combiner's paths give it over element 1's (1 for equal paths).
+            var t = ArrayAmplitudes(firstWeights: false);
+            var c = ChainParts.ReadCombiner(d.Stages[nb]);
+            int m = c.N;
+            double Tree(int k) => t[k - 1] / t[0];
             string Wt(int k)
             {
-                double path = c.PathIlDb.Count == n ? c.PathIlDb[k - 1] : 0;
-                return Edge(k, n) is { Length: > 0 } edge ? $"10^(-({F(path)}{edge})/20)" : G(Math.Pow(10, -path / 20));
+                double path = c.PathIlDb.Count == m ? c.PathIlDb[(k - 1) % m] : 0;
+                string pre = Tree(k) == 1 ? "" : $"{G(Tree(k))}*";
+                return Edge(k, n) is { Length: > 0 } edge ? $"{pre}10^(-({F(path)}{edge})/20)" : G(Tree(k) * Math.Pow(10, -path / 20));
             }
             string sum = string.Join(" + ", Enumerable.Range(1, n).Select(k => k == 1 ? Wt(k) : $"{Wt(k)}*{Euler}^(-j*{k - 1}*psd)"));
-            double sa0 = Enumerable.Range(1, n).Sum(k => c.Weight(k));
+            double sa0 = Enumerable.Range(1, n).Sum(k => Tree(k) * c.Weight((k - 1) % m + 1));
             _meas.Add($"AF_calc = 20*log10(mag({sum})/{G(sa0)})");
             _meas.Add("Pattern_sim = G_sim - G_calc");
             _meas.Add("Pattern_err = Pattern_sim - AF_calc");
             for (int i = 0; i < SteerAnglesDeg.Length; i++)
             {
                 string a = AngleName(SteerAnglesDeg[i]);
-                int idx = (int)Math.Round(SteerAnglesDeg[i] + 90);
+                int idx = (int)Math.Round((SteerAnglesDeg[i] + 90) / (_hb ? HbSteerStepDeg : 1));
                 _meas.Add($"G_{a}_sim = at(at(G_sim, \"theta_steer\", {i}), \"theta_in\", {idx})");
-                _meas.Add($"NF_{a}_sim = at(at(NF_sim, \"theta_steer\", {i}), \"theta_in\", {idx})");
+                _meas.Add(_hb ? $"NF_{a}_sim = at(NF_sim, \"theta_steer\", {i})"
+                              : $"NF_{a}_sim = at(at(NF_sim, \"theta_steer\", {i}), \"theta_in\", {idx})");
                 // The SNR the array gains over one element: N equal shares of the wave, less what its NF from the wave's
                 // port says it costs over one element's own.
                 _meas.Add($"A_{a}_sim = {G(nDb)} - NF_{a}_sim + NF_calc");
@@ -891,17 +1020,23 @@ public static class ChainBenches
         }
 
         /// <summary>
-        /// The Combiners bench: the same elements into each of the four combiners (a tree only for N a power of 2), side by
-        /// side, each from its own wave at broadside to its own output port, in one S-parameter run. For each: the gain
-        /// referred to one element, the NF from its wave's port (the noise-wave correlation at its output over the gain
-        /// from its input, every other port noiseless), and the budget's gain, NF, intercepts and array gain.
+        /// The Combiners bench: the same elements into each of the four combiners (a tree only for N a power of 2, or a
+        /// combiner that is a tree of its own), side by side, each from its own wave at broadside to its own output port,
+        /// in one S-parameter run; through a mixer, one harmonic-balance noise run a variant, the LO common to all. For
+        /// each: the gain referred to one element, the NF from its wave's port (the noise-wave correlation at its output
+        /// over the gain from its input, every other port noiseless), and the budget's gain, NF, intercepts and array gain.
+        /// In sub-arrays, the first combiner's: one sub-array's elements.
         /// </summary>
         private ChainBenchText EmitCombiners()
         {
-            int n = N, nb = Branch;
+            int nb = Branch;
+            int n = ChainParts.ReadCombiner(d.Stages[nb]).N;
             _vars.Add($"Frf = {G(d.FrequencyHz)}");
-            bool pow2 = (n & (n - 1)) == 0;
-            var variants = CombinerVariants.Where(v => pow2 || v.Topology == "Direct").ToList();
+            _hb = MixersTo(nb).Count > 0;
+            var variants = VariantsFor(d.Stages[nb]).ToList();
+            // The wave 40 dB under the most compressed variant's input P1dB.
+            double ip1 = variants.Min(v => Finite(ChainBudget.Evaluate(Variant(d, v.Topology, v.Kind)).Stages[^1].Ip1dbDbm, double.PositiveInfinity));
+            var (tones, hz) = _hb ? HbArrayTones(nb, n, ip1) : ("", []);
             double nDb = 10 * Math.Log10(n), kt0 = ChainBudget.K * ChainBudget.T0;
             for (int v = 0; v < variants.Count; v++)
             {
@@ -909,30 +1044,81 @@ public static class ChainBenches
                 string sfx = "_" + code;
                 int pin = 2 * v + 1, pout = 2 * v + 2;
                 _yBase = v * (n * BranchPitch + 1800);
-                var outs = WaveAndBranches($"PI{sfx}", pin, sfx, _ => null);
-                var vs = d.Stages[nb].Clone();
-                vs.Parameters["Topology"] = topo;
-                vs.Parameters["Kind"] = kind;
-                if (kind == "Active") vs.Parameters.Remove("PathIL");
+                int lo = 1;
+                double f = d.FrequencyHz;
+                int[] v1 = new int[1 + MixersTo(nb).Count]; v1[0] = 1;
+                var outs = WaveAndBranches(n, $"PI{sfx}", pin, sfx, _ => null, v1, ref lo, ref f);
+                var vd = Variant(d, topo, kind);
                 _y = _yBase;
-                Combiner(vs, outs, $"out{sfx}", sfx);
+                Combiner(vd.Stages[nb], outs, $"out{sfx}", sfx);
                 Line($"Port:PO{sfx}  out{sfx}  0  Num={pout}  Z=50 Ohm");
                 Place($"PO{sfx}", _x, _y + 200);
 
-                var vr = ChainBudget.Evaluate(Variant(d, topo, kind));
+                var vr = ChainBudget.Evaluate(vd);
                 var row = vr.Stages[^1];
                 _meas.Add($"G_{code}_calc = {G(row.GainDb)}");
                 _meas.Add($"NF_{code}_calc = {G(row.NfDb + nDb - row.ArrayGainDb)}");
                 _meas.Add($"IIP3_{code}_calc = {G(Finite(row.Iip3Dbm, double.NaN))}");
                 _meas.Add($"OIP3_{code}_calc = {G(Finite(row.Oip3Dbm, double.NaN))}");
                 _meas.Add($"A_{code}_calc = {G(row.ArrayGainDb)}");
-                _meas.Add($"G_{code}_sim = dB(SP1.S[0, {pout}, {pin}]) + {G(nDb)}");
-                _meas.Add($"NF_{code}_sim = 10*log10(1 + real(SP1.Cs[0, {pout}, {pout}])/({G(kt0)}*mag(SP1.S[0, {pout}, {pin}])^2))");
+                if (_hb)
+                {
+                    _analyses.Add(HbNoise($"HBN{sfx}", tones, hz, v1, f, pin, pout));
+                    _meas.Add($"G_{code}_sim = dB(HBN{sfx}.V(\"out{sfx}\",{Idx(v1)})) + 10 - Pw + {G(nDb)}");
+                    _meas.Add($"NF_{code}_sim = at(10*log10(HBN{sfx}.Fn), \"ssfreq\", 0)");
+                }
+                else
+                {
+                    _meas.Add($"G_{code}_sim = dB(SP1.S[0, {pout}, {pin}]) + {G(nDb)}");
+                    _meas.Add($"NF_{code}_sim = 10*log10(1 + real(SP1.Cs[0, {pout}, {pout}])/({G(kt0)}*mag(SP1.S[0, {pout}, {pin}])^2))");
+                }
                 _meas.Add($"G_{code}_err = G_{code}_sim - G_{code}_calc");
                 _meas.Add($"NF_{code}_err = NF_{code}_sim - NF_{code}_calc");
             }
-            _analyses.Add("analysis SP1 type=sparam start=\"Frf\" stop=\"Frf\" npts=1 Noise=yes");
+            CommonLos();
+            if (!_hb) _analyses.Add("analysis SP1 type=sparam start=\"Frf\" stop=\"Frf\" npts=1 Noise=yes");
             return Text();
+        }
+
+        /// <summary>The array benches through a mixer: harmonic balance, every mixer of one stage on one LO.</summary>
+        private bool _hb;
+
+        /// <summary>Each mixer stage's LO nets on the array benches, which share one LO: a P1Tone into a Combiner used as
+        /// a splitter, at Plo plus the split, so each mixer is driven at Plo, in phase.</summary>
+        private readonly Dictionary<string, List<string>> _loNets = new(StringComparer.Ordinal);
+
+        private void CommonLos()
+        {
+            double y = -1800;
+            foreach (var (stage, nets) in _loNets)
+            {
+                var s = d.Stages.First(x => x.Name == stage);
+                double plo = ChainValue.Or(s.Get("Plo"), 0) + 10 * Math.Log10(nets.Count);
+                string src = nets.Count == 1 ? nets[0] : $"lo_{stage}";
+                Line($"P1Tone:LO_{stage}  {src}  0  Freq={G(ChainValue.Or(s.Get("Flo"), 0))}  Pavl={G(plo)} dBm  Z=50 Ohm");
+                Place($"LO_{stage}", 0, y);
+                if (nets.Count > 1)
+                {
+                    Line($"Combiner:LOS_{stage}  {src}  0  {string.Join("  ", nets.Select(x => x + "  0"))}  N={nets.Count}  Z0=50 Ohm");
+                    Place($"LOS_{stage}", 900, y, mirror: true);
+                }
+                y -= 1200;
+            }
+        }
+
+        /// <summary>Each element's own amplitude to the array's output (every Combiner's t_k, the sub-arrays' in turn), in
+        /// element order; without the first Combiner's PathIL when <paramref name="firstWeights"/> is false.</summary>
+        private double[] ArrayAmplitudes(bool firstWeights = true)
+        {
+            double[] t = [1];
+            bool first = true;
+            foreach (var s in d.Stages.Where(x => x.Part == ChainParts.Combiner))
+            {
+                var a = ChainParts.ReadCombiner(s).Amplitudes(firstWeights || !first);
+                first = false;
+                t = [.. a.SelectMany(outer => t.Select(inner => inner * outer))];
+            }
+            return t;
         }
 
         /// <summary>
@@ -1246,10 +1432,19 @@ public static class ChainBenches
                         Inline(iso, 300); Place($"{iso}_R", _x - Lead - 300, _y + 900);
                     }
                     Line($"Mixer:{name}  {rf}  0  {lon}  0  {b}  0{Params(s, "Flo")}");
-                    // The demo's LO carries a phase-noise mask, which an envelope run plays as a random phase.
-                    string pn = bench == ChainBench.Demo ? $"  PhaseNoise=\"{DemoPhaseNoise}\"" : "";
-                    Line($"P1Tone:LO_{name}  {lon}  0  Freq={G(flo)}  Pavl={Param(new ChainParam("Plo", "", "dBm"), s.Get("Plo"))}  Z=50 Ohm{pn}");
-                    Inline(name, 300); Place($"LO_{name}", _x - Lead - 300, _y + 900);
+                    if (bench is ChainBench.Steering or ChainBench.Combiners && !diagram)
+                    {
+                        // The array benches' mixers of one stage share one LO (CommonLos).
+                        (_loNets.TryGetValue(s.Name, out var los) ? los : _loNets[s.Name] = []).Add(lon);
+                        Inline(name, 300);
+                    }
+                    else
+                    {
+                        // The demo's LO carries a phase-noise mask, which an envelope run plays as a random phase.
+                        string pn = bench == ChainBench.Demo ? $"  PhaseNoise=\"{DemoPhaseNoise}\"" : "";
+                        Line($"P1Tone:LO_{name}  {lon}  0  Freq={G(flo)}  Pavl={Param(new ChainParam("Plo", "", "dBm"), s.Get("Plo"))}  Z=50 Ohm{pn}");
+                        Inline(name, 300); Place($"LO_{name}", _x - Lead - 300, _y + 900);
+                    }
                     placed.Add($"{iso}_R");
                     if (ChainValue.TryParse(s.Get("NF"), out _) && r.Stages.First(x => x.Name == s.Name).Stage.NfDb > ChainParts.NoiselessMixerSsbDb + 1e-9)
                         placed.Add(name);
@@ -1303,12 +1498,15 @@ public static class ChainBenches
                     // The branch's own phase plus what it takes to align element k with the last element's arrival; at
                     // broadside (the Combiners bench) the branch's own phase alone. The Steering bench steers from its
                     // VAR: a line of (k − 1)·(360° − Δφ) advances element k by (k − 1)·Δφ at the line's frequency, and
-                    // keeps its length positive for any angle.
+                    // keeps its length positive for any angle. After a mixer whose LO is above the signal the IF's phase
+                    // is the RF's negated, so there the line delays element k by (k − 1)·Δφ instead (written
+                    // (k − 1)·(360° + Δφ), positive likewise), and k's arrival is undone by (k − 1)·Steer.
+                    bool inverted = v1[0] < 0;
                     string? e = bench switch
                     {
-                        ChainBench.Steering => k > 1 || Mod360(phase) > 0 ? $"{F(Mod360(phase))}+{k - 1}*(360-dphi)" : null,
+                        ChainBench.Steering => k > 1 || Mod360(phase) > 0 ? $"{F(Mod360(phase))}+{k - 1}*(360{(inverted ? "+" : "-")}dphi)" : null,
                         ChainBench.Combiners => Mod360(phase) > 0 ? F(Mod360(phase)) : null,
-                        _ => Mod360(phase + (n > 1 ? (n - k) * Steer : 0)) is > 0 and var ph ? F(ph) : null,
+                        _ => Mod360(phase + (n > 1 ? (inverted ? k - 1 : n - k) * Steer : 0)) is > 0 and var ph ? F(ph) : null,
                     };
                     string mid = e is not null ? $"{b}_ps" : b;
                     Line($"Amp:{name}  {a}  0  {mid}  0  Gain={F(-il)} dB  NF={nf}  IP3={ip} dBm  IP3Ref=Input");
@@ -1377,19 +1575,23 @@ public static class ChainBenches
         }
 
         /// <summary>
-        /// The combiner, as its topology and kind say: Direct, one N:1 library Combiner; Tree, log2(N) levels of 2:1
-        /// Combiners, each level's parts fed in pairs by the level before; Active, an Amp after each combiner. Each
-        /// element path's own loss is its first-level part's IL[k], and on the Steering bench that part also carries the
-        /// VAR taper, toward the edges. Returns the parts a noise run lists: the lossy combiners and the noisy amplifiers.
-        /// Leaves <c>_y</c> on the output's row, where the rest of the chain continues.
+        /// The combiner, as its topology and kind say: Direct, one N:1 library Combiner; Tree, its levels of 2:1 (or each
+        /// level's Ways) Combiners, each level's parts fed in turn by the level before, a remainder of one passed through
+        /// (an Atten for its own path loss, nothing without one); Active, an Amp after each part. Each element path's own
+        /// loss is its first-level part's IL[k], and on the Steering bench the first combiner's also carries the VAR taper,
+        /// toward the array's edges (<paramref name="k0"/> its first element, of <paramref name="kAll"/>; -1 for none).
+        /// Returns the parts a noise run lists: the lossy combiners and the noisy amplifiers. Leaves <c>_y</c> on the
+        /// output's row, where the rest of the chain continues.
         /// </summary>
-        private List<string> Combiner(ChainStage s, string[] branches, string b, string suffix = "")
+        private List<string> Combiner(ChainStage s, string[] branches, string b, string suffix = "", double[]? ys = null,
+                                      int k0 = 0, int kAll = 0)
         {
             var placed = new List<string>();
             var c = ChainParts.ReadCombiner(s);
             int n = branches.Length;
+            if (kAll == 0) kAll = n;
             string name = s.Name + suffix;
-            var inputs = branches.Select((net, i) => (Net: net, Y: _yBase + i * BranchPitch)).ToList();
+            var inputs = branches.Select((net, i) => (Net: net, Y: ys?[i] ?? _yBase + i * BranchPitch)).ToList();
             double x0 = _x + 300, step = c.Active ? 1700 : 1000;
             double outX = x0, outY = 0;
             for (int l = 0; l < c.Levels.Count; l++)
@@ -1398,38 +1600,53 @@ public static class ChainBenches
                 var next = new List<(string Net, double Y)>();
                 for (int j = 1; j <= lv.Parts; j++)
                 {
-                    var ins = inputs.Skip((j - 1) * lv.Ways).Take(lv.Ways).ToList();
+                    var ins = inputs.Skip((j - 1) * lv.Ways).Take(lv.Size(j)).ToList();
                     string part = c.Tree ? $"{name}_{l + 1}_{j}" : name;
                     bool last = l == c.Levels.Count - 1;
                     string o = last && !c.Active ? b : c.Tree ? $"{name}_n{l + 1}_{j}" : $"{b}_c";
-                    var line = new StringBuilder($"Combiner:{part}  {o}  0  {string.Join("  ", ins.Select(i => i.Net + "  0"))}  " +
-                                                 $"N={lv.Ways}  IL={F(lv.IlDb)} dB");
-                    bool lossy = lv.IlDb > 0;
-                    if (l == 0)
-                        for (int i = 1; i <= lv.Ways; i++)
-                        {
-                            int k = (j - 1) * lv.Ways + i;
-                            double path = c.PathIlDb.Count == c.N ? c.PathIlDb[k - 1] : 0;
-                            if (bench == ChainBench.Steering && Edge(k, n) is { Length: > 0 } edge)
-                                line.Append($"  IL[{i}]={F(lv.IlDb + path)}{edge} dB");
-                            else if (path != 0) line.Append($"  IL[{i}]={F(lv.IlDb + path)} dB");
-                            lossy |= path != 0;
-                        }
-                    line.Append("  Z0=50 Ohm");
-                    Line(line.ToString());
                     double y = ins.Average(i => i.Y), x = x0 + l * step;
-                    Place(part, x, y);
-                    if (lossy || bench == ChainBench.Steering) placed.Add(part);
+                    string? edge(int i) => bench == ChainBench.Steering && k0 >= 0 && Edge(k0 + (j - 1) * lv.Ways + i, kAll) is { Length: > 0 } e ? e : null;
+                    double pathOf(int i) => l == 0 && c.PathIlDb.Count == c.N ? c.PathIlDb[(j - 1) * lv.Ways + i - 1] : 0;
                     string net = o;
+                    if (ins.Count == 1)
+                    {
+                        // Passed through: no combiner and no loss; its own path loss, or the taper, an Atten.
+                        if (pathOf(1) == 0 && (l > 0 || edge(1) is null)) net = ins[0].Net;
+                        else
+                        {
+                            Line($"Atten:{part}  {ins[0].Net}  0  {o}  0  Loss={F(pathOf(1))}{(l == 0 ? edge(1) : null)} dB  Z0=50 Ohm");
+                            Place(part, x, y);
+                            placed.Add(part);
+                        }
+                    }
+                    else
+                    {
+                        var line = new StringBuilder($"Combiner:{part}  {o}  0  {string.Join("  ", ins.Select(i => i.Net + "  0"))}  " +
+                                                     $"N={ins.Count}  IL={F(lv.IlDb)} dB");
+                        bool lossy = lv.IlDb > 0;
+                        if (l == 0)
+                            for (int i = 1; i <= ins.Count; i++)
+                            {
+                                double path = pathOf(i);
+                                if (edge(i) is { } e) line.Append($"  IL[{i}]={F(lv.IlDb + path)}{e} dB");
+                                else if (path != 0) line.Append($"  IL[{i}]={F(lv.IlDb + path)} dB");
+                                lossy |= path != 0;
+                            }
+                        line.Append("  Z0=50 Ohm");
+                        Line(line.ToString());
+                        Place(part, x, y);
+                        if (lossy || bench == ChainBench.Steering) placed.Add(part);
+                    }
                     if (c.Active)
                     {
                         string amp = c.Tree ? $"{name}_A{l + 1}_{j}" : $"{name}_A";
-                        net = last ? b : $"{o}_a";
-                        Line($"Amp:{amp}  {o}  0  {net}  0  Gain={F(lv.GainDb)} dB  NF={F(lv.NfDb)} dB  " +
+                        string ao = last ? b : $"{o}_a";
+                        Line($"Amp:{amp}  {net}  0  {ao}  0  Gain={F(lv.GainDb)} dB  NF={F(lv.NfDb)} dB  " +
                              $"IP3={F(double.IsFinite(lv.Iip3Dbm) ? lv.Iip3Dbm : 200)} dBm  IP3Ref=Input");
                         Place(amp, x + 800, y);
                         if (lv.NfDb > 0) placed.Add(amp);
                         x += 800;
+                        net = ao;
                     }
                     next.Add((net, y));
                     (outX, outY) = (x, y);
@@ -1490,12 +1707,13 @@ public static class ChainBenches
         /// <summary>The demo LO's phase noise, single-sided, offset:level in dBc/Hz: a synthesizer's shape.</summary>
         private const string DemoPhaseNoise = "1kHz:-75, 10kHz:-90, 100kHz:-100, 1MHz:-120, 10MHz:-140";
 
-        /// <summary>Σ a_k² / a_1²: how many element 1's the paths' noise is worth — N for equal paths.</summary>
+        /// <summary>Σ t_k² / t_1², t_k each element's own amplitude to the output: how many element 1's the paths' noise
+        /// is worth — N for equal paths.</summary>
         private double PathWeight()
         {
-            if (d.Stages.FirstOrDefault(s => s.Part == ChainParts.Combiner) is not { } st) return 1;
-            var c = ChainParts.ReadCombiner(st);
-            return Enumerable.Range(1, c.N).Sum(k => c.Weight(k) * c.Weight(k)) / (c.Weight(1) * c.Weight(1));
+            if (d.Stages.All(s => s.Part != ChainParts.Combiner)) return 1;
+            var t = ArrayAmplitudes();
+            return t.Sum(x => x * x) / (t[0] * t[0]);
         }
 
         /// <summary>A product as a measurement names it. The lattice keeps one of k and −k, the one whose first nonzero

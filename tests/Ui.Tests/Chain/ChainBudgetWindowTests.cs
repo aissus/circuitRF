@@ -270,11 +270,16 @@ public sealed class ChainBudgetWindowTests
         vm.CommitEdits();
         Assert.Empty(vm.Refusals);
 
-        // A tree combines in pairs: N = 3 as a tree is refused, so the pick is undone and the reason stays shown.
+        // An active combiner reads its amplifier level by level, and a direct one has one level: two gains for it are
+        // refused, so the pick is undone and the reason stays shown. A passive one does not read them.
         cmb = vm.Stages.First(st => st.Part.Token == ChainParts.Combiner);
-        cmb.Parameters.First(p => p.Name == "Topology").Value = "Tree";
+        cmb.Parameters.First(p => p.Name == "Gain").Value = "10, 8";
+        vm.CommitEdits();
+        Assert.Empty(vm.Refusals);
+        cmb = vm.Stages.First(st => st.Part.Token == ChainParts.Combiner);
+        cmb.Parameters.First(p => p.Name == "Kind").Value = "Active";
 
-        Assert.Equal("Direct", vm.Stages.First(st => st.Part.Token == ChainParts.Combiner).Parameters.First(p => p.Name == "Topology").Value);
+        Assert.Equal("Passive", vm.Stages.First(st => st.Part.Token == ChainParts.Combiner).Parameters.First(p => p.Name == "Kind").Value);
         Assert.StartsWith("Not applied:", vm.Refusals, StringComparison.Ordinal);
         Assert.NotNull(vm.Budget?.Totals);
     }

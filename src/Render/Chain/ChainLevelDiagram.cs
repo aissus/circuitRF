@@ -70,7 +70,7 @@ public static class ChainLevelDiagram
         }
         var (lo, hi) = ChainBudgetDisplay.LevelWindow(framed, topOnly);
         return new Plan(lv, [d.FrequencyHz, .. r.Stages.Select(s => s.FrequencyHz)], cmb >= 0 ? cmb + 1 : 0,
-                        cmb >= 0 ? ChainParts.ReadCombiner(d.Stages[cmb]).N : 1,
+                        d.Copies(-1),
                         [.. d.Blockers.Select((b, k) => $"blocker {k + 1}")], d.RequiredSnrDb, front, lo, hi, tx, psat);
     }
 

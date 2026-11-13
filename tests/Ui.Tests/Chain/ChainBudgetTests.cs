@@ -176,14 +176,14 @@ public sealed class ChainBudgetTests(ITestOutputHelper output) : IDisposable
     {
         var d = new ChainDesign
         {
-            Stages = [S("A", "Amp", ("Gain", "ten")), S("A", "Nope"), S("C1", "Combiner"), S("C2", "Combiner"), S("9x", "Atten")],
+            Stages = [S("A", "Amp", ("Gain", "ten")), S("A", "Nope"), S("C1", "Combiner"), S("C2", "Combiner", ("Steer", "10")), S("9x", "Atten")],
         };
         var r = ChainBudget.Evaluate(d);
         Assert.Null(r.Totals);
         Assert.Contains(r.Refusals, x => x.Contains("Gain = 'ten' is not a number", StringComparison.Ordinal));
         Assert.Contains(r.Refusals, x => x.Contains("'Nope' is not a chain part", StringComparison.Ordinal));
         Assert.Contains(r.Refusals, x => x.Contains("Two stages are named 'A'", StringComparison.Ordinal));
-        Assert.Contains(r.Refusals, x => x.Contains("at most one Combiner", StringComparison.Ordinal));
+        Assert.Contains(r.Refusals, x => x.Contains("which is the first Combiner's", StringComparison.Ordinal));
         Assert.Contains(r.Refusals, x => x.Contains("starts with a letter", StringComparison.Ordinal));
         Assert.NotEmpty(ChainBudget.Evaluate(new ChainDesign()).Refusals);
     }
@@ -276,7 +276,7 @@ public sealed class ChainBudgetTests(ITestOutputHelper output) : IDisposable
 
         // A chain the budget refuses has no drawing.
         var bad = RfArray();
-        bad.Stages.Add(S("C2", ChainParts.Combiner, ("N", "2")));
+        bad.Stages.Add(S("C2", ChainParts.Combiner, ("N", "2"), ("Steer", "10")));
         Assert.Null(ChainBenches.Diagram(bad, ChainBudget.Evaluate(bad)));
     }
 
@@ -738,9 +738,13 @@ public sealed class ChainBudgetTests(ITestOutputHelper output) : IDisposable
             foreach (var (k, v) in p) d.Stages[2].Parameters[k] = v;
             return [.. ChainBudget.Evaluate(d).Refusals];
         }
-        Assert.Contains(Why(("Topology", "Tree"), ("N", "6")), x => x.Contains("power of 2", StringComparison.Ordinal));
+        Assert.Empty(Why(("Topology", "Tree"), ("N", "6")));   // 2:1 levels, the remainder passed through
+        Assert.Contains(Why(("Topology", "Tree"), ("N", "6"), ("Ways", "4")), x => x.Contains("leaves 2 outputs", StringComparison.Ordinal));
+        Assert.Contains(Why(("Topology", "Tree"), ("N", "6"), ("Ways", "3, 2, 2")), x => x.Contains("down to one output", StringComparison.Ordinal));
+        Assert.Contains(Why(("Topology", "Tree"), ("Ways", "2, 1.5")), x => x.Contains("whole numbers of 2 or more", StringComparison.Ordinal));
+        Assert.Contains(Why(("Ways", "2, 2")), x => x.Contains("is a tree's", StringComparison.Ordinal));
         Assert.Contains(Why(("Topology", "Tree"), ("N", "8"), ("IL", "0.1, 0.2")), x => x.Contains("3 levels", StringComparison.Ordinal));
-        Assert.Contains(Why(("Kind", "Active"), ("PathIL", "1, 0, 0, 1")), x => x.Contains("passive combiner's", StringComparison.Ordinal));
+        Assert.Empty(Why(("Kind", "Active"), ("PathIL", "1, 0, 0, 1")));   // each level's amplifier on its own path's power
         Assert.Contains(Why(("PathIL", "1, 0")), x => x.Contains("one per element", StringComparison.Ordinal));
         Assert.Contains(Why(("Topology", "Star")), x => x.Contains("neither Direct nor Tree", StringComparison.Ordinal));
         Assert.Empty(Why(("Topology", "Tree"), ("N", "8"), ("IL", "0.1, 0.2, 0.3")));

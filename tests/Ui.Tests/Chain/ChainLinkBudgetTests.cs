@@ -297,7 +297,7 @@ public sealed class ChainLinkBudgetTests(ITestOutputHelper output) : IDisposable
         Assert.Equal((0.1, 2, 0.5, 8.0), (back.FractionalBandwidth!.Value, back.Streams, back.NfAllowanceDb, back.RxBackoffDb));
         // An expression or a budget-only value is version 2 as well: version 1 would put it on a netlist line.
         Assert.Contains("\"FormatVersion\": 2", ChainDesignIo.Serialize(Scaled()));
-        Assert.Throws<InvalidDataException>(() => ChainDesignIo.Deserialize("{\"FormatVersion\": 4}"));
+        Assert.Throws<InvalidDataException>(() => ChainDesignIo.Deserialize("{\"FormatVersion\": 5}"));
 
         // The window keeps them through an edit.
         var vm = new CircuitRF.Ui.Chain.ChainBudgetViewModel(d);
@@ -412,7 +412,8 @@ public sealed class ChainLinkBudgetTests(ITestOutputHelper output) : IDisposable
         Assert.Equal(Db(6), r.Totals!.ArrayGainDb, 12);
         // At a power of 2 it is the tree's own budget.
         Assert.Equal(ChainBudget.Evaluate(Array(8, 1, "Tree")).Stages[1].Stage.GainDb, ChainBudget.Evaluate(Array(8, 1, "Levels")).Stages[1].Stage.GainDb, 12);
-        Assert.Contains(ChainBudget.Evaluate(Array(6, 1, "Tree")).Refusals, x => x.Contains("or to Levels", StringComparison.Ordinal));
+        // A tree of 6 is no longer refused: its third input passes the second level through, and its paths are unequal.
+        Assert.Empty(ChainBudget.Evaluate(Array(6, 1, "Tree")).Refusals);
         var one = Bench(d, "Lv", ChainBench.OneTone);
         Assert.InRange(Measure(one, "G_err"), -1e-6, 1e-6);
         Assert.InRange(Measure(one, "NF_err"), -1e-6, 1e-6);

@@ -1,6 +1,6 @@
 // .cchain file format — rev 1: an RF receive chain as a budget, an ordered list of stages, each a part from the
 // System library with that part's own parameters, plus the system inputs a budget is read against. Rev 3 adds the
-// transmit direction, an IQ modulator, an amplifier's law and a converter's sideband.
+// transmit direction, an IQ modulator, an amplifier's law and a converter's sideband; rev 4 sub-arrays and uneven trees.
 //
 // System.Text.Json, WriteIndented, WhenWritingNull, reject-on-newer-format-version, AtomicFile write — the .csmith
 // and .crail spelling of the same thing. The system inputs are numbers whose NAMES carry their unit (FrequencyHz,
@@ -125,6 +125,16 @@ public sealed class ChainDesign
         return f;
     }
 
+    /// <summary>How many copies of stage <paramref name="i"/> an array has: the product of the N of every Combiner after
+    /// it (1 after the last). <c>Copies(-1)</c> is the array's elements.</summary>
+    public int Copies(int i)
+    {
+        int c = 1;
+        for (int j = i + 1; j < Stages.Count; j++)
+            if (Stages[j].Part == ChainParts.Combiner) c *= ChainParts.ReadCombiner(Stages[j]).N;
+        return c;
+    }
+
     /// <summary>A copy with every parameter written as an expression in <c>freq</c> or as a table its number at its
     /// stage's input frequency (<see cref="ChainScaling"/>); what cannot be read is added to <paramref name="refusals"/>.</summary>
     public ChainDesign Resolve(List<string> refusals) => ChainScaling.Resolve(this, refusals);
@@ -148,7 +158,6 @@ public sealed class ChainDesign
             r.Add("The receive band is an offset from the carrier and a width above 0 Hz.");
         if (Stages.Count == 0) r.Add("The chain has no stages.");
         var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        int combiners = 0;
         var inputHz = StageInputFrequencies();
         for (int si = 0; si < Stages.Count; si++)
         {
@@ -178,13 +187,17 @@ public sealed class ChainDesign
                 r.Add($"Stage '{s.Name}': Sideband = '{sb}' is {ChainParts.Lower} or {ChainParts.Upper}.");
             if (part.Token == ChainParts.Combiner)
             {
-                combiners++;
                 ChainParts.ReadCombiner(s, r);
             }
             if (part.Token == ChainParts.Snp && r.Count == before && FrequencyHz > 0 && double.IsFinite(inputHz[si]))
                 ChainSnp.Read(s, new ChainStageContext(inputHz[si], BaseDirectory), r);
         }
-        if (combiners > 1) r.Add("A chain has at most one Combiner: the stages before it are one element's branch.");
+        // Sub-arrays: the stages before the first Combiner are one element's branch, those between two a sub-array's.
+        // Steer is the step between adjacent ELEMENTS, the first Combiner's; a later one's would be a second wave.
+        foreach (var c in Stages.Where(s => s.Part == ChainParts.Combiner).Skip(1))
+            if (ChainValue.Or(c.Get("Steer"), 0) != 0)
+                r.Add($"Stage '{c.Name}': Steer is the step between adjacent elements, which is the first Combiner's; a later " +
+                      "Combiner's is 0.");
         Link?.Refusals(r);
         foreach (var sw in Sweeps)
             if (sw.Refusal(this) is { } no) r.Add(no);
@@ -253,17 +266,25 @@ public static class ChainValue
 public static class ChainDesignIo
 {
     public const string Extension = ".cchain";
-    public const int CurrentFormatVersion = 3;
+    public const int CurrentFormatVersion = 4;
 
     /// <summary>A chain is written as version 2 or 3 only when it uses what the version before did not have, so an older
     /// reader refuses it rather than dropping it on save, and every other chain stays readable there. Version 3: a
-    /// transmit chain, an IQ modulator, an amplifier's law, a converter's sideband.</summary>
+    /// transmit chain, an IQ modulator, an amplifier's law, a converter's sideband. Version 4: sub-arrays (a second
+    /// Combiner), a tree's Ways or one whose N is not a power of 2, and PathIL on an active combiner.</summary>
     private static int VersionOf(ChainDesign d) =>
-        d.IsTransmit || d.RxBandOffsetHz is not null
+        d.Stages.Count(s => s.Part == ChainParts.Combiner) > 1 || d.Stages.Any(s => s.Part == ChainParts.Combiner && Arrays4(s)) ? 4
+        : d.IsTransmit || d.RxBandOffsetHz is not null
         || d.Stages.Any(s => s.Part == ChainParts.IqMod || s.Parameters.Keys.Any(k => k is "Law" or "Psat" or "P" or "PhiSat" or "PhiMax" or "Sideband")) ? 3
         : d.FractionalBandwidth is not null || d.Streams != 1 || d.Link is not null || d.Sweeps.Count > 0 || d.NfAllowanceDb != 1 || d.RxBackoffDb != 10
         || d.Stages.Any(s => s.Parameters.Any(kv => kv.Key is "Pdc" or "GainPerStage" || ChainScaling.IsScaled(kv.Value)))
         || d.Stages.Any(s => s.Part == ChainParts.Combiner && s.Get("Topology").Trim().Equals("Levels", StringComparison.OrdinalIgnoreCase)) ? 2 : 1;
+
+    private static bool Arrays4(ChainStage s)
+    {
+        var c = ChainParts.ReadCombiner(s);
+        return s.Get("Ways").Trim().Length > 0 || (c.Tree && (c.N & (c.N - 1)) != 0) || (c.Active && c.PathIlDb.Count > 0);
+    }
 
     private static readonly JsonSerializerOptions JsonOpts = new()
     {

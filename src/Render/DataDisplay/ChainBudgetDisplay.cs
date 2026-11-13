@@ -634,10 +634,11 @@ public static class ChainBudgetDisplay
     /// <summary>A table a combiner variant, in the bench's order.</summary>
     private static List<PlotContainerConfig> Combiners(string src, ChainDesign design)
     {
-        int n = design.Stages.FirstOrDefault(s => s.Part == ChainParts.Combiner) is { } c ? ChainParts.ReadCombiner(c).N : 2;
         var plots = new List<PlotContainerConfig>();
         double y = 0;
-        foreach (var (topo, kind, code) in ChainBenches.CombinerVariants.Where(v => (n & (n - 1)) == 0 || v.Topology == "Direct"))
+        var variants = design.Stages.FirstOrDefault(s => s.Part == ChainParts.Combiner) is { } c
+            ? ChainBenches.VariantsFor(c) : ChainBenches.CombinerVariants;
+        foreach (var (topo, kind, code) in variants)
         {
             var t = Table($"{topo}, {kind.ToLowerInvariant()}", src,
                           [($"G_{code}_calc", $"{topo}, {kind.ToLowerInvariant()}: G budget, dB"), ($"G_{code}_sim", "simulated"),

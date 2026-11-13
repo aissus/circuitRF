@@ -310,5 +310,6 @@ public sealed record ChainSweep(string Of, double From, double To, int Points)
         : Of != Frequency && (From != Math.Round(From) || To != Math.Round(To)) ? $"The {Of} sweep runs over whole numbers of elements."
         : Of == TxElements && d.Link is null ? "The TxElements sweep sizes the transmitter, and the chain has no link."
         : Of == RxElements && d.Stages.All(s => s.Part != ChainParts.Combiner) ? "The RxElements sweep sizes the receive array, which is the chain's Combiner, and the chain has none."
+        : Of == RxElements && d.Stages.Count(s => s.Part == ChainParts.Combiner) > 1 ? "The RxElements sweep sizes one Combiner, and the chain has sub-arrays: sweep a chain of one."
         : null;
 }

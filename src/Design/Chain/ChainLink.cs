@@ -171,11 +171,11 @@ public sealed class ChainLink
     public static ChainPower? Power(ChainBudgetResult r)
     {
         if (r.Design is not { } d || ChainCapacity.Read(r) is not { } o) return null;
-        int cmb = d.Stages.FindIndex(s => s.Part == ChainParts.Combiner);
-        int mrx = cmb >= 0 ? r.Stages[cmb].Stage.ArrayN : 1;
-        double branch = 0, after = 0;
-        for (int i = 0; i < d.Stages.Count; i++)
-            if (i < cmb) branch += ChainParts.StagePdcW(d.Stages[i]); else after += ChainParts.StagePdcW(d.Stages[i]);
+        // Each stage's DC power as many times as the array has it: an element's branch once an element, a sub-array's
+        // stage once a sub-array.
+        int mrx = d.Copies(-1);
+        double rxW = 0;
+        for (int i = 0; i < d.Stages.Count; i++) rxW += d.Copies(i) * ChainParts.StagePdcW(d.Stages[i]);
         double pa = 0;
         int mtx = 0;
         string? note = null;
@@ -192,7 +192,7 @@ public sealed class ChainLink
                 pa = (pout - pout / gpa) / (pae / 100);
             }
         }
-        double tx = mtx * pa, rx = mrx * branch + after, total = d.Streams * (tx + rx);
+        double tx = mtx * pa, rx = rxW, total = d.Streams * (tx + rx);
         return new ChainPower(pa, tx, rx, total, o.RateBps > 0 && double.IsFinite(total / o.RateBps) ? total / o.RateBps : double.NaN, mrx, note);
     }
 

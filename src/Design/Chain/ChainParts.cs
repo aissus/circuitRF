@@ -9,7 +9,8 @@
 //   PhaseShifter  an Amp (gain −IL, its NF and intercept) and a TLIN whose electrical length is the phase
 //   Limiter       an Amp (gain −IL, NF = IL) whose intercept puts its 1 dB compression point at P1dB
 //   Splitter      a Combiner used from its common port, one output followed, the others terminated
-//   Combiner      Direct: one N:1 Combiner; Tree: log2(N) levels of 2:1 Combiners; Active: an Amp after each
+//   Combiner      Direct: one N:1 Combiner; Tree: levels of 2:1 (or each level's own ways) Combiners, a remainder
+//                 passed through; Active: an Amp after each
 //   Canceller     a Coupler whose isolated port takes a reference path (an Amp for the amplitude, a Combiner path for
 //                 a flat phase, a TLIN for the delay) that subtracts a copy of the interference from the main path
 //   IQMod         a 90° hybrid splitting the input into I and Q, an LO split into its quadrature by a Combiner, two
@@ -23,8 +24,9 @@
 // what the transfer's simulation then measures; an Amp with a Rapp or Saleh law compresses as its law does
 // (src/Core/Devices/System/AmplifierLaw.cs), in the budget and the simulation alike. The combiner adds 10·log10(N) of COHERENT signal gain and none of noise
 // gain: N element signals in phase add in amplitude, their uncorrelated noise in power. Each variant of the combiner is
-// budgeted as the cascade of its own levels (CombinerSpec.Budget), so a tree's losses, gains, noise and intercepts
-// accumulate level by level exactly as a chain's do.
+// budgeted path by path through its own levels (CombinerSpec.Budget), so a tree's losses, gains, noise and intercepts
+// accumulate level by level exactly as a chain's do, and an amplifier on a weaker path sees its own power. A chain may
+// have more than one Combiner: sub-arrays, each combined, then combined again.
 
 using CircuitRF.Core.Devices;
 using CircuitRF.Design.Schematic;
@@ -358,21 +360,23 @@ public static class ChainParts
         new(Combiner, "N-way array combiner", true,
             [new("N", "4", "", Help: "number of elements; every stage before this one is one element's branch"),
              new("Topology", "Direct", "", Numeric: false, Options: ["Direct", "Tree", "Levels"],
-                 Help: "Direct: one N:1 combiner. Tree: log2(N) levels of 2:1 combiners, N a power of 2. Levels: one N:1 " +
-                       "combiner, any N, with the loss of ceil(log2 N) levels of IL each"),
+                 Help: "Direct: one N:1 combiner. Tree: levels of 2:1 combiners (Ways sets each level's), a remainder passed " +
+                       "through. Levels: one N:1 combiner, any N, with the loss of ceil(log2 N) levels of IL each"),
+             new("Ways", "", "", Numeric: false, BlankAllowed: true, Implied: "",
+                 Help: "Tree only: each level's ways, the first level (next to the elements) first, 2, 3; blank: 2 at every level"),
              new("Kind", "Passive", "", Numeric: false, Options: ["Passive", "Active"],
                  Help: "Active: an amplifier after each combiner"),
              new("IL", "0.5", "dB", Numeric: false,
                  Help: "each combiner's loss above the ideal split; a tree: one value for every level, or one per level"),
              new("PathIL", "", "dB", Numeric: false, BlankAllowed: true,
-                 Help: "passive only: each element path's own extra loss, N values (a taper); blank: none"),
+                 Help: "each input path's own extra loss, N values (a taper); blank: none"),
              new("Gain", "10", "dB", Numeric: false, Help: "active only: each combiner's amplifier; one value, or one per level"),
              new("NF", "2", "dB", Numeric: false, Help: "active only: each amplifier's noise figure; one value, or one per level"),
              new("IIP3", "10", "dBm", Numeric: false, Help: "active only: each amplifier's input intercept; one value, or one per level"),
              new("Steer", "0", "deg", Help: "phase step between adjacent elements of the arriving wave; the phase shifters remove it")],
             "N identical branches combined in phase: signal +10·log10(N), uncorrelated noise not, so the SNR improves by " +
-            "10·log10(N). Direct is one N:1 combiner, Tree log2(N) levels of 2:1 ones; a passive combiner's noise figure " +
-            "is its loss, an active one cascades its amplifiers level by level.",
+            "10·log10(N). Direct is one N:1 combiner, Tree levels of 2:1 ones (or each level's Ways); a passive combiner's " +
+            "noise figure is its loss, an active one cascades its amplifiers level by level, each on its own path's power.",
             (s, _) => ReadCombiner(s).Budget()),
     ];
 
@@ -395,7 +399,7 @@ public static class ChainParts
     {
         void No(string why) => refusals?.Add($"Stage '{s.Name}': {why}");
         int n = Math.Max(2, (int)Math.Round(Num(s, "N", 4)));
-        string topo = s.Get("Topology").Trim(), kind = s.Get("Kind").Trim();
+        string topo = s.Get("Topology").Trim(), kind = s.Get("Kind").Trim(), waysText = s.Get("Ways").Trim();
         bool tree = topo.Equals("Tree", StringComparison.OrdinalIgnoreCase);
         bool active = kind.Equals("Active", StringComparison.OrdinalIgnoreCase);
         // Levels: the loss of the ceil(log2 N) levels a tree of any N would take, on one N:1 combiner.
@@ -405,13 +409,30 @@ public static class ChainParts
             No($"Topology = '{topo}' is neither Direct nor Tree, nor Levels.");
         if (kind.Length > 0 && !active && !kind.Equals("Passive", StringComparison.OrdinalIgnoreCase))
             No($"Kind = '{kind}' is neither Passive nor Active.");
-        if (tree && (n & (n - 1)) != 0)
+        // A tree's ways, level by level: 2 at every level unless Ways says otherwise. A level whose inputs do not divide
+        // by its ways passes a last one through, or combines the last few in a smaller part.
+        var ways = new List<int>();
+        if (tree && waysText.Length == 0)
+            for (int m = n; m > 1; m = (m + 1) / 2) ways.Add(2);
+        else if (tree)
         {
-            No($"a tree combines in pairs, so its N is a power of 2 (2, 4, 8, …), and {n} is not. Set Topology to Direct " +
-               $"for {n} elements, or to Levels for one combiner with the loss of a tree's levels.");
-            tree = false;
+            if (!TryList(waysText, out var wl) || wl.Count == 0 || wl.Any(w => !(w >= 2) || w != Math.Round(w)))
+                No($"Ways = '{waysText}' is a list of whole numbers of 2 or more, one a level.");
+            else
+            {
+                int m = n;
+                foreach (double w in wl)
+                {
+                    if (m == 1) { No($"Ways = '{waysText}' has a level after the tree is down to one output."); break; }
+                    m = (m + (int)w - 1) / (int)w;
+                }
+                if (m > 1) No($"Ways = '{waysText}' leaves {m} outputs of {n} elements: the levels' ways must bring them to one.");
+                else ways = [.. wl.Select(w => (int)w)];
+            }
+            if (ways.Count == 0) for (int m = n; m > 1; m = (m + 1) / 2) ways.Add(2);
         }
-        int levels = tree ? (int)Math.Round(Math.Log2(n)) : 1;
+        else if (waysText.Length > 0) No("Ways is a tree's: set Topology to Tree, or clear it.");
+        int levels = tree ? ways.Count : 1;
 
         List<double> PerLevel(string key, string fallback)
         {
@@ -436,35 +457,48 @@ public static class ChainParts
         {
             if (!TryList(s.Get("PathIL"), out path)) No($"PathIL = '{s.Get("PathIL")}' is not a list of numbers.");
             else if (path.Count != n) No($"PathIL lists {path.Count} losses for {n} element paths: give one per element.");
-            else if (active) No("PathIL is a passive combiner's: an active one's paths are its amplifiers, and equal.");
-            if (path.Count != n || active) path = [];
+            if (path.Count != n) path = [];
         }
 
         var lv = new List<CombinerLevel>();
-        for (int l = 0; l < levels; l++)
-            lv.Add(new CombinerLevel(tree ? 2 : n, tree ? n >> (l + 1) : 1, il[l],
-                                     active ? gain[l] : 0, active ? nf[l] : 0, active ? ip3[l] : double.PositiveInfinity));
+        for (int l = 0, m = n; l < levels; l++)
+        {
+            int w = tree ? ways[l] : n;
+            lv.Add(new CombinerLevel(m, w, il[l], active ? gain[l] : 0, active ? nf[l] : 0, active ? ip3[l] : double.PositiveInfinity));
+            m = (m + w - 1) / w;
+        }
         return new CombinerSpec(n, tree, active, lv, path, lossLevels);
     }
 }
 
-/// <summary>One level of a combiner: <paramref name="Parts"/> combiners of <paramref name="Ways"/> inputs each, their
-/// loss above the ideal split, and (active) the amplifier after each.</summary>
-public sealed record CombinerLevel(int Ways, int Parts, double IlDb, double GainDb, double NfDb, double Iip3Dbm);
+/// <summary>One level of a combiner: <paramref name="Inputs"/> paths into parts of <paramref name="Ways"/> inputs each, the
+/// last part smaller when they do not divide (one input: passed through, no combiner and no loss); each part's loss above
+/// the ideal split, and (active) the amplifier after each part.</summary>
+public sealed record CombinerLevel(int Inputs, int Ways, double IlDb, double GainDb, double NfDb, double Iip3Dbm)
+{
+    /// <summary>The level's parts, a pass-through counted.</summary>
+    public int Parts => (Inputs + Ways - 1) / Ways;
+
+    /// <summary>Part j's inputs (1-based): <see cref="Ways"/>, or the remainder for the last.</summary>
+    public int Size(int j) => Math.Min(Ways, Inputs - (j - 1) * Ways);
+}
 
 /// <summary>
-/// A Combiner stage's variant: Direct (one N:1 level) or Tree (log2 N levels of 2:1), Passive or Active, and each
-/// element path's own loss.
+/// A Combiner stage's variant: Direct (one N:1 level) or Tree (levels of 2:1, or each level's own ways, a remainder passed
+/// through), Passive or Active, and each element path's own loss.
 ///
-/// <para><b>Its budget, per element, is the cascade of its levels.</b> Write a_k = 10^(−PathIL_k/20). The element paths
-/// first: N inputs of power P with these weights combine coherently to (Σa_k)²·P/N and their uncorrelated noise to
-/// (Σa_k²/N)·n², and the weighting itself is a matched passive network at T0, so it adds T0·(N/Σa_k² − 1) referred to
-/// its input (Bosma's theorem on its S). Then each level: a passive n-way combiner of loss L adds n of coherent signal
-/// gain over 1/L, 1/L of noise gain and T0·(L − 1) of noise; an active level's amplifier follows with its gain, noise
-/// figure and intercept. Signal and noise gains, noise temperatures and intercepts cascade through the levels as they do
-/// through a chain (Friis with the noise gains, the intercept sum with the signal gains), which gives the stage's
-/// signal gain, noise gain, noise figure and intercept, all referred to ONE element's input. The array gain
-/// is the signal gain over the noise gain, (Σa_k)²/Σa_k², N for equal paths.</para>
+/// <para><b>Its budget, per element, follows every path through its levels.</b> Write a_k = 10^(−PathIL_k/20). Element k
+/// enters with amplitude a_k, noise gain a_k² and, the weighting being a matched pad at T0, T0·(1 − a_k²) of noise. A
+/// passive part of n inputs and loss L (g = 1/L) sums its inputs' amplitudes times √(g/n), their noise gains and noise
+/// temperatures times g/n, and adds T0·(1 − g) of its own (Bosma's theorem on its S); a part of one input passes it
+/// through. An active level's amplifier (G, F, IIP3) follows each part: amplitude √G·s, noise G·(T + T0·(F − 1)), and
+/// third-order distortion √G·(q + s³/IIP3), s the coherent amplitude at its own input, so an amplifier on a tapered path
+/// sees its own path's power, and the distortion of every amplifier adds in phase. At the output, the stage's signal gain
+/// is s², its noise gain the noise gain n, its noise temperature (referred to one element's input) T/n, its IIP3 s/q;
+/// the 1 dB point likewise from each amplifier's IIP3 − 8.96 dB. The array gain is the signal over the noise gain,
+/// (Σt_k)²/Σt_k² with t_k each element's own amplitude to the output: N for equal paths. For equal paths every part of a
+/// level sees the same and this is the chain's own cascade of its levels (Friis with the noise gains, the intercept sum
+/// with the signal gains).</para>
 /// </summary>
 /// <param name="LossLevels">Levels only: the ceil(log2 N) levels whose loss its one combiner takes; 0 otherwise.</param>
 public sealed record CombinerSpec(int N, bool Tree, bool Active, IReadOnlyList<CombinerLevel> Levels,
@@ -473,37 +507,72 @@ public sealed record CombinerSpec(int N, bool Tree, bool Active, IReadOnlyList<C
     /// <summary>Path k's amplitude weight (1-based), 1 with no PathIL.</summary>
     public double Weight(int k) => PathIlDb.Count == N ? Math.Pow(10, -PathIlDb[k - 1] / 20) : 1;
 
+    private static double Lin(double db) => Math.Pow(10, db / 10);
+    private static double Db(double x) => 10 * Math.Log10(x);
+
+    /// <summary>One path at a node: coherent amplitude per unit element amplitude, noise gain from the elements, noise
+    /// temperature with the elements at 0 K, and the third-order and compression distortion amplitudes per P^(3/2).</summary>
+    private readonly record struct Node(double S, double Ng, double T, double Q3, double Q1);
+
+    /// <summary>Each element's own amplitude to the output, t_k (the weights, each part's √(g/n), each amplifier's √G);
+    /// without the weights when <paramref name="weights"/> is false.</summary>
+    public double[] Amplitudes(bool weights = true)
+    {
+        var t = new double[N];
+        for (int k = 1; k <= N; k++)
+        {
+            double a = weights ? Weight(k) : 1;
+            int idx = k - 1;
+            foreach (var l in Levels)
+            {
+                int j = idx / l.Ways, size = l.Size(j + 1);
+                if (size > 1) a *= Math.Sqrt(Lin(-l.IlDb) / size);
+                if (Active) a *= Math.Sqrt(Lin(l.GainDb));
+                idx = j;
+            }
+            t[k - 1] = a;
+        }
+        return t;
+    }
+
     public StageBudget Budget()
     {
-        static double Lin(double db) => Math.Pow(10, db / 10);
-        static double Db(double x) => 10 * Math.Log10(x);
         const double t0 = ChainBudget.T0;
-        double gs = 1, gn = 1, te = 0, inv3 = 0, inv1 = 0;
-        void Sub(double sGain, double nGain, double teIn, double iip3Mw)
-        {
-            te += teIn / gn;
-            if (double.IsFinite(iip3Mw)) { inv3 += gs / iip3Mw; inv1 += gs / (iip3Mw / Lin(ChainParts.TanhP1dbBelowIip3)); }
-            gs *= sGain; gn *= nGain;
-        }
-        double sa = 0, sa2 = 0;
-        for (int k = 1; k <= N; k++) { sa += Weight(k); sa2 += Weight(k) * Weight(k); }
-        // The weights, as a share of the equal-path combination: coherent (Σa)²/N², incoherent Σa²/N.
-        double wn = sa2 / N;
-        Sub(sa * sa / ((double)N * N), wn, t0 * (1 / wn - 1), double.PositiveInfinity);
+        var br = Enumerable.Range(1, N).Select(k => Weight(k)).Select(a => new Node(a, a * a, t0 * (1 - a * a), 0, 0)).ToList();
         foreach (var l in Levels)
         {
+            var next = new List<Node>();
             double g = Lin(-l.IlDb);
-            Sub(l.Ways * g, g, t0 * (1 / g - 1), double.PositiveInfinity);
-            if (Active) Sub(Lin(l.GainDb), Lin(l.GainDb), t0 * (Lin(l.NfDb) - 1),
-                            l.Iip3Dbm >= ChainParts.AmpLinearDbm ? double.PositiveInfinity : Lin(l.Iip3Dbm));
+            double ip3 = l.Iip3Dbm >= ChainParts.AmpLinearDbm ? double.PositiveInfinity : Lin(l.Iip3Dbm);
+            double ip1 = ip3 / Lin(ChainParts.TanhP1dbBelowIip3);
+            for (int j = 1; j <= l.Parts; j++)
+            {
+                var ins = br.Skip((j - 1) * l.Ways).Take(l.Size(j)).ToList();
+                var o = ins[0];
+                if (ins.Count > 1)
+                {
+                    double f = g / ins.Count, a = Math.Sqrt(f);
+                    o = new Node(a * ins.Sum(x => x.S), f * ins.Sum(x => x.Ng), f * ins.Sum(x => x.T) + t0 * (1 - g),
+                                 a * ins.Sum(x => x.Q3), a * ins.Sum(x => x.Q1));
+                }
+                if (Active)
+                {
+                    double ga = Lin(l.GainDb), a = Math.Sqrt(ga), s3 = o.S * o.S * o.S;
+                    o = new Node(a * o.S, ga * o.Ng, ga * (o.T + t0 * (Lin(l.NfDb) - 1)), a * (o.Q3 + s3 / ip3), a * (o.Q1 + s3 / ip1));
+                }
+                next.Add(o);
+            }
+            br = next;
         }
-        return new StageBudget(Db(gs), Db(gn), Db(1 + te / t0),
-                               inv3 > 0 ? -Db(inv3) : double.PositiveInfinity, inv1 > 0 ? -Db(inv1) : double.PositiveInfinity,
+        var e = br[0];
+        return new StageBudget(Db(e.S * e.S), Db(e.Ng), Db(1 + e.T / e.Ng / t0),
+                               e.Q3 > 0 ? Db(e.S / e.Q3) : double.PositiveInfinity, e.Q1 > 0 ? Db(e.S / e.Q1) : double.PositiveInfinity,
                                N, []);
     }
 
     /// <summary>"Direct, passive", "Tree of 3 levels, active", as the block view and the variants bench say it.</summary>
-    public string Describe() => (Tree ? $"Tree of {Levels.Count} level{(Levels.Count == 1 ? "" : "s")} of 2:1"
+    public string Describe() => (Tree ? $"Tree of {Levels.Count} level{(Levels.Count == 1 ? "" : "s")} of " +
+                                        string.Join(", ", Levels.Select(l => $"{l.Ways}:1").Distinct())
                                  : LossLevels > 0 ? $"{N}:1, {LossLevels} levels' loss" : $"Direct {N}:1")
                                 + (Active ? ", active" : ", passive");
 }

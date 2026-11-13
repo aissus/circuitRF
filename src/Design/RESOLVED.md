@@ -31050,3 +31050,35 @@ After review:
   the linear transmitter's operating point read their IM3 under it, and 20 dB down the PA's products fall at 5:1.
 
 Gates: `tests/Ui.Tests/Chain/ChainTransmitTests.cs`, `tests/Ui.Tests/Examples/ChainBudgetExampleTests.cs` (`LinearTx_*`).
+
+## The chain budget's sub-arrays, uneven trees, unequal active paths, and the array benches through a mixer (CH-6, 2026-11-13)
+
+- **A per-path walk replaces the cascade of a combiner's levels, and moves nothing.** For equal paths every part of a
+  level sees the same node, so `CombinerSpec.Budget` following each path gives the level cascade it replaced to a few
+  ulps; the shipped benches carry the budget's numbers round-trip and their test allows 10⁻¹² relative, so every one of
+  them is unchanged. What the walk adds needs it: an active tree with a taper, whose level amplifiers see unequal powers,
+  and an uneven tree.
+- **An uneven tree of equal-split combiners loses coherence.** A pass-through and a combined pair reach the next 2:1
+  with unequal amplitudes: three elements into a lossless tree give (1 + 1/√2)² = 2.91 of 3, 0.13 dB of array gain,
+  while their noise keeps its whole power. The benches put it there too; it is physics, not a budget approximation.
+- **A tree's structural weights must cancel exactly.** The Steering bench's closed-form array factor multiplies each
+  element's weight by its tree's own factor over element 1's. Dividing the taper back out of an amplitude that included
+  it is not exact to the ulp, and a factor of 1 − 1 ulp would be written into the text of every Steering bench. The
+  factor is computed without the weights (`CombinerSpec.Amplitudes(weights: false)`): equal paths multiply the same
+  numbers in the same order, give exactly 1, and nothing is written.
+- **After an LO above the signal the IF's phase is the RF's negated.** A phase shifter at the IF that steers as at RF
+  doubles the misalignment instead of removing it. The emitter reads the inversion from the tracked product (the RF
+  tone's index turns negative at such a mixer) and sets that shifter to `Phase` + (k − 1)·`Steer` on the ordinary
+  benches and (k − 1)·(360° + Δφ) on the Steering bench; with the LO at 2.8 GHz the pattern and the gain at each peak read
+  as they do with it at 2.1 GHz.
+- **A harmonic-balance Steering point costs a second.** Six elements, each with its own mixer on one LO, take about
+  1.2 s a harmonic-balance run at Tol 1e-12 (0.9 s at 1e-9): 543 points of the S-parameter bench's sweep were 11 min.
+  The bench through a mixer steps the arriving angle 5° (111 runs) and reads the NF from a noise run swept over the steer
+  angle alone; its VAR block sets `theta_in = theta_steer`, which the gain sweep overrides and the noise sweep follows,
+  so each noise run sits at its beam's peak.
+- **The small-signal drive shows in harmonic balance.** The wave is 40 dB under one element's compression at the last
+  combiner, and the gain at each peak reads 2.8×10⁻⁴ dB low, as the 1-Tone benches' harmonic-balance gain does at their
+  drive; the S-parameter benches have no drive to differ by.
+
+Gates: `tests/Ui.Tests/Chain/ChainArraysTests.cs` (the reference `testdata/chain/arrays_reference.py`),
+`tests/Ui.Tests/Examples/ChainBudgetExampleTests.cs` (`IfArray_*` and the shipped benches).

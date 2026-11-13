@@ -955,19 +955,17 @@ public sealed partial class ChainBudgetViewModel : ObservableObject
 
     /// <summary>
     /// The block view, idealised: one block per stage with its System block's symbol, its own numbers and the cascade
-    /// at its output. An array is drawn compactly — the branch's stages once, each marked "× N", into one combiner block
-    /// — and a combiner as its variant: Direct one N:1 symbol, a tree its levels of 2:1 (a deep one as "× levels"), an
-    /// amplifier after each when active.
+    /// at its output. An array is drawn compactly — the branch's stages once, each marked "× N", into one combiner block,
+    /// a sub-array's stages once marked with how many sub-arrays there are — and a combiner as its variant: Direct one
+    /// N:1 symbol, a tree its levels (a deep one as "× levels"), an amplifier after each when active.
     /// </summary>
     private void Blocks(ChainDesign d, ChainBudgetResult r)
     {
-        int cmb = d.Stages.FindIndex(s => s.Part == ChainParts.Combiner);
-        int n = cmb >= 0 ? ChainParts.ReadCombiner(d.Stages[cmb]).N : 1;
         for (int i = 0; i < Stages.Count && i < d.Stages.Count; i++)
         {
             var row = Stages[i];
             var st = d.Stages[i];
-            row.TimesN = i < cmb ? $"× {n}" : "";
+            row.TimesN = d.Copies(i) is > 1 and var copies ? $"× {copies}" : "";
             row.Glyphs = Glyphs(st);
             row.Extra = st.Part switch
             {
@@ -1003,9 +1001,11 @@ public sealed partial class ChainBudgetViewModel : ObservableObject
                 g.Add(new ChainBlockGlyph(SymbolKind.Combiner, caption));
                 if (c.Active) g.Add(new ChainBlockGlyph(SymbolKind.Amp, ""));
             }
+            // A level that does not divide shows its remainder: "+ 1" passed through, "+ 3:1" a smaller part.
+            static string Rest(CombinerLevel l) => l.Inputs % l.Ways is 0 ? "" : l.Inputs % l.Ways is 1 ? " + 1" : $" + {l.Inputs % l.Ways}:1";
             if (!c.Tree) Level($"{c.N}:1");
-            else if (c.Levels.Count <= 3) foreach (var l in c.Levels) Level($"{l.Parts} × 2:1");
-            else Level($"2:1, × {c.Levels.Count} levels");
+            else if (c.Levels.Count <= 3) foreach (var l in c.Levels) Level($"{l.Inputs / l.Ways} × {l.Ways}:1{Rest(l)}");
+            else Level($"{string.Join(", ", c.Levels.Select(l => $"{l.Ways}:1").Distinct())}, × {c.Levels.Count} levels");
             return g;
         }
         // A filter draws its band form, as the placed Filter block does: the low-pass and high-pass glyphs, not the

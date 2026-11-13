@@ -76,7 +76,7 @@ public static class ChainCapacity
         int top = share.Length == 0 || share.Max() <= 0 ? -1 : Array.IndexOf(share, share.Max());
         if (cmb >= 0 && top > cmb)
             yield return $"{rows[top].Name} sets the receiver's compression ({D(share[top])} % of it): it comes after the combiner, " +
-                         $"where the {rows[cmb].Stage.ArrayN} elements' signals arrive in phase, so the array's gain drives it before any " +
+                         $"where the {d.Copies(-1) / d.Copies(top)} elements' signals arrive in phase, so the array's gain drives it before any " +
                          "element's own stage.";
         double ceiling = t.Ip1dbDbm - d.RxBackoffDb;
         if (d.InputPowerDbm > ceiling)
