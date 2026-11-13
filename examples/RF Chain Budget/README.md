@@ -221,12 +221,12 @@ signal, the noise floor, the sensitivity, the IM3, every blocker and the P1dB at
 shaded between them and the SFDR hatched. `circuitrf chain Superhet.cchain --level-diagram superhet-levels.png` draws
 the same figure on its own:
 
-![The superhet's level diagram: the signal from −70 dBm at the input to −46.5 dBm at the output, the noise floor 34.9 dB under it, the P1dB from the LNA on, the blockers, the IM3 far below, and the two frequencies either side of the mixer](../../docs/images/rf-chain-budget/level-diagram-superhet.png)
+![The superhet's level diagram: the signal from −70 dBm at the input to −46.5 dBm at the output, the noise floor 34.9 dB under it, the P1dB from the LNA on, the blockers, the IM3 far below, and the two frequencies either side of the mixer](pictures/level-diagram-superhet.png)
 
 The 26 GHz link's starts in front of its input: the 16 transmit elements' EIRP, the path down to the −59.4 dBm each
 receive element gets, and the receiver's ceiling, 14 dB above it. Up to the combiner the levels are one element's.
 
-![The 26 GHz link's level diagram: the EIRP, the path loss and the ceiling left of the input, then each element's levels up to the combiner and the array's after it, and the conversion to 3 GHz](../../docs/images/rf-chain-budget/level-diagram-link.png)
+![The 26 GHz link's level diagram: the EIRP, the path loss and the ceiling left of the input, then each element's levels up to the combiner and the array's after it, and the conversion to 3 GHz](pictures/level-diagram-link.png)
 
 ## Two conversions
 

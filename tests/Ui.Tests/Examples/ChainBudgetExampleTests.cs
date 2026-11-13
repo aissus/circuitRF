@@ -65,8 +65,9 @@ public sealed class ChainBudgetExampleTests(ITestOutputHelper output) : IDisposa
         var written = new HashSet<string>(StringComparer.Ordinal);
         foreach (string chain in Chains.Where(c => c != LinkChain)) written.UnionWith(TransferAndCompare(chain));
         written.UnionWith(Benches(Workspace, LinkChain).Select(b => b.CellName));
-        // And nothing shipped that Transfer no longer writes: every bench folder and display is one of them.
-        Assert.Equal(written.Order(), Directory.GetDirectories(Workspace).Select(x => Path.GetFileName(x)).Order());
+        // And nothing shipped that Transfer no longer writes: every bench folder and display is one of them (the README's
+        // pictures folder aside).
+        Assert.Equal(written.Order(), Directory.GetDirectories(Workspace).Select(x => Path.GetFileName(x)).Where(x => x != "pictures").Order());
         Assert.Equal(written.Order(), Directory.GetFiles(Workspace, "*.cdd").Select(x => Path.GetFileNameWithoutExtension(x)).Order());
     }
 
