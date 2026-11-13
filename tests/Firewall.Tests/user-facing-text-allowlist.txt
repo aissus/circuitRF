@@ -111,6 +111,7 @@ src/Core/Devices/SnpModel.cs|{who}: Touchstone file not found: '{_filePath}'.
 src/Core/Devices/SnpModel.cs|{who}: its 'File' parameter names a folder, not a Touchstone file: '{_filePath}'.
 src/Core/Devices/SnpModel.cs|{who}: no Touchstone file is specified. Open the component's parameters and set 
 src/Core/Devices/System/AmplifierModel.cs|Amp: this amplifier's reverse path closes a loop with unity gain, so it has no 
+src/Core/Devices/System/AmplifierLaw.cs|Amp: a Rapp law's smoothness P must be above 0; it is {p}.
 src/Core/Devices/System/IdealSBlockModel.cs|{GetType().Name} has no passive intermod, so it is not a nonlinear model
 src/Core/Devices/System/IdealSBlockModel.cs|{GetType().Name}: a complex port impedance ({z.Real:G6}
 src/Core/Devices/System/PimOverlay.cs|{blockName}: passive intermod needs an S-matrix this block can write as a 
@@ -1564,6 +1565,7 @@ src/RfCore/Export/BinaryDatasetWriter.cs|The dataset has more objects than one d
 src/Core/Devices/ComponentModelFactory.cs|{SnpPerturbation.ReciprocalParameter}={modeText} is not auto, tied or untied.
 src/Core/Devices/ComponentModelFactory.cs|{name} must be a real number (dB or degrees).
 src/Core/Devices/ComponentModelFactory.cs|{name} names port {Math.Max(i, j)}, and this SnP has {portCount} port(s) (NumPorts={portCount}).
+src/Core/Devices/ComponentModelFactory.cs|Amp: Law = '{lv.AsString()}' is not a law; the laws are Tanh, Rapp and Saleh.
 # BlockLowerMatrix / SymmetricFactorization (CAP-2): shape checks on matrices the planar solve builds itself,
 # internal invariants rather than refusals a user meets.
 src/Engine/Mom/BlockLowerMatrix.cs|Only a square matrix has a lower triangle to store; this one is {a.RowCount}×{a.ColCount}.
