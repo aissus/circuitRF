@@ -1,0 +1,35 @@
+{
+  "FormatVersion": 3,
+  "Direction": "Transmit",
+  "FrequencyHz": 3500000000,
+  "BandwidthHz": 19080000,
+  "InputPowerDbm": 0,
+  "TemperatureK": 0,
+  "RequiredSnrDb": 10,
+  "Stages": [
+    {
+      "Name": "POL",
+      "Part": "PolarTx",
+      "Parameters": {
+        "Ks": "10",
+        "Vsat": "0",
+        "Fam": "80 MHz",
+        "Order": "3",
+        "dT": "1 ns"
+      }
+    },
+    {
+      "Name": "BPF",
+      "Part": "Filter",
+      "Parameters": {
+        "Response": "Chebyshev",
+        "Form": "Bandpass",
+        "Order": "5",
+        "F1": "3.4 GHz",
+        "F2": "3.6 GHz",
+        "Ripple": "0.1",
+        "IL": "0.6"
+      }
+    }
+  ]
+}

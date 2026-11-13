@@ -26,6 +26,11 @@ n258 (24.25 to 27.5 GHz), whose stages scale with the frequency. See [The 26 GHz
 And a transmitter: **`Linear TX.cchain`**, a 3.5 GHz chain for a 100 MHz NR carrier at 30 kHz subcarrier spacing, from an
 IQ modulator to a PA with Rapp's law and a band filter. See [The linear transmitter](#the-linear-transmitter).
 
+And two that start from a digital stream, both at 3.5 GHz for a 20 MHz NR carrier: **`Digital TX.cchain`**, two DACs
+and their reconstruction filters into an IQ modulator, a driver, a PA with Rapp's law and a band filter; and
+**`Polar TX.cchain`**, the stream's amplitude and phase recombined in a supply-modulated amplifier. See
+[The digital and polar transmitters](#the-digital-and-polar-transmitters).
+
 The formulas, the parts and the benches are in *Reference ▸ RF Chain Budget*.
 
 ## The chains
@@ -317,6 +322,74 @@ bench a few (two fundamentals, the carrier and the LO).
 back-off, and the budget's estimate rises with its cubic. Set `Law` to Saleh with `PhiSat` 10° and `PhiMax` 20°, and
 its intercept takes the AM-PM into its third-order term. Set the IQ modulator's `PhaseImb` to 0 and `GainImb` to 0 and
 the image goes; set `IsoLO_IF` to 200 and so does the LO.
+
+## The digital and polar transmitters
+
+Both start from a stream: a 20 MHz NR carrier at 15 kHz subcarrier spacing, 19.08 MHz occupied, which is the chain's
+bandwidth. A stream has no thermal noise of its own, so the source is at 0 K. Their benches drive the stream itself,
+and harmonic balance has none, so each has an Envelope bench (and the digital one its PA's).
+
+`Digital TX.cchain` is a zero-IF transmitter, its input at 0 Hz, −10 dBm on each of its two rails:
+
+| Stage | Part | Gain | Its budget |
+|---|---|---|---|
+| DAC | `DAC`: 6 bits across ±0.32 V, NRZ at 122.88 MHz, one per rail | 0 dB | 10.10 dB below full scale: SQNR 27.78 dB over the 122.88 MHz, 35.87 dB in the 19.08 MHz (8.09 dB of processing gain) |
+| LPF | `Filter`, 5th-order Butterworth low-pass at 49.152 MHz (0.4·Fs), one per rail | −0.5 dB | |
+| IQ | `IQMod`, LO 3.5 GHz, the upper sideband, taking the two rails as I and Q | −3.99 dB | each mixer −7 dB and IIP3 25 dBm; the rails' two powers add |
+| DRV | `Amp` | 20 dB | OIP3 38 dBm |
+| PA | `Amp`, `Law` Rapp: `Psat` 43 dBm, `P` 2; `Pdc` 10 W | 22 dB | 15.5 dB under its Psat |
+| BPF | `Filter`, 5th-order 0.1 dB Chebyshev, 3.4 to 3.6 GHz | −0.6 dB | |
+
+| | Digital TX |
+|---|---|
+| Output | 26.91 dBm, 12.61 dB under OP1dB and 15.49 dB under Psat |
+| EVM floor | 1.64 %: the DAC's floor, 35.87 dB under the signal in the channel, and the hold's droop across it, 0.30 % |
+| ACLR | −36.15 dBc: the DAC's floor in the adjacent channel, with the intercepts' −51.03 dBc |
+| DAC image | −21.50 dB at the DAC, 113.34 MHz from the carrier; −60.58 dBc at the output, after both filters |
+
+Six bits make the DAC the transmitter's floor, as in the System Design examples' DigitalTx at the same rate: each bit
+more is 6 dB less of it, each doubling of Fs 3 dB.
+
+`Polar TX.cchain` is two stages: `POL`, a `PolarTx` (`Ks` 10, an 80 MHz third-order amplitude path, 1 ns of mismatch,
+the amplitude the later) and the same band filter. Its input is the stream at 0 dBm:
+
+| | Polar TX |
+|---|---|
+| Output | 19.40 dBm: 0 dBm and 20·log10 `Ks` = 20 dB, less the filter's 0.6 dB |
+| EVM floor | 1.143 %: the mismatch's √0.436·π·B·dT/√12, 1.7304 % over the band and 1.1426 % of it in the channel; the amplitude path's 80 MHz, 0.018 % |
+| ACLR | −41.98 dBc: 0.215 of the mismatch's error in each adjacent channel, and the band filter's slope there |
+
+The mismatch is the polar transmitter's own limit: EVM in proportion to the delay and the bandwidth, ACLR 6 dB worse for
+each doubling. 80 MHz, four times the bandwidth, leaves the amplitude path well out of it.
+
+Their level diagrams show the stream's own floor: the DAC's noise line from its node on, and the EVM floor and the ACLR
+in the key.
+
+![The digital transmitter's level diagram: the output power from −10 dBm on each rail to 26.9 dBm, the DAC's quantisation floor as the noise line 35.9 dB under it from the DAC on, the P1dB and the Psat over it from the IQ modulator on, and the EVM floor and the ACLR in its key](pictures/level-diagram-digital-tx.png)
+
+**Their benches**, each against the budget:
+
+- **`Digital TX Envelope`**: the stream's two rails, each through its own DAC and low-pass, into the IQ modulator's two
+  mixers, the NR carrier at −10 dBm per rail and 3 dB either side. At the operating point 26.86 dBm against 26.91,
+  ACLR −36.33 and −36.46 dBc against −36.15 (the DAC's floor alone is −36.29: the intercepts' share is the cubic's at
+  the PA's 1 dB point, pessimistic this far back), and 1.68 % of EVM against the 1.64 % floor: the record's own floor adds 0.37 % in
+  quadrature. 3 dB down it reads 2.31 % against 2.29 %; 3 dB up the DAC is 7.1 dB
+  under full scale and its peaks clip, 1.77 % against the 1.18 % the floor would give, which the budget notes.
+- **`Digital TX PA`**: the PA alone at its own input, as the linear transmitter's: Rapp's AM-AM and AM-PM over the drive
+  to 10⁻⁹ and its 1 dB point within 0.01 dB. The NR carrier through it reads −64.4 and −64.1 dBc of ACLR against the
+  −52.7 the cubic gives it: 15 dB under Psat, Rapp's IM3 has fallen at five times the drive.
+- **`Polar TX Envelope`**: the polar pair, the amplitude through 1 ns and the 80 MHz low-pass into the supply-modulated
+  amplifier, the phase turning a limited carrier, delayed by the low-pass's own 3.98 ns. 19.40 dBm at every drive on the
+  budget to 0.001 dB, ACLR −41.69 and −41.70 dBc against −41.98, and 1.22 % of EVM against 1.14 %: 0.42 % more in
+  quadrature, the record's own floor and the amplitude path at the run's 2 ns step, as the System Design examples'
+  PolarTx reads at the same point.
+
+Each runs a minute or two (the stream at baseband beside the carrier, 0.25 ms at the standard step).
+
+**Try it.** Give the DAC 8 bits and its floor drops 12 dB: the EVM floor goes to 0.50 %, the floor and the droop
+together, and the ACLR to −46.4 dBc, where the intercepts' share starts to show. Set `Fs` to 245.76 MHz instead and the floor
+falls 3 dB and the droop to a quarter: 1.14 % of EVM. On the polar transmitter, set `dT`
+to 2 ns and the EVM doubles; set it to 0 and `Fam` to 40 MHz, and the amplitude path's own error shows.
 
 ## What the displays show
 

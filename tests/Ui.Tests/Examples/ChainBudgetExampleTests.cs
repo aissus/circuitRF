@@ -41,7 +41,7 @@ public sealed class ChainBudgetExampleTests(ITestOutputHelper output) : IDisposa
     public const string Folder = "RF Chain Budget";
     public static string Workspace => Path.Combine(PalaceBackendTests.RepoRoot(), "examples", Folder);
 
-    private static readonly string[] Chains = ["Superhet", "Array", "Front End", "Dual Conversion", "26 GHz Link", "Linear TX"];
+    private static readonly string[] Chains = ["Superhet", "Array", "Front End", "Dual Conversion", "26 GHz Link", "Linear TX", "Digital TX", "Polar TX"];
 
     /// <summary>The benches Transfer writes for a shipped chain: a dual-conversion chain's mostly once per conversion.</summary>
     private static IReadOnlyList<ChainBenchText> Benches(string root, string chain)
@@ -66,6 +66,8 @@ public sealed class ChainBudgetExampleTests(ITestOutputHelper output) : IDisposa
     [InlineData("Front End")]
     [InlineData("Dual Conversion")]
     [InlineData("Linear TX")]
+    [InlineData("Digital TX")]
+    [InlineData("Polar TX")]
     public void TheShippedBenches_AreWhatTransferWritesToday(string chain)
     {
         CopyDirectory(Workspace, _ws);
@@ -455,6 +457,114 @@ public sealed class ChainBudgetExampleTests(ITestOutputHelper output) : IDisposa
                          $"Pout {M(ds, "Pout_op_err"):0.###} dB from the budget, EVM {M(ds, "EVM_op_sim"):0.##} %");
         Assert.InRange(M(ds, "ACLR_op_err"), -2, 2);
         Assert.InRange(M(ds, "Pout_op_err"), -0.5, 0);
+    }
+
+    /// <summary>The digital and polar transmitters' budgets against the standard-library calculation committed beside the
+    /// linear transmitter's (testdata/chain/stream_reference.py): the DAC's SQNR both as the textbook relation and as the
+    /// noise temperature the cascade carries, its droop, its image, the cascade's output, ACLR and EVM floor; the polar
+    /// stage's mismatch and bandwidth terms, its output and its Vsat mean; and the two model constants within the
+    /// script's own Monte Carlo of them (eight records of 2^14 samples, so within 0.02).</summary>
+    [Fact]
+    public void Streams_TheBudget_IsTheIndependentReference()
+    {
+        var refs = JsonNode.Parse(File.ReadAllText(Path.Combine(PalaceBackendTests.RepoRoot(), "testdata", "chain", "stream_reference.json")))!;
+        double R(string key) => (double)refs[key]!;
+        var dd = ChainDesignIo.LoadFromFile(Path.Combine(Workspace, "Digital TX.cchain"));
+        var dr = ChainBudget.Evaluate(dd);
+        var dx = ChainTransmit.Read(dr)!;
+        var dac = DacSpec.Read(dd.Stages[0]);
+        var pd = ChainDesignIo.LoadFromFile(Path.Combine(Workspace, "Polar TX.cchain"));
+        var pr = ChainBudget.Evaluate(pd);
+        var px = ChainTransmit.Read(pr)!;
+        var pol = PolarSpec.Read(pd.Stages[0]);
+        double b = dd.BandwidthHz;
+        (double Budget, string Key, double Tol)[] pairs =
+        [
+            (dac.BackoffDb(dd.InputPowerDbm), "dac_backoff_dB", 1e-6), (dac.SqnrDb(dd.InputPowerDbm), "dac_sqnr_dB", 1e-6),
+            (dac.ProcessingGainDb(b), "dac_processing_gain_dB", 1e-6), (dac.NfDb, "dac_nf_dB", 1e-6),
+            (dac.SqnrDb(dd.InputPowerDbm) + dac.ProcessingGainDb(b), "dac_snr_from_its_noise_dB", 1e-6),
+            (100 * dac.DroopEvm(dd.FrequencyHz, b), "dac_droop_evm_pct", 1e-6),
+            (dac.ImageDb(dd.FrequencyHz, b), "dac_image_closed_dB", 1e-6),
+            (dr.Totals!.GainDb, "digital_gain_dB", 1e-6), (dx.PoutDbm, "digital_pout_dBm", 1e-6), (dx.Oip3Dbm, "digital_oip3_dBm", 1e-6),
+            (dr.Totals.SnrDb, "digital_snr_dB", 1e-6), (dx.AclrDistortionDbc, "digital_aclr_dist_dBc", 1e-6),
+            (dx.AclrDbc, "digital_aclr_dBc", 1e-6), (dx.EvmFloorPct, "digital_evm_floor_pct", 1e-6), (dx.DacImageDbc, "digital_dac_image_dBc", 1e-6),
+            (100 * pol.DelayErr(b), "polar_mismatch_whole_band_pct", 1e-6), (100 * pol.DelayEvm(b), "polar_mismatch_evm_pct", 1e-6),
+            (100 * pol.Bandwidth(b).Evm, "polar_bandwidth_evm_pct", 1e-6), (10 * Math.Log10(pol.Bandwidth(b).Adjacent), "polar_bandwidth_adj_dBc", 1e-4),
+            (px.PoutDbm, "polar_pout_dBm", 1e-6), (px.EvmFloorPct, "polar_evm_floor_pct", 1e-6), (px.AclrDbc, "polar_aclr_dBc", 1e-6),
+            (new PolarSpec(10, 1, 0, 3, 0).GainDb(0), "polar_vsat_gain_dB", 1e-5),
+            (PolarSpec.EtaIn, "eta_in_monte_carlo", 0.02), (PolarSpec.EtaAdj, "eta_adj_monte_carlo", 0.02),
+        ];
+        foreach (var (budget, key, tol) in pairs)
+        {
+            output.WriteLine($"{key}: budget {budget:F9}, reference {R(key):F9}");
+            Assert.InRange(budget - R(key), -tol, tol);
+        }
+    }
+
+    /// <summary>The digital transmitter's Envelope bench: two DACs' rails through their reconstruction filters into the
+    /// IQ modulator. At the operating point the output on the linear budget to 0.2 dB (the peaks' slight compression), the
+    /// ACLR on the DAC's floor and the intercepts' estimate together to 1 dB, and the EVM at or over the budget's floor
+    /// (quantisation and droop) by at most 0.5 % in quadrature: the record's own floor, with the PA's distortion, which the
+    /// floor leaves out (measured 0.37 %; the PA alone reads 0.13 %). 3 dB under it the same; 3 dB over it the DAC clips, which the budget notes and
+    /// does not count.</summary>
+    [Fact]
+    [Trait("Category", "Benchmark")]
+    public void DigitalTx_Envelope_TheDacsFloorOnTheBudget()
+    {
+        var ds = Simulate("Digital TX Envelope");
+        Report(ds, "Digital TX Envelope");
+        Assert.InRange(M(ds, "Pout_op_err"), -0.2, 0.2);
+        Assert.InRange(M(ds, "ACLR_op_err"), -1, 1);
+        Assert.InRange(ds["measurements.ACLR_U_sim"].RealValues[1] - M(ds, "ACLR_op_calc"), -1, 1);
+        OnTheFloor(M(ds, "EVM_op_sim"), M(ds, "EVM_op_calc"), 0.5);
+        OnTheFloor(ds["measurements.EVM_sim"].RealValues[0], ds["measurements.EVM_calc"].RealValues[0], 0.5);
+    }
+
+    /// <summary>The polar transmitter's Envelope bench: the polar pair through 1 ns of mismatch and an 80 MHz amplitude
+    /// path into the supply-modulated amplifier. The output on the budget to 0.05 dB at every drive, the ACLR on the
+    /// mismatch's closed form to 1 dB, and the EVM at or over it by at most 0.6 % in quadrature: the record's own floor and
+    /// the amplitude path at the 2 ns step (measured 0.42 %, the System Design PolarTx bench's own excess at its 80 MHz,
+    /// 1 ns point).</summary>
+    [Fact]
+    [Trait("Category", "Benchmark")]
+    public void PolarTx_Envelope_TheMismatchOnTheBudget()
+    {
+        var ds = Simulate("Polar TX Envelope");
+        Report(ds, "Polar TX Envelope");
+        Assert.InRange(ds["measurements.Comp_sim"].RealValues.Max(Math.Abs), 0, 0.05);
+        Assert.InRange(M(ds, "ACLR_op_err"), -1, 1);
+        Assert.InRange(ds["measurements.ACLR_U_sim"].RealValues[1] - M(ds, "ACLR_op_calc"), -1, 1);
+        OnTheFloor(M(ds, "EVM_op_sim"), M(ds, "EVM_op_calc"), 0.6);
+    }
+
+    /// <summary>The digital transmitter's PA bench, the PA alone at its own input as the linear transmitter's is: Rapp's
+    /// AM-AM over the drive to round-off and its 1 dB point to the interpolation's 0.02 dB.</summary>
+    [Fact]
+    [Trait("Category", "Benchmark")]
+    public void DigitalTx_PA_CompressesOnTheLaw()
+    {
+        var ds = Simulate("Digital TX PA");
+        Assert.InRange(ds["measurements.AMAM_err"].RealValues.Max(Math.Abs), 0, 1e-6);
+        Assert.InRange(M(ds, "IP1dB_err"), -0.02, 0.02);
+        Assert.InRange(M(ds, "Pout_op_err"), -1e-6, 1e-6);
+        output.WriteLine($"Digital TX PA: NR carrier {M(ds, "Penv_sim"):0.##} dBm out, ACLR {M(ds, "ACLR_L_sim"):0.##} / " +
+                         $"{M(ds, "ACLR_U_sim"):0.##} dBc against {M(ds, "ACLR_calc"):0.##}, EVM {M(ds, "EVM_sim"):0.##} %");
+    }
+
+    /// <summary>A bench's EVM against the budget's floor: at or over it, by at most <paramref name="excessPct"/> in
+    /// quadrature (what the bench adds of its own).</summary>
+    private void OnTheFloor(double sim, double calc, double excessPct)
+    {
+        output.WriteLine($"EVM {sim:G5} % against the floor's {calc:G5} %: {Math.Sqrt(Math.Max(0, sim * sim - calc * calc)):G3} % more in quadrature");
+        Assert.InRange(sim, calc * 0.99, Math.Sqrt(calc * calc + excessPct * excessPct));
+    }
+
+    private void Report(DataSet ds, string cell)
+    {
+        foreach (string q in new[] { "Pout_sim", "Pout_calc", "ACLR_L_sim", "ACLR_U_sim", "ACLR_calc", "EVM_sim", "EVM_calc" })
+            output.WriteLine($"{cell}: {q} = {string.Join(", ", ds["measurements." + q].RealValues.Select(v => v.ToString("G6")))}");
+        output.WriteLine($"{cell}: at the operating point Pout {M(ds, "Pout_op_sim"):G6} against {M(ds, "Pout_op_calc"):G6}, ACLR " +
+                         $"{M(ds, "ACLR_op_sim"):G6} against {M(ds, "ACLR_op_calc"):G6}, EVM {M(ds, "EVM_op_sim"):G6} % against {M(ds, "EVM_op_calc"):G6} %");
     }
 
     /// <summary>The verb's report heads the cascade with the input the budget used: with a link, the power it delivers,

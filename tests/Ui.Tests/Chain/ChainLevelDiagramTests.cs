@@ -314,6 +314,37 @@ public sealed class ChainLevelDiagramTests : IDisposable
         }
     }
 
+    /// <summary>A transmitter from a stream keys its EVM floor and its ACLR with the stream's share; the DAC's floor is the
+    /// noise line from its node on, its SQNR in the channel under the signal there. The linear transmitter's key is as it
+    /// was.</summary>
+    [Fact]
+    public void AStreamsDiagram_KeysItsEvmFloor_AndTheDacsFloorIsItsNoiseLine()
+    {
+        Directory.CreateDirectory(_ws);
+        foreach (var (chain, said) in new[] { ("Digital TX", "(estimate, with the DAC)"), ("Polar TX", "(estimate, with the polar paths)") })
+        {
+            var d = Example(chain);
+            var r = ChainBudget.Evaluate(d);
+            var plan = ChainLevelDiagram.For(d, r)!;
+            var tx = ChainTransmit.Read(r)!;
+            string svg = Path.Combine(_ws, chain + ".svg");
+            Assert.True(ChainLevelDiagram.Write(svg, plan, chain));
+            string text = File.ReadAllText(svg);
+            Assert.Contains($"EVM floor {tx.EvmFloorPct.ToString("0.0", System.Globalization.CultureInfo.InvariantCulture)} %", text, StringComparison.Ordinal);
+            Assert.Contains(said, text, StringComparison.Ordinal);
+            Assert.DoesNotContain("Infinity", text, StringComparison.Ordinal);
+            if (chain == "Digital TX")
+            {
+                var dac = DacSpec.Read(d.Stages[0]);
+                Assert.Equal(dac.SqnrDb(d.InputPowerDbm) + dac.ProcessingGainDb(d.BandwidthHz), plan.Nodes[1].SignalDbm - plan.Nodes[1].NoiseDbm, 6);
+            }
+        }
+        string lin = Path.Combine(_ws, "linear.svg");
+        var ld = Example("Linear TX");
+        Assert.True(ChainLevelDiagram.Write(lin, ChainLevelDiagram.For(ld, ChainBudget.Evaluate(ld))!, "Linear TX"));
+        Assert.DoesNotContain("EVM floor", File.ReadAllText(lin), StringComparison.Ordinal);
+    }
+
     [Fact]
     public void TheVerb_WritesTheLevelDiagram_MakesItsFolder_AndRefusesBeforeWritingAnything()
     {
