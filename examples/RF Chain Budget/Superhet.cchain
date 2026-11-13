@@ -1,5 +1,5 @@
 {
-  "FormatVersion": 1,
+  "FormatVersion": 5,
   "FrequencyHz": 2450000000,
   "BandwidthHz": 4500000,
   "InputPowerDbm": -70,
@@ -40,7 +40,8 @@
         "NFType": "ssb",
         "IIP3": "10",
         "Plo": "7",
-        "Flo": "2.1 GHz"
+        "Flo": "2.1 GHz",
+        "PhaseNoise": "1kHz:-95, 100kHz:-95, 1MHz:-115, 10MHz:-130, 30MHz:-140"
       }
     },
     {
@@ -84,7 +85,13 @@
     {
       "OffsetHz": 20000000,
       "LevelDbm": -50
+    },
+    {
+      "OffsetHz": -12000000,
+      "LevelDbm": -45
     }
   ],
-  "Demo": true
+  "Demo": true,
+  "DynamicRange": true,
+  "Records": 4
 }

@@ -724,7 +724,7 @@
         },
         {
           "Name": "Margin_calc",
-          "Expression": "(23.641898470014567)*(nodeix - 1)*(nodeix - 2)*(nodeix - 3)*(nodeix - 4)*(nodeix - 5)*(nodeix - 6)/720 \u002B (29.0375)*(nodeix - 0)*(nodeix - 2)*(nodeix - 3)*(nodeix - 4)*(nodeix - 5)*(nodeix - 6)/-120 \u002B (39.03798481279172)*(nodeix - 0)*(nodeix - 1)*(nodeix - 3)*(nodeix - 4)*(nodeix - 5)*(nodeix - 6)/48 \u002B (33.93424925425424)*(nodeix - 0)*(nodeix - 1)*(nodeix - 2)*(nodeix - 4)*(nodeix - 5)*(nodeix - 6)/-36 \u002B (34.376351220688846)*(nodeix - 0)*(nodeix - 1)*(nodeix - 2)*(nodeix - 3)*(nodeix - 5)*(nodeix - 6)/48 \u002B (33.084485249240885)*(nodeix - 0)*(nodeix - 1)*(nodeix - 2)*(nodeix - 3)*(nodeix - 4)*(nodeix - 6)/-120 \u002B (33.084485249240885)*(nodeix - 0)*(nodeix - 1)*(nodeix - 2)*(nodeix - 3)*(nodeix - 4)*(nodeix - 5)/720",
+          "Expression": "(23.641898470014567)*(nodeix - 1)*(nodeix - 2)*(nodeix - 3)*(nodeix - 4)*(nodeix - 5)*(nodeix - 6)/720 \u002B (29.0375)*(nodeix - 0)*(nodeix - 2)*(nodeix - 3)*(nodeix - 4)*(nodeix - 5)*(nodeix - 6)/-120 \u002B (34.03750428765993)*(nodeix - 0)*(nodeix - 1)*(nodeix - 3)*(nodeix - 4)*(nodeix - 5)*(nodeix - 6)/48 \u002B (28.933768729122445)*(nodeix - 0)*(nodeix - 1)*(nodeix - 2)*(nodeix - 4)*(nodeix - 5)*(nodeix - 6)/-36 \u002B (28.94364818132617)*(nodeix - 0)*(nodeix - 1)*(nodeix - 2)*(nodeix - 3)*(nodeix - 5)*(nodeix - 6)/48 \u002B (27.651782209878213)*(nodeix - 0)*(nodeix - 1)*(nodeix - 2)*(nodeix - 3)*(nodeix - 4)*(nodeix - 6)/-120 \u002B (27.651782209878213)*(nodeix - 0)*(nodeix - 1)*(nodeix - 2)*(nodeix - 3)*(nodeix - 4)*(nodeix - 5)/720",
           "Unit": "",
           "ShowOnSchematic": true,
           "Dimension": "None"

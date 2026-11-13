@@ -23,9 +23,9 @@
         },
         {
           "Name": "Pavg",
-          "Expression": "Pin",
+          "Expression": "Pin\u002B25.013711928326835",
           "Unit": "dBm",
-          "ShowOnSchematic": true,
+          "ShowOnSchematic": false,
           "Dimension": "Power"
         },
         {
@@ -38,6 +38,13 @@
         {
           "Name": "Carrier[1]",
           "Expression": "\u0022NR;BW=5MHz;SCS=15kHz;Mod=64QAM;Off=0;P=0;Seed=1\u0022",
+          "Unit": "",
+          "ShowOnSchematic": false,
+          "Dimension": "None"
+        },
+        {
+          "Name": "Carrier[2]",
+          "Expression": "\u0022CW;BW=1MHz;Off=-12MHz;P=25\u0022",
           "Unit": "",
           "ShowOnSchematic": false,
           "Dimension": "None"
@@ -67,7 +74,7 @@
       "LabelOffsets": [
         [
           285,
-          -397
+          -361
         ]
       ]
     },
@@ -301,6 +308,13 @@
           "Unit": "Ohm",
           "ShowOnSchematic": true,
           "Dimension": "Resistance"
+        },
+        {
+          "Name": "PhaseNoise",
+          "Expression": "\u00221kHz:-95, 100kHz:-95, 1MHz:-115, 10MHz:-130, 30MHz:-140\u0022",
+          "Unit": "",
+          "ShowOnSchematic": false,
+          "Dimension": "None"
         }
       ],
       "LabelOffsets": [
@@ -540,7 +554,7 @@
       "InstanceName": "VAR1",
       "Symbol": "Var",
       "X": 0,
-      "Y": -1400,
+      "Y": -1500,
       "Rotation": "R0",
       "MirrorX": false,
       "Disable": "None",
@@ -574,6 +588,13 @@
           "Dimension": "None"
         },
         {
+          "Name": "rec",
+          "Expression": "1",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
           "Name": "Bocc",
           "Expression": "4500000",
           "Unit": "",
@@ -586,7 +607,7 @@
       "InstanceName": "MEAS1",
       "Symbol": "Meas",
       "X": 1600,
-      "Y": -1900,
+      "Y": -2100,
       "Rotation": "R0",
       "MirrorX": false,
       "Disable": "None",
@@ -600,42 +621,42 @@
         },
         {
           "Name": "SNR_calc",
-          "Expression": "34.89425710572198",
+          "Expression": "32.64376367251985",
           "Unit": "",
           "ShowOnSchematic": true,
           "Dimension": "None"
         },
         {
           "Name": "EVM_calc",
-          "Expression": "1.8000606771310976",
+          "Expression": "2.3324471733696397",
           "Unit": "",
           "ShowOnSchematic": true,
           "Dimension": "None"
         },
         {
           "Name": "Nout_calc",
-          "Expression": "-81.39425710572198",
+          "Expression": "-79.14376367251985",
           "Unit": "",
           "ShowOnSchematic": true,
           "Dimension": "None"
         },
         {
           "Name": "Pout_sim",
-          "Expression": "ENV1.Pavg_dBm[\u0022Iout\u0022]",
+          "Expression": "mean_over(ENV1.ACLR[:, \u0022Iout\u0022, 0, \u0022Pch_dBm\u0022], \u0022rec\u0022)",
           "Unit": "",
           "ShowOnSchematic": true,
           "Dimension": "None"
         },
         {
           "Name": "SNR_sim",
-          "Expression": "ENV1.SNR_dB[\u0022Iout\u0022, 0]",
+          "Expression": "-10*log10(mean_over(10^(-(ENV1.SNR_dB[:, \u0022Iout\u0022, 0])/10), \u0022rec\u0022))",
           "Unit": "",
           "ShowOnSchematic": true,
           "Dimension": "None"
         },
         {
           "Name": "EVM_sim",
-          "Expression": "ENV1.EVMnoise_pct[\u0022Iout\u0022, 0]",
+          "Expression": "sqrt(mean_over((ENV1.EVMnoise_pct[:, \u0022Iout\u0022, 0])^2, \u0022rec\u0022))",
           "Unit": "",
           "ShowOnSchematic": true,
           "Dimension": "None"
@@ -664,6 +685,34 @@
         {
           "Name": "Nout_err",
           "Expression": "Nout_sim - Nout_calc",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "SNR_spread",
+          "Expression": "std_over(ENV1.SNR_dB[:, \u0022Iout\u0022, 0], \u0022rec\u0022)/sqrt(4)",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "SNRth_calc",
+          "Expression": "34.89425710572198",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "PN_calc",
+          "Expression": "-39.239803822007616",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "RM_calc",
+          "Expression": "-39.961968397827334",
           "Unit": "",
           "ShowOnSchematic": true,
           "Dimension": "None"
@@ -976,7 +1025,21 @@
       "EnvStart": "0",
       "EnvSaveWaveforms": "yes",
       "EnvNoise": "yes",
+      "EnvSeedPerPoint": "yes",
       "EnvEvmSplit": "yes"
+    },
+    {
+      "Type": "sweep",
+      "Name": "SWREC",
+      "Enabled": true,
+      "PsaVarName": "rec",
+      "PsaValues": [
+        1,
+        2,
+        3,
+        4
+      ],
+      "PsaInnerName": "ENV1"
     }
   ]
 }

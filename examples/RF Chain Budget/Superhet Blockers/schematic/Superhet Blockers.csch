@@ -16,14 +16,14 @@
       "Parameters": [
         {
           "Name": "Freq[1]",
-          "Expression": "FB1",
+          "Expression": "Frf",
           "Unit": "",
           "ShowOnSchematic": true,
           "Dimension": "Frequency"
         },
         {
           "Name": "Pavl[1]",
-          "Expression": "PB1",
+          "Expression": "Psig",
           "Unit": "dBm",
           "ShowOnSchematic": true,
           "Dimension": "Power"
@@ -37,14 +37,14 @@
         },
         {
           "Name": "Freq[2]",
-          "Expression": "FB2",
+          "Expression": "FB1",
           "Unit": "",
           "ShowOnSchematic": true,
           "Dimension": "Frequency"
         },
         {
           "Name": "Pavl[2]",
-          "Expression": "PB2",
+          "Expression": "PB1",
           "Unit": "dBm",
           "ShowOnSchematic": true,
           "Dimension": "Power"
@@ -55,6 +55,48 @@
           "Unit": "deg",
           "ShowOnSchematic": false,
           "Dimension": "Angle"
+        },
+        {
+          "Name": "Freq[3]",
+          "Expression": "FB2",
+          "Unit": "",
+          "ShowOnSchematic": false,
+          "Dimension": "None"
+        },
+        {
+          "Name": "Pavl[3]",
+          "Expression": "PB2",
+          "Unit": "dBm",
+          "ShowOnSchematic": false,
+          "Dimension": "None"
+        },
+        {
+          "Name": "Phase[3]",
+          "Expression": "0",
+          "Unit": "deg",
+          "ShowOnSchematic": false,
+          "Dimension": "None"
+        },
+        {
+          "Name": "Freq[4]",
+          "Expression": "FB3",
+          "Unit": "",
+          "ShowOnSchematic": false,
+          "Dimension": "None"
+        },
+        {
+          "Name": "Pavl[4]",
+          "Expression": "PB3",
+          "Unit": "dBm",
+          "ShowOnSchematic": false,
+          "Dimension": "None"
+        },
+        {
+          "Name": "Phase[4]",
+          "Expression": "0",
+          "Unit": "deg",
+          "ShowOnSchematic": false,
+          "Dimension": "None"
         },
         {
           "Name": "Z",
@@ -794,7 +836,7 @@
       "InstanceName": "VAR1",
       "Symbol": "Var",
       "X": 0,
-      "Y": -1400,
+      "Y": -1700,
       "Rotation": "R0",
       "MirrorX": false,
       "Disable": "None",
@@ -809,6 +851,13 @@
         {
           "Name": "Frf",
           "Expression": "2450000000",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "Psig",
+          "Expression": "-70",
           "Unit": "",
           "ShowOnSchematic": true,
           "Dimension": "None"
@@ -842,6 +891,20 @@
           "Dimension": "None"
         },
         {
+          "Name": "FB3",
+          "Expression": "2438000000",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "PB3",
+          "Expression": "-45",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
           "Name": "Flo1",
           "Expression": "2100000000",
           "Unit": "",
@@ -861,105 +924,154 @@
       "InstanceName": "MEAS1",
       "Symbol": "Meas",
       "X": 1600,
-      "Y": -3200,
+      "Y": -6500,
       "Rotation": "R0",
       "MirrorX": false,
       "Disable": "None",
       "Parameters": [
         {
           "Name": "B1_0",
-          "Expression": "dB(HBK.V(\u0022in\u0022,\u0022(1,0,0)\u0022)) \u002B 10",
+          "Expression": "dB(HBK.V(\u0022in\u0022,\u0022(0,1,0,0,0)\u0022)) \u002B 10",
           "Unit": "",
           "ShowOnSchematic": true,
           "Dimension": "None"
         },
         {
           "Name": "B2_0",
-          "Expression": "dB(HBK.V(\u0022in\u0022,\u0022(0,1,0)\u0022)) \u002B 10",
+          "Expression": "dB(HBK.V(\u0022in\u0022,\u0022(0,0,1,0,0)\u0022)) \u002B 10",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "B3_0",
+          "Expression": "dB(HBK.V(\u0022in\u0022,\u0022(0,0,0,1,0)\u0022)) \u002B 10",
           "Unit": "",
           "ShowOnSchematic": true,
           "Dimension": "None"
         },
         {
           "Name": "B1_1",
-          "Expression": "dB(HBK.V(\u0022n_LNA\u0022,\u0022(1,0,0)\u0022)) \u002B 10",
+          "Expression": "dB(HBK.V(\u0022n_LNA\u0022,\u0022(0,1,0,0,0)\u0022)) \u002B 10",
           "Unit": "",
           "ShowOnSchematic": true,
           "Dimension": "None"
         },
         {
           "Name": "B2_1",
-          "Expression": "dB(HBK.V(\u0022n_LNA\u0022,\u0022(0,1,0)\u0022)) \u002B 10",
+          "Expression": "dB(HBK.V(\u0022n_LNA\u0022,\u0022(0,0,1,0,0)\u0022)) \u002B 10",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "B3_1",
+          "Expression": "dB(HBK.V(\u0022n_LNA\u0022,\u0022(0,0,0,1,0)\u0022)) \u002B 10",
           "Unit": "",
           "ShowOnSchematic": true,
           "Dimension": "None"
         },
         {
           "Name": "B1_2",
-          "Expression": "dB(HBK.V(\u0022n_RFBPF\u0022,\u0022(1,0,0)\u0022)) \u002B 10",
+          "Expression": "dB(HBK.V(\u0022n_RFBPF\u0022,\u0022(0,1,0,0,0)\u0022)) \u002B 10",
           "Unit": "",
           "ShowOnSchematic": true,
           "Dimension": "None"
         },
         {
           "Name": "B2_2",
-          "Expression": "dB(HBK.V(\u0022n_RFBPF\u0022,\u0022(0,1,0)\u0022)) \u002B 10",
+          "Expression": "dB(HBK.V(\u0022n_RFBPF\u0022,\u0022(0,0,1,0,0)\u0022)) \u002B 10",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "B3_2",
+          "Expression": "dB(HBK.V(\u0022n_RFBPF\u0022,\u0022(0,0,0,1,0)\u0022)) \u002B 10",
           "Unit": "",
           "ShowOnSchematic": true,
           "Dimension": "None"
         },
         {
           "Name": "B1_3",
-          "Expression": "dB(HBK.V(\u0022n_MIX\u0022,\u0022(1,0,-1)\u0022)) \u002B 10",
+          "Expression": "dB(HBK.V(\u0022n_MIX\u0022,\u0022(0,1,0,0,-1)\u0022)) \u002B 10",
           "Unit": "",
           "ShowOnSchematic": true,
           "Dimension": "None"
         },
         {
           "Name": "B2_3",
-          "Expression": "dB(HBK.V(\u0022n_MIX\u0022,\u0022(0,1,-1)\u0022)) \u002B 10",
+          "Expression": "dB(HBK.V(\u0022n_MIX\u0022,\u0022(0,0,1,0,-1)\u0022)) \u002B 10",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "B3_3",
+          "Expression": "dB(HBK.V(\u0022n_MIX\u0022,\u0022(0,0,0,1,-1)\u0022)) \u002B 10",
           "Unit": "",
           "ShowOnSchematic": true,
           "Dimension": "None"
         },
         {
           "Name": "B1_4",
-          "Expression": "dB(HBK.V(\u0022n_IFBPF\u0022,\u0022(1,0,-1)\u0022)) \u002B 10",
+          "Expression": "dB(HBK.V(\u0022n_IFBPF\u0022,\u0022(0,1,0,0,-1)\u0022)) \u002B 10",
           "Unit": "",
           "ShowOnSchematic": true,
           "Dimension": "None"
         },
         {
           "Name": "B2_4",
-          "Expression": "dB(HBK.V(\u0022n_IFBPF\u0022,\u0022(0,1,-1)\u0022)) \u002B 10",
+          "Expression": "dB(HBK.V(\u0022n_IFBPF\u0022,\u0022(0,0,1,0,-1)\u0022)) \u002B 10",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "B3_4",
+          "Expression": "dB(HBK.V(\u0022n_IFBPF\u0022,\u0022(0,0,0,1,-1)\u0022)) \u002B 10",
           "Unit": "",
           "ShowOnSchematic": true,
           "Dimension": "None"
         },
         {
           "Name": "B1_5",
-          "Expression": "dB(HBK.V(\u0022n_IFA\u0022,\u0022(1,0,-1)\u0022)) \u002B 10",
+          "Expression": "dB(HBK.V(\u0022n_IFA\u0022,\u0022(0,1,0,0,-1)\u0022)) \u002B 10",
           "Unit": "",
           "ShowOnSchematic": true,
           "Dimension": "None"
         },
         {
           "Name": "B2_5",
-          "Expression": "dB(HBK.V(\u0022n_IFA\u0022,\u0022(0,1,-1)\u0022)) \u002B 10",
+          "Expression": "dB(HBK.V(\u0022n_IFA\u0022,\u0022(0,0,1,0,-1)\u0022)) \u002B 10",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "B3_5",
+          "Expression": "dB(HBK.V(\u0022n_IFA\u0022,\u0022(0,0,0,1,-1)\u0022)) \u002B 10",
           "Unit": "",
           "ShowOnSchematic": true,
           "Dimension": "None"
         },
         {
           "Name": "B1_6",
-          "Expression": "dB(HBK.V(\u0022out\u0022,\u0022(1,0,-1)\u0022)) \u002B 10",
+          "Expression": "dB(HBK.V(\u0022out\u0022,\u0022(0,1,0,0,-1)\u0022)) \u002B 10",
           "Unit": "",
           "ShowOnSchematic": true,
           "Dimension": "None"
         },
         {
           "Name": "B2_6",
-          "Expression": "dB(HBK.V(\u0022out\u0022,\u0022(0,1,-1)\u0022)) \u002B 10",
+          "Expression": "dB(HBK.V(\u0022out\u0022,\u0022(0,0,1,0,-1)\u0022)) \u002B 10",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "B3_6",
+          "Expression": "dB(HBK.V(\u0022out\u0022,\u0022(0,0,0,1,-1)\u0022)) \u002B 10",
           "Unit": "",
           "ShowOnSchematic": true,
           "Dimension": "None"
@@ -1086,6 +1198,279 @@
         {
           "Name": "Blk2_6_err",
           "Expression": "B2_6 - -26.942586779226318",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "Blk3_sim",
+          "Expression": "(B3_0)*(nodeix - 1)*(nodeix - 2)*(nodeix - 3)*(nodeix - 4)*(nodeix - 5)*(nodeix - 6)/720 \u002B (B3_1)*(nodeix - 0)*(nodeix - 2)*(nodeix - 3)*(nodeix - 4)*(nodeix - 5)*(nodeix - 6)/-120 \u002B (B3_2)*(nodeix - 0)*(nodeix - 1)*(nodeix - 3)*(nodeix - 4)*(nodeix - 5)*(nodeix - 6)/48 \u002B (B3_3)*(nodeix - 0)*(nodeix - 1)*(nodeix - 2)*(nodeix - 4)*(nodeix - 5)*(nodeix - 6)/-36 \u002B (B3_4)*(nodeix - 0)*(nodeix - 1)*(nodeix - 2)*(nodeix - 3)*(nodeix - 5)*(nodeix - 6)/48 \u002B (B3_5)*(nodeix - 0)*(nodeix - 1)*(nodeix - 2)*(nodeix - 3)*(nodeix - 4)*(nodeix - 6)/-120 \u002B (B3_6)*(nodeix - 0)*(nodeix - 1)*(nodeix - 2)*(nodeix - 3)*(nodeix - 4)*(nodeix - 5)/720",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "Blk3_calc",
+          "Expression": "(-45)*(nodeix - 1)*(nodeix - 2)*(nodeix - 3)*(nodeix - 4)*(nodeix - 5)*(nodeix - 6)/720 \u002B (-29)*(nodeix - 0)*(nodeix - 2)*(nodeix - 3)*(nodeix - 4)*(nodeix - 5)*(nodeix - 6)/-120 \u002B (-30.500004287659923)*(nodeix - 0)*(nodeix - 1)*(nodeix - 3)*(nodeix - 4)*(nodeix - 5)*(nodeix - 6)/48 \u002B (-37.50000428765992)*(nodeix - 0)*(nodeix - 1)*(nodeix - 2)*(nodeix - 4)*(nodeix - 5)*(nodeix - 6)/-36 \u002B (-38.509883739863646)*(nodeix - 0)*(nodeix - 1)*(nodeix - 2)*(nodeix - 3)*(nodeix - 5)*(nodeix - 6)/48 \u002B (-18.509883739863646)*(nodeix - 0)*(nodeix - 1)*(nodeix - 2)*(nodeix - 3)*(nodeix - 4)*(nodeix - 6)/-120 \u002B (-21.509883739863646)*(nodeix - 0)*(nodeix - 1)*(nodeix - 2)*(nodeix - 3)*(nodeix - 4)*(nodeix - 5)/720",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "Blk3_0_err",
+          "Expression": "B3_0 - -45",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "Blk3_1_err",
+          "Expression": "B3_1 - -29",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "Blk3_2_err",
+          "Expression": "B3_2 - -30.500004287659923",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "Blk3_3_err",
+          "Expression": "B3_3 - -37.50000428765992",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "Blk3_4_err",
+          "Expression": "B3_4 - -38.509883739863646",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "Blk3_5_err",
+          "Expression": "B3_5 - -18.509883739863646",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "Blk3_6_err",
+          "Expression": "B3_6 - -21.509883739863646",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "S_0",
+          "Expression": "dB(HBK.V(\u0022in\u0022,\u0022(1,0,0,0,0)\u0022)) \u002B 10",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "Des_0_sim",
+          "Expression": "-70 - S_0",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "Des_0_calc",
+          "Expression": "0",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "Des_0_err",
+          "Expression": "Des_0_sim - Des_0_calc",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "S_1",
+          "Expression": "dB(HBK.V(\u0022n_LNA\u0022,\u0022(1,0,0,0,0)\u0022)) \u002B 10",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "Des_1_sim",
+          "Expression": "-54 - S_1",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "Des_1_calc",
+          "Expression": "0.00309695260111353",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "Des_1_err",
+          "Expression": "Des_1_sim - Des_1_calc",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "S_2",
+          "Expression": "dB(HBK.V(\u0022n_RFBPF\u0022,\u0022(1,0,0,0,0)\u0022)) \u002B 10",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "Des_2_sim",
+          "Expression": "-55.5 - S_2",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "Des_2_calc",
+          "Expression": "0.00309695260111353",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "Des_2_err",
+          "Expression": "Des_2_sim - Des_2_calc",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "S_3",
+          "Expression": "dB(HBK.V(\u0022n_MIX\u0022,\u0022(1,0,0,0,-1)\u0022)) \u002B 10",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "Des_3_sim",
+          "Expression": "-62.5 - S_3",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "Des_3_calc",
+          "Expression": "0.005566411269606605",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "Des_3_err",
+          "Expression": "Des_3_sim - Des_3_calc",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "S_4",
+          "Expression": "dB(HBK.V(\u0022n_IFBPF\u0022,\u0022(1,0,0,0,-1)\u0022)) \u002B 10",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "Des_4_sim",
+          "Expression": "-63.5 - S_4",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "Des_4_calc",
+          "Expression": "0.005566411269606605",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "Des_4_err",
+          "Expression": "Des_4_sim - Des_4_calc",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "S_5",
+          "Expression": "dB(HBK.V(\u0022n_IFA\u0022,\u0022(1,0,0,0,-1)\u0022)) \u002B 10",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "Des_5_sim",
+          "Expression": "-43.5 - S_5",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "Des_5_calc",
+          "Expression": "0.00656222216234972",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "Des_5_err",
+          "Expression": "Des_5_sim - Des_5_calc",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "S_6",
+          "Expression": "dB(HBK.V(\u0022out\u0022,\u0022(1,0,0,0,-1)\u0022)) \u002B 10",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "Des_6_sim",
+          "Expression": "-46.5 - S_6",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "Des_6_calc",
+          "Expression": "0.00656222216234972",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "Des_6_err",
+          "Expression": "Des_6_sim - Des_6_calc",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "Des_sim",
+          "Expression": "(Des_0_sim)*(nodeix - 1)*(nodeix - 2)*(nodeix - 3)*(nodeix - 4)*(nodeix - 5)*(nodeix - 6)/720 \u002B (Des_1_sim)*(nodeix - 0)*(nodeix - 2)*(nodeix - 3)*(nodeix - 4)*(nodeix - 5)*(nodeix - 6)/-120 \u002B (Des_2_sim)*(nodeix - 0)*(nodeix - 1)*(nodeix - 3)*(nodeix - 4)*(nodeix - 5)*(nodeix - 6)/48 \u002B (Des_3_sim)*(nodeix - 0)*(nodeix - 1)*(nodeix - 2)*(nodeix - 4)*(nodeix - 5)*(nodeix - 6)/-36 \u002B (Des_4_sim)*(nodeix - 0)*(nodeix - 1)*(nodeix - 2)*(nodeix - 3)*(nodeix - 5)*(nodeix - 6)/48 \u002B (Des_5_sim)*(nodeix - 0)*(nodeix - 1)*(nodeix - 2)*(nodeix - 3)*(nodeix - 4)*(nodeix - 6)/-120 \u002B (Des_6_sim)*(nodeix - 0)*(nodeix - 1)*(nodeix - 2)*(nodeix - 3)*(nodeix - 4)*(nodeix - 5)/720",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "Des_calc",
+          "Expression": "(Des_0_calc)*(nodeix - 1)*(nodeix - 2)*(nodeix - 3)*(nodeix - 4)*(nodeix - 5)*(nodeix - 6)/720 \u002B (Des_1_calc)*(nodeix - 0)*(nodeix - 2)*(nodeix - 3)*(nodeix - 4)*(nodeix - 5)*(nodeix - 6)/-120 \u002B (Des_2_calc)*(nodeix - 0)*(nodeix - 1)*(nodeix - 3)*(nodeix - 4)*(nodeix - 5)*(nodeix - 6)/48 \u002B (Des_3_calc)*(nodeix - 0)*(nodeix - 1)*(nodeix - 2)*(nodeix - 4)*(nodeix - 5)*(nodeix - 6)/-36 \u002B (Des_4_calc)*(nodeix - 0)*(nodeix - 1)*(nodeix - 2)*(nodeix - 3)*(nodeix - 5)*(nodeix - 6)/48 \u002B (Des_5_calc)*(nodeix - 0)*(nodeix - 1)*(nodeix - 2)*(nodeix - 3)*(nodeix - 4)*(nodeix - 6)/-120 \u002B (Des_6_calc)*(nodeix - 0)*(nodeix - 1)*(nodeix - 2)*(nodeix - 3)*(nodeix - 4)*(nodeix - 5)/720",
           "Unit": "",
           "ShowOnSchematic": true,
           "Dimension": "None"
@@ -1554,13 +1939,17 @@
       "Name": "HBK",
       "Enabled": true,
       "ToneExpr": "0",
-      "NumFreqsExpr": "3",
+      "NumFreqsExpr": "5",
       "ToneExprs": [
+        "Frf",
         "FB1",
         "FB2",
+        "FB3",
         "Flo1"
       ],
       "ToneUnits": [
+        "Hz",
+        "Hz",
         "Hz",
         "Hz",
         "Hz"

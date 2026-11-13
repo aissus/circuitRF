@@ -163,6 +163,22 @@
       ]
     },
     {
+      "InstanceName": "I0",
+      "Symbol": "IProbe",
+      "X": 800,
+      "Y": -100,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [],
+      "LabelOffsets": [
+        [
+          330,
+          -265
+        ]
+      ]
+    },
+    {
       "InstanceName": "LNA",
       "Symbol": "Amp",
       "X": 1300,
@@ -199,6 +215,22 @@
           "ShowOnSchematic": false,
           "Dimension": "None"
         }
+      ]
+    },
+    {
+      "InstanceName": "I1",
+      "Symbol": "IProbe",
+      "X": 1800,
+      "Y": -100,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [],
+      "LabelOffsets": [
+        [
+          330,
+          -265
+        ]
       ]
     },
     {
@@ -273,6 +305,22 @@
           "ShowOnSchematic": false,
           "Dimension": "None"
         }
+      ]
+    },
+    {
+      "InstanceName": "I2",
+      "Symbol": "IProbe",
+      "X": 2800,
+      "Y": -100,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [],
+      "LabelOffsets": [
+        [
+          330,
+          -265
+        ]
       ]
     },
     {
@@ -395,7 +443,7 @@
         },
         {
           "Name": "PhaseNoise",
-          "Expression": "\u00221kHz:-75, 10kHz:-90, 100kHz:-100, 1MHz:-120, 10MHz:-140\u0022",
+          "Expression": "\u00221kHz:-95, 100kHz:-95, 1MHz:-115, 10MHz:-130, 30MHz:-140\u0022",
           "Unit": "",
           "ShowOnSchematic": false,
           "Dimension": "None"
@@ -405,6 +453,22 @@
         [
           285,
           -397
+        ]
+      ]
+    },
+    {
+      "InstanceName": "I3",
+      "Symbol": "IProbe",
+      "X": 5000,
+      "Y": -100,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [],
+      "LabelOffsets": [
+        [
+          330,
+          -265
         ]
       ]
     },
@@ -483,6 +547,22 @@
       ]
     },
     {
+      "InstanceName": "I4",
+      "Symbol": "IProbe",
+      "X": 5800,
+      "Y": -100,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [],
+      "LabelOffsets": [
+        [
+          330,
+          -265
+        ]
+      ]
+    },
+    {
       "InstanceName": "IFA",
       "Symbol": "Amp",
       "X": 6400,
@@ -519,6 +599,22 @@
           "ShowOnSchematic": false,
           "Dimension": "None"
         }
+      ]
+    },
+    {
+      "InstanceName": "I5",
+      "Symbol": "IProbe",
+      "X": 7000,
+      "Y": -100,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [],
+      "LabelOffsets": [
+        [
+          330,
+          -265
+        ]
       ]
     },
     {
@@ -650,7 +746,7 @@
       "InstanceName": "VAR1",
       "Symbol": "Var",
       "X": -600,
-      "Y": -1600,
+      "Y": -1500,
       "Rotation": "R0",
       "MirrorX": false,
       "Disable": "None",
@@ -682,6 +778,20 @@
           "Unit": "",
           "ShowOnSchematic": true,
           "Dimension": "None"
+        },
+        {
+          "Name": "rec",
+          "Expression": "1",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "nodeix",
+          "Expression": "0",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
         }
       ]
     },
@@ -689,14 +799,14 @@
       "InstanceName": "MEAS1",
       "Symbol": "Meas",
       "X": 1000,
-      "Y": -2000,
+      "Y": -4600,
       "Rotation": "R0",
       "MirrorX": false,
       "Disable": "None",
       "Parameters": [
         {
           "Name": "SNR_QAM_calc",
-          "Expression": "Pin \u002B 0 - -104.89425710572198",
+          "Expression": "-10*log10(10^(-(Pin \u002B 0 - -104.89425710572198)/10) \u002B 0.00011912958196122775)",
           "Unit": "",
           "ShowOnSchematic": true,
           "Dimension": "None"
@@ -710,42 +820,42 @@
         },
         {
           "Name": "EVM_QAM_sim",
-          "Expression": "ENVD.EVM_pct[:, \u0022Iout\u0022, 0]",
+          "Expression": "sqrt(mean_over((ENVD.EVM_pct[:, :, \u0022Iout\u0022, 0])^2, \u0022rec\u0022))",
           "Unit": "",
           "ShowOnSchematic": true,
           "Dimension": "None"
         },
         {
           "Name": "EVMdist_QAM",
-          "Expression": "ENVD.EVMdist_pct[:, \u0022Iout\u0022, 0]",
+          "Expression": "sqrt(mean_over((ENVD.EVMdist_pct[:, :, \u0022Iout\u0022, 0])^2, \u0022rec\u0022))",
           "Unit": "",
           "ShowOnSchematic": true,
           "Dimension": "None"
         },
         {
           "Name": "EVMnoise_QAM",
-          "Expression": "ENVD.EVMnoise_pct[:, \u0022Iout\u0022, 0]",
+          "Expression": "sqrt(mean_over((ENVD.EVMnoise_pct[:, :, \u0022Iout\u0022, 0])^2, \u0022rec\u0022))",
           "Unit": "",
           "ShowOnSchematic": true,
           "Dimension": "None"
         },
         {
           "Name": "SNR_QAM_sim",
-          "Expression": "ENVD.SNR_dB[:, \u0022Iout\u0022, 0]",
+          "Expression": "-10*log10(mean_over(10^(-(ENVD.SNR_dB[:, :, \u0022Iout\u0022, 0])/10), \u0022rec\u0022))",
           "Unit": "",
           "ShowOnSchematic": true,
           "Dimension": "None"
         },
         {
           "Name": "EVM_BPSK_sim",
-          "Expression": "ENVD.EVM_pct[:, \u0022Iout\u0022, 1]",
+          "Expression": "sqrt(mean_over((ENVD.EVM_pct[:, :, \u0022Iout\u0022, 1])^2, \u0022rec\u0022))",
           "Unit": "",
           "ShowOnSchematic": true,
           "Dimension": "None"
         },
         {
           "Name": "SNR_BPSK_sim",
-          "Expression": "ENVD.SNR_dB[:, \u0022Iout\u0022, 1]",
+          "Expression": "-10*log10(mean_over(10^(-(ENVD.SNR_dB[:, :, \u0022Iout\u0022, 1])/10), \u0022rec\u0022))",
           "Unit": "",
           "ShowOnSchematic": true,
           "Dimension": "None"
@@ -753,6 +863,286 @@
         {
           "Name": "SNR_QAM_err",
           "Expression": "SNR_QAM_sim - SNR_QAM_calc",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "SNR_QAM_spread",
+          "Expression": "std_over(ENVD.SNR_dB[:, :, \u0022Iout\u0022, 0], \u0022rec\u0022)/sqrt(4)",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "EVMn_0_sim",
+          "Expression": "sqrt(mean_over((at(ENVD.EVMnoise_pct[:, :, \u0022I0\u0022, 0], \u0022Pin\u0022, 3))^2, \u0022rec\u0022))",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "EVMn_0_calc",
+          "Expression": "0.25665332627824194",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "EVMn_0_err",
+          "Expression": "EVMn_0_sim - EVMn_0_calc",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "EVM_0_sim",
+          "Expression": "sqrt(mean_over((at(ENVD.EVM_pct[:, :, \u0022I0\u0022, 0], \u0022Pin\u0022, 3))^2, \u0022rec\u0022))",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "EVM_0_calc",
+          "Expression": "0.25665332627824194",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "EVMn_1_sim",
+          "Expression": "sqrt(mean_over((at(ENVD.EVMnoise_pct[:, :, \u0022I1\u0022, 0], \u0022Pin\u0022, 3))^2, \u0022rec\u0022))",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "EVMn_1_calc",
+          "Expression": "0.28796976844217104",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "EVMn_1_err",
+          "Expression": "EVMn_1_sim - EVMn_1_calc",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "EVM_1_sim",
+          "Expression": "sqrt(mean_over((at(ENVD.EVM_pct[:, :, \u0022I1\u0022, 0], \u0022Pin\u0022, 3))^2, \u0022rec\u0022))",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "EVM_1_calc",
+          "Expression": "0.28797004295436246",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "EVMn_2_sim",
+          "Expression": "sqrt(mean_over((at(ENVD.EVMnoise_pct[:, :, \u0022I2\u0022, 0], \u0022Pin\u0022, 3))^2, \u0022rec\u0022))",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "EVMn_2_calc",
+          "Expression": "0.28915250885137034",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "EVMn_2_err",
+          "Expression": "EVMn_2_sim - EVMn_2_calc",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "EVM_2_sim",
+          "Expression": "sqrt(mean_over((at(ENVD.EVM_pct[:, :, \u0022I2\u0022, 0], \u0022Pin\u0022, 3))^2, \u0022rec\u0022))",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "EVM_2_calc",
+          "Expression": "0.28915278224070673",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "EVMn_3_sim",
+          "Expression": "sqrt(mean_over((at(ENVD.EVMnoise_pct[:, :, \u0022I3\u0022, 0], \u0022Pin\u0022, 3))^2, \u0022rec\u0022))",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "EVMn_3_calc",
+          "Expression": "1.1332614420481275",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "EVMn_3_err",
+          "Expression": "EVMn_3_sim - EVMn_3_calc",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "EVM_3_sim",
+          "Expression": "sqrt(mean_over((at(ENVD.EVM_pct[:, :, \u0022I3\u0022, 0], \u0022Pin\u0022, 3))^2, \u0022rec\u0022))",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "EVM_3_calc",
+          "Expression": "1.1332621737355668",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "EVMn_4_sim",
+          "Expression": "sqrt(mean_over((at(ENVD.EVMnoise_pct[:, :, \u0022I4\u0022, 0], \u0022Pin\u0022, 3))^2, \u0022rec\u0022))",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "EVMn_4_calc",
+          "Expression": "1.1345988139050853",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "EVMn_4_err",
+          "Expression": "EVMn_4_sim - EVMn_4_calc",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "EVM_4_sim",
+          "Expression": "sqrt(mean_over((at(ENVD.EVM_pct[:, :, \u0022I4\u0022, 0], \u0022Pin\u0022, 3))^2, \u0022rec\u0022))",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "EVM_4_calc",
+          "Expression": "1.1345995447300723",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "EVMn_5_sim",
+          "Expression": "sqrt(mean_over((at(ENVD.EVMnoise_pct[:, :, \u0022I5\u0022, 0], \u0022Pin\u0022, 3))^2, \u0022rec\u0022))",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "EVMn_5_calc",
+          "Expression": "1.1443818201126725",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "EVMn_5_err",
+          "Expression": "EVMn_5_sim - EVMn_5_calc",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "EVM_5_sim",
+          "Expression": "sqrt(mean_over((at(ENVD.EVM_pct[:, :, \u0022I5\u0022, 0], \u0022Pin\u0022, 3))^2, \u0022rec\u0022))",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "EVM_5_calc",
+          "Expression": "1.144383133696666",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "EVMn_6_sim",
+          "Expression": "sqrt(mean_over((at(ENVD.EVMnoise_pct[:, :, \u0022Iout\u0022, 0], \u0022Pin\u0022, 3))^2, \u0022rec\u0022))",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "EVMn_6_calc",
+          "Expression": "1.1444459437636392",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "EVMn_6_err",
+          "Expression": "EVMn_6_sim - EVMn_6_calc",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "EVM_6_sim",
+          "Expression": "sqrt(mean_over((at(ENVD.EVM_pct[:, :, \u0022Iout\u0022, 0], \u0022Pin\u0022, 3))^2, \u0022rec\u0022))",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "EVM_6_calc",
+          "Expression": "1.1444472572740323",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "EVMn_node_sim",
+          "Expression": "(EVMn_0_sim)*(nodeix - 1)*(nodeix - 2)*(nodeix - 3)*(nodeix - 4)*(nodeix - 5)*(nodeix - 6)/720 \u002B (EVMn_1_sim)*(nodeix - 0)*(nodeix - 2)*(nodeix - 3)*(nodeix - 4)*(nodeix - 5)*(nodeix - 6)/-120 \u002B (EVMn_2_sim)*(nodeix - 0)*(nodeix - 1)*(nodeix - 3)*(nodeix - 4)*(nodeix - 5)*(nodeix - 6)/48 \u002B (EVMn_3_sim)*(nodeix - 0)*(nodeix - 1)*(nodeix - 2)*(nodeix - 4)*(nodeix - 5)*(nodeix - 6)/-36 \u002B (EVMn_4_sim)*(nodeix - 0)*(nodeix - 1)*(nodeix - 2)*(nodeix - 3)*(nodeix - 5)*(nodeix - 6)/48 \u002B (EVMn_5_sim)*(nodeix - 0)*(nodeix - 1)*(nodeix - 2)*(nodeix - 3)*(nodeix - 4)*(nodeix - 6)/-120 \u002B (EVMn_6_sim)*(nodeix - 0)*(nodeix - 1)*(nodeix - 2)*(nodeix - 3)*(nodeix - 4)*(nodeix - 5)/720",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "EVMn_node_calc",
+          "Expression": "(EVMn_0_calc)*(nodeix - 1)*(nodeix - 2)*(nodeix - 3)*(nodeix - 4)*(nodeix - 5)*(nodeix - 6)/720 \u002B (EVMn_1_calc)*(nodeix - 0)*(nodeix - 2)*(nodeix - 3)*(nodeix - 4)*(nodeix - 5)*(nodeix - 6)/-120 \u002B (EVMn_2_calc)*(nodeix - 0)*(nodeix - 1)*(nodeix - 3)*(nodeix - 4)*(nodeix - 5)*(nodeix - 6)/48 \u002B (EVMn_3_calc)*(nodeix - 0)*(nodeix - 1)*(nodeix - 2)*(nodeix - 4)*(nodeix - 5)*(nodeix - 6)/-36 \u002B (EVMn_4_calc)*(nodeix - 0)*(nodeix - 1)*(nodeix - 2)*(nodeix - 3)*(nodeix - 5)*(nodeix - 6)/48 \u002B (EVMn_5_calc)*(nodeix - 0)*(nodeix - 1)*(nodeix - 2)*(nodeix - 3)*(nodeix - 4)*(nodeix - 6)/-120 \u002B (EVMn_6_calc)*(nodeix - 0)*(nodeix - 1)*(nodeix - 2)*(nodeix - 3)*(nodeix - 4)*(nodeix - 5)/720",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "EVM_node_sim",
+          "Expression": "(EVM_0_sim)*(nodeix - 1)*(nodeix - 2)*(nodeix - 3)*(nodeix - 4)*(nodeix - 5)*(nodeix - 6)/720 \u002B (EVM_1_sim)*(nodeix - 0)*(nodeix - 2)*(nodeix - 3)*(nodeix - 4)*(nodeix - 5)*(nodeix - 6)/-120 \u002B (EVM_2_sim)*(nodeix - 0)*(nodeix - 1)*(nodeix - 3)*(nodeix - 4)*(nodeix - 5)*(nodeix - 6)/48 \u002B (EVM_3_sim)*(nodeix - 0)*(nodeix - 1)*(nodeix - 2)*(nodeix - 4)*(nodeix - 5)*(nodeix - 6)/-36 \u002B (EVM_4_sim)*(nodeix - 0)*(nodeix - 1)*(nodeix - 2)*(nodeix - 3)*(nodeix - 5)*(nodeix - 6)/48 \u002B (EVM_5_sim)*(nodeix - 0)*(nodeix - 1)*(nodeix - 2)*(nodeix - 3)*(nodeix - 4)*(nodeix - 6)/-120 \u002B (EVM_6_sim)*(nodeix - 0)*(nodeix - 1)*(nodeix - 2)*(nodeix - 3)*(nodeix - 4)*(nodeix - 5)/720",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "EVM_node_calc",
+          "Expression": "(EVM_0_calc)*(nodeix - 1)*(nodeix - 2)*(nodeix - 3)*(nodeix - 4)*(nodeix - 5)*(nodeix - 6)/720 \u002B (EVM_1_calc)*(nodeix - 0)*(nodeix - 2)*(nodeix - 3)*(nodeix - 4)*(nodeix - 5)*(nodeix - 6)/-120 \u002B (EVM_2_calc)*(nodeix - 0)*(nodeix - 1)*(nodeix - 3)*(nodeix - 4)*(nodeix - 5)*(nodeix - 6)/48 \u002B (EVM_3_calc)*(nodeix - 0)*(nodeix - 1)*(nodeix - 2)*(nodeix - 4)*(nodeix - 5)*(nodeix - 6)/-36 \u002B (EVM_4_calc)*(nodeix - 0)*(nodeix - 1)*(nodeix - 2)*(nodeix - 3)*(nodeix - 5)*(nodeix - 6)/48 \u002B (EVM_5_calc)*(nodeix - 0)*(nodeix - 1)*(nodeix - 2)*(nodeix - 3)*(nodeix - 4)*(nodeix - 6)/-120 \u002B (EVM_6_calc)*(nodeix - 0)*(nodeix - 1)*(nodeix - 2)*(nodeix - 3)*(nodeix - 4)*(nodeix - 5)/720",
           "Unit": "",
           "ShowOnSchematic": true,
           "Dimension": "None"
@@ -802,6 +1192,14 @@
         [
           800,
           0
+        ]
+      ]
+    },
+    {
+      "Points": [
+        [
+          900,
+          0
         ],
         [
           1000,
@@ -812,62 +1210,6 @@
     {
       "Points": [
         [
-          -600,
-          400
-        ],
-        [
-          -600,
-          200
-        ],
-        [
-          -900,
-          200
-        ],
-        [
-          -900,
-          -600
-        ],
-        [
-          700,
-          -600
-        ],
-        [
-          700,
-          100
-        ],
-        [
-          500,
-          100
-        ]
-      ]
-    },
-    {
-      "Points": [
-        [
-          -600,
-          -400
-        ],
-        [
-          -600,
-          -700
-        ],
-        [
-          800,
-          -700
-        ],
-        [
-          800,
-          -100
-        ],
-        [
-          500,
-          -100
-        ]
-      ]
-    },
-    {
-      "Points": [
-        [
           8400,
           0
         ],
@@ -896,7 +1238,7 @@
     {
       "Points": [
         [
-          6700,
+          7100,
           0
         ],
         [
@@ -908,31 +1250,7 @@
     {
       "Points": [
         [
-          5600,
-          0
-        ],
-        [
-          6100,
-          0
-        ]
-      ]
-    },
-    {
-      "Points": [
-        [
-          1600,
-          0
-        ],
-        [
-          2100,
-          0
-        ]
-      ]
-    },
-    {
-      "Points": [
-        [
-          4700,
+          5100,
           0
         ],
         [
@@ -944,7 +1262,7 @@
     {
       "Points": [
         [
-          2500,
+          2900,
           0
         ],
         [
@@ -992,6 +1310,42 @@
   ],
   "NetLabels": [
     {
+      "X": 500,
+      "Y": 100,
+      "Name": "in_b",
+      "SegmentIndex": 0,
+      "AlongT": 0,
+      "OffsetX": 0,
+      "OffsetY": 0
+    },
+    {
+      "X": -600,
+      "Y": 400,
+      "Name": "in_b",
+      "SegmentIndex": 0,
+      "AlongT": 0,
+      "OffsetX": 0,
+      "OffsetY": 0
+    },
+    {
+      "X": 500,
+      "Y": -100,
+      "Name": "in_q",
+      "SegmentIndex": 0,
+      "AlongT": 0,
+      "OffsetX": 0,
+      "OffsetY": 0
+    },
+    {
+      "X": -600,
+      "Y": -400,
+      "Name": "in_q",
+      "SegmentIndex": 0,
+      "AlongT": 0,
+      "OffsetX": 0,
+      "OffsetY": 0
+    },
+    {
       "X": 4400,
       "Y": 700,
       "Name": "lo_MIX",
@@ -1010,22 +1364,128 @@
       "OffsetY": 0
     },
     {
-      "X": 100,
-      "Y": -700,
-      "Name": "in_q",
-      "OwnerWireIndex": 3,
-      "SegmentIndex": 1,
-      "AlongT": 0.5,
+      "X": 7000,
+      "Y": 0,
+      "Name": "n_IFA",
+      "SegmentIndex": 0,
+      "AlongT": 0,
       "OffsetX": 0,
       "OffsetY": 0
     },
     {
-      "X": -100,
-      "Y": -600,
-      "Name": "in_b",
-      "OwnerWireIndex": 2,
-      "SegmentIndex": 3,
-      "AlongT": 0.5,
+      "X": 6700,
+      "Y": 0,
+      "Name": "n_IFA",
+      "SegmentIndex": 0,
+      "AlongT": 0,
+      "OffsetX": 0,
+      "OffsetY": 0
+    },
+    {
+      "X": 5800,
+      "Y": 0,
+      "Name": "n_IFBPF",
+      "SegmentIndex": 0,
+      "AlongT": 0,
+      "OffsetX": 0,
+      "OffsetY": 0
+    },
+    {
+      "X": 5600,
+      "Y": 0,
+      "Name": "n_IFBPF",
+      "SegmentIndex": 0,
+      "AlongT": 0,
+      "OffsetX": 0,
+      "OffsetY": 0
+    },
+    {
+      "X": 6100,
+      "Y": 0,
+      "Name": "n_IFBPF_i",
+      "SegmentIndex": 0,
+      "AlongT": 0,
+      "OffsetX": 0,
+      "OffsetY": 0
+    },
+    {
+      "X": 5900,
+      "Y": 0,
+      "Name": "n_IFBPF_i",
+      "SegmentIndex": 0,
+      "AlongT": 0,
+      "OffsetX": 0,
+      "OffsetY": 0
+    },
+    {
+      "X": 1800,
+      "Y": 0,
+      "Name": "n_LNA",
+      "SegmentIndex": 0,
+      "AlongT": 0,
+      "OffsetX": 0,
+      "OffsetY": 0
+    },
+    {
+      "X": 1600,
+      "Y": 0,
+      "Name": "n_LNA",
+      "SegmentIndex": 0,
+      "AlongT": 0,
+      "OffsetX": 0,
+      "OffsetY": 0
+    },
+    {
+      "X": 2100,
+      "Y": 0,
+      "Name": "n_LNA_i",
+      "SegmentIndex": 0,
+      "AlongT": 0,
+      "OffsetX": 0,
+      "OffsetY": 0
+    },
+    {
+      "X": 1900,
+      "Y": 0,
+      "Name": "n_LNA_i",
+      "SegmentIndex": 0,
+      "AlongT": 0,
+      "OffsetX": 0,
+      "OffsetY": 0
+    },
+    {
+      "X": 5000,
+      "Y": 0,
+      "Name": "n_MIX",
+      "SegmentIndex": 0,
+      "AlongT": 0,
+      "OffsetX": 0,
+      "OffsetY": 0
+    },
+    {
+      "X": 4700,
+      "Y": 0,
+      "Name": "n_MIX",
+      "SegmentIndex": 0,
+      "AlongT": 0,
+      "OffsetX": 0,
+      "OffsetY": 0
+    },
+    {
+      "X": 2800,
+      "Y": 0,
+      "Name": "n_RFBPF",
+      "SegmentIndex": 0,
+      "AlongT": 0,
+      "OffsetX": 0,
+      "OffsetY": 0
+    },
+    {
+      "X": 2500,
+      "Y": 0,
+      "Name": "n_RFBPF",
+      "SegmentIndex": 0,
+      "AlongT": 0,
       "OffsetX": 0,
       "OffsetY": 0
     },
@@ -1040,30 +1500,30 @@
       "OffsetY": 0
     },
     {
-      "X": 1800,
+      "X": 950,
       "Y": 0,
-      "Name": "n_LNA",
-      "OwnerWireIndex": 7,
+      "Name": "in_i",
+      "OwnerWireIndex": 2,
       "SegmentIndex": 0,
-      "AlongT": 0.4,
+      "AlongT": 0.5,
       "OffsetX": 0,
       "OffsetY": 0
     },
     {
-      "X": 2700,
+      "X": 2950,
       "Y": 0,
-      "Name": "n_RFBPF",
-      "OwnerWireIndex": 9,
+      "Name": "n_RFBPF_i",
+      "OwnerWireIndex": 6,
       "SegmentIndex": 0,
-      "AlongT": 0.4,
+      "AlongT": 0.5,
       "OffsetX": 0,
       "OffsetY": 0
     },
     {
       "X": 3800,
       "Y": 0,
-      "Name": "n_RFBPF_rf",
-      "OwnerWireIndex": 10,
+      "Name": "n_RFBPF_i_rf",
+      "OwnerWireIndex": 7,
       "SegmentIndex": 0,
       "AlongT": 0.4,
       "OffsetX": 0,
@@ -1080,32 +1540,22 @@
       "OffsetY": 0
     },
     {
-      "X": 4900,
+      "X": 5150,
       "Y": 0,
-      "Name": "n_MIX",
-      "OwnerWireIndex": 8,
-      "SegmentIndex": 0,
-      "AlongT": 0.4,
-      "OffsetX": 0,
-      "OffsetY": 0
-    },
-    {
-      "X": 5800,
-      "Y": 0,
-      "Name": "n_IFBPF",
-      "OwnerWireIndex": 6,
-      "SegmentIndex": 0,
-      "AlongT": 0.4,
-      "OffsetX": 0,
-      "OffsetY": 0
-    },
-    {
-      "X": 6900,
-      "Y": 0,
-      "Name": "n_IFA",
+      "Name": "n_MIX_i",
       "OwnerWireIndex": 5,
       "SegmentIndex": 0,
-      "AlongT": 0.4,
+      "AlongT": 0.5,
+      "OffsetX": 0,
+      "OffsetY": 0
+    },
+    {
+      "X": 7150,
+      "Y": 0,
+      "Name": "n_IFA_i",
+      "OwnerWireIndex": 4,
+      "SegmentIndex": 0,
+      "AlongT": 0.5,
       "OffsetX": 0,
       "OffsetY": 0
     },
@@ -1113,7 +1563,7 @@
       "X": 8100,
       "Y": 300,
       "Name": "out",
-      "OwnerWireIndex": 11,
+      "OwnerWireIndex": 8,
       "SegmentIndex": 2,
       "AlongT": 0.3333333333333333,
       "OffsetX": 0,
@@ -1123,7 +1573,7 @@
       "X": 8500,
       "Y": -400,
       "Name": "load",
-      "OwnerWireIndex": 4,
+      "OwnerWireIndex": 3,
       "SegmentIndex": 3,
       "AlongT": 0.5,
       "OffsetX": 0,
@@ -1153,6 +1603,7 @@
       "EnvStart": "0",
       "EnvSaveWaveforms": "no",
       "EnvNoise": "yes",
+      "EnvSeedPerPoint": "yes",
       "EnvEvmSplit": "yes"
     },
     {
@@ -1170,6 +1621,40 @@
         -11.36
       ],
       "PsaInnerName": "ENVD"
+    },
+    {
+      "Type": "sweep",
+      "Name": "SWREC",
+      "Enabled": true,
+      "PsaVarName": "rec",
+      "PsaValues": [
+        1,
+        2,
+        3,
+        4
+      ],
+      "PsaInnerName": "SWPIN"
+    },
+    {
+      "Type": "dc",
+      "Name": "DCN",
+      "Enabled": true
+    },
+    {
+      "Type": "sweep",
+      "Name": "SWN",
+      "Enabled": true,
+      "PsaVarName": "nodeix",
+      "PsaValues": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6
+      ],
+      "PsaInnerName": "DCN"
     }
   ]
 }
