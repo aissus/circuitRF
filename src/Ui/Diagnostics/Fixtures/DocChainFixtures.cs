@@ -25,6 +25,10 @@ public static class DocChainFixtures
     /// <summary>The 26 GHz link with the Blocks view's Levels strip on: the link's front, an array and a conversion.</summary>
     public static FigureScene Levels() => Window("26 GHz Link", levels: true);
 
+    /// <summary>The example's front end on its Canceller tab: the depth against its settings with its own IM3's floor,
+    /// the residual through the stages after it, and Tune canceller.</summary>
+    public static FigureScene Canceller() => Window("Front End", "Canceller");
+
     private static FigureScene Window(string chain, string? tab = null, bool levels = false)
     {
         string root = ExampleWorkspaces.ResolveRoot()

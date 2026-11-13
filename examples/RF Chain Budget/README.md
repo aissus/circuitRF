@@ -12,7 +12,8 @@ Four receive chains at 2.45 GHz, in the same 4.5 MHz bandwidth, each already tra
    composed of the library's own parts, an amplifier and a line.
 3. **`Front End.cchain`**: a canceller in front of an LNA, a filter and a second amplifier. The canceller subtracts a
    copy of a −40 dBm interference, 20 dB over the wanted signal, through a 10 dB coupler, with 0.02 dB, 0.2° and 0.05 ns
-   of error in its reference path: 47 dB of depth.
+   of error in its reference path, whose amplifier has an output intercept of −5 dBm: 42.9 dB of depth. See
+   [The front end's canceller](#the-front-ends-canceller).
 4. **`Dual Conversion.cchain`**: the superhet's front end to a 350 MHz first IF, then a roofing filter, an IF amplifier,
    an image filter and a second mixer to a 21.4 MHz second IF, an IF filter and an amplifier. Two mixers are more than
    one simulation run holds, so most of its benches are written once per conversion (below).
@@ -212,7 +213,11 @@ a carrier's SNR and EVM.
   interference (10, 5 and 20 MHz), each from a MOD_Source the Signal Designer edits. Its display: the depth against the
   phase error, the amplitude error and the delay mismatch at each interference carrier, simulated beside the closed form;
   the wanted carriers' EVM and SNR, and their constellations, with and without cancellation. Set `phase_err` or
-  `delay_err` in its VAR block and Simulate again.
+  `delay_err` in its VAR block and Simulate again. Beside them, apart, its harmonic-balance part: the canceller again,
+  its reference path with its intercept, and the LNA, filter and AMP2 after it, from two interference tones and a wanted
+  one. Its display: each tone's residual and the canceller's own IM3 beside their closed forms, and over steps of the
+  amplitude error the IM3, the residual's products with the signal and the signal's compression at AMP2's output. It
+  carries the tune and goal lines of [Tune canceller](#the-front-ends-canceller).
 - **`Superhet Demo`**: the superhet demodulated end to end, NR 64-QAM and DBPSK, the LO with a phase-noise mask, the input
   power swept from noise-limited to compression-limited: the constellation, the EVM beside the budget's 1/√SNR, and its
   noise and distortion parts.
@@ -230,6 +235,35 @@ The 26 GHz link's starts in front of its input: the 16 transmit elements' EIRP, 
 receive element gets, and the receiver's ceiling, 14 dB above it. Up to the combiner the levels are one element's.
 
 ![The 26 GHz link's level diagram: the EIRP, the path loss and the ceiling left of the input, then each element's levels up to the combiner and the array's after it, and the conversion to 3 GHz](pictures/level-diagram-link.png)
+
+## The front end's canceller
+
+The canceller's reference path is an amplifier with the Tanh law, its output intercept −5 dBm. It sends each interference
+tone at −30.44 dBm, 25 dB under that, and compresses it 0.07 dB: an amplitude error of its own, which with the stated
+0.02 dB leaves 42.9 dB of depth, where the errors alone would leave 47.4. Its own IM3, −91.68 dBm each product at its
+output, is 8.1 dB under the residual of −83.57 dBm, and the subtraction does not take it out: no setting of the canceller
+tunes the residual under it. The Notes say both. Through the LNA, the filter and AMP2 the residual and the canceller's
+IM3 rise with the gain, to −52.6 and −60.7 dBm at the output; the residual's own IM3 there, its products with the signal
+and its compression of the signal (7×10⁻⁷ dB) are far under anything that matters at these levels. The level diagram
+draws the canceller's IM3 dashed under the residual:
+
+![The front end's level diagram: the interference at −40 dBm at the input and its residual after the canceller, the canceller's own IM3 dashed under it, both rising with the gain to the output, under the signal](pictures/level-diagram-front-end.png)
+
+**Tune it.** The Canceller tab's **Tune canceller** runs the optimizer on the Canceller bench's harmonic-balance part
+from the canceller's own settings, for the residual 20 dB under that IM3: −111.52 dBm a tone. From 0.02 dB, 0.2° and
+0.05 ns it takes 42 harmonic-balance runs to 0.0739 dB, −0.006° and −0.011 ns, the residual from −83.65 to −112.91 dBm.
+The amplitude is the one that takes the compression back, 0.0748 dB in closed form, and the phase and the delay go to
+nothing. **Write into the chain** puts the three into the canceller as one step, which Undo takes back; the budget then
+reads 72.1 dB of depth and the canceller's own IM3 21.3 dB over the residual. The same from the command line:
+
+```text
+circuitrf chain "Front End.cchain" --tune-canceller --apply
+```
+
+From a deliberately bad start, 1 dB, 10° and 0.5 ns off, it takes 94 runs to 0.0756 dB, 0.0009° and 0.0018 ns, the
+residual from −54.09 to −121.14 dBm. Set the canceller's `IP3` to −15 dBm: it compresses 0.68 dB, the depth falls to
+22.8 dB, and the Notes say AmpErr 0.789 dB takes it back, its own IM3 now 18 dB higher. Clear it, and the canceller is
+linear again.
 
 ## Two conversions
 
@@ -339,8 +373,9 @@ NF and array gain at each peak, like every variant's gain and NF on the Combiner
 of ideal blocks has no drive level to differ by.
 
 The superhet's levels sit on the budget to 2×10⁻⁵ dB (signal) and 8×10⁻⁵ dB (IM3) at every node, its blockers 0.001 to
-0.003 dB under it, the blockers' own slight compression. The canceller's depth is the closed form's to 1.4 % of the
-depth at every carrier and error, and cancelling takes the 64-QAM carrier's EVM from 840 % to 3.2 %. The demo's SNR is
+0.003 dB under it, the blockers' own slight compression. The canceller's depth is the closed form's to 1.2 % of the
+depth at every carrier and error, and cancelling takes the 64-QAM carrier's EVM from 799 % to 3.2 %. Its
+harmonic-balance part reads each tone's residual and its own IM3 0.002 to 0.004 dB off the closed forms. The demo's SNR is
 the budget's to 0.2 dB where noise dominates; above that the LO's phase noise holds the EVM at 1.2 % until compression.
 
 The dual-conversion receiver, each conversion against its own budget:
@@ -375,4 +410,5 @@ factor of 1.41, the load's own noise, which the budget leaves out, is an eighth 
 The link's harmonic-balance and envelope benches are slow for their eight elements, each a source of its own, and the
 envelope one for its 50 MHz NR carrier, ten times the others' (measured on a loaded machine).
 
-The Front End's Canceller bench runs its envelope sweeps in about 40 s.
+The Front End's Canceller bench runs its envelope sweeps in about 40 s, and its harmonic-balance part in about a
+minute more.

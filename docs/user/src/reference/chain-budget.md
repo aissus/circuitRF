@@ -4,7 +4,7 @@ slug: reference/chain-budget.html
 doc-kind: Reference Guide
 breadcrumb: Docs > Reference > RF Chain Budget
 lede: A receive or transmit chain stage by stage, each stage a System block with its own parameters - gain, noise figure, intercepts, compression, sensitivity and dynamic range in closed form, an N-way array included, or a transmitter's output power, back-off, ACLR and noise floor - and one action that writes the chain as test benches whose simulations put a number beside every one of them.
-keywords: chain budget, link budget, cascade, EIRP, free-space path loss, atmospheric attenuation, Shannon capacity, data rate, fractional bandwidth, energy per bit, DC power, PAE, back-off, frequency-scalable, frequency sweep, stage count, NF allowance, n258, receiver, Friis, noise figure, cascaded IP3, IIP3, OIP3, P1dB, sensitivity, MDS, noise floor, SFDR, SNR, phased array, array gain, array factor, beam steering, taper, combiner, combining tree, active combiner, Wilkinson, phase shifter, limiter, splitter, superhet, dual conversion, second IF, image rejection, levels, blocker, IM3, canceller, cancellation depth, EVM, constellation, demodulation, transmit chain, transmitter, up-conversion, sideband, IQ modulator, LO feedthrough, power amplifier, PA, Psat, ACLR, ACPR, AM-AM, AM-PM, Rapp, Saleh, bandpass nonlinearity, receive band, .cchain
+keywords: chain budget, link budget, cascade, EIRP, free-space path loss, atmospheric attenuation, Shannon capacity, data rate, fractional bandwidth, energy per bit, DC power, PAE, back-off, frequency-scalable, frequency sweep, stage count, NF allowance, n258, receiver, Friis, noise figure, cascaded IP3, IIP3, OIP3, P1dB, sensitivity, MDS, noise floor, SFDR, SNR, phased array, array gain, array factor, beam steering, taper, combiner, combining tree, active combiner, Wilkinson, phase shifter, limiter, splitter, superhet, dual conversion, second IF, image rejection, levels, blocker, IM3, canceller, cancellation depth, canceller IP3, canceller tuning, EVM, constellation, demodulation, transmit chain, transmitter, up-conversion, sideband, IQ modulator, LO feedthrough, power amplifier, PA, Psat, ACLR, ACPR, AM-AM, AM-PM, Rapp, Saleh, bandpass nonlinearity, receive band, .cchain
 ---
 
 <nav class="toc">
@@ -138,7 +138,7 @@ is **data**: an [S-parameter data](#snp) stage is a Touchstone file.
 | Directional coupler (`Coupler`) | Its through arm, the coupled and isolated ports terminated. | G = 10·log10(1 − 10^(−`Coupling`/10)) − `IL`, NF = −G |
 | Phase shifter (composed) | An Amplifier of gain −`IL` with `NF` and `IIP3`, and a TLIN of electrical length `Phase`. | G = −`IL`, NF = `NF` (blank: `IL`), IIP3 = `IIP3` (blank: linear) |
 | Limiter (composed) | An Amplifier of gain −`IL`, NF = `IL`, whose intercept puts its input 1 dB compression point at `P1dB`. | G = −`IL`, NF = `IL`, IP1dB = `P1dB` |
-| Canceller (composed) | A Directional Coupler whose isolated port takes a reference path that subtracts a copy of an interference from the main path. See [The canceller](#canceller). | G = −(`IL` − 10·log10(1 − c)), NF from the reference path's noise |
+| Canceller (composed) | A Directional Coupler whose isolated port takes a reference path that subtracts a copy of an interference from the main path; with an `IP3`, the reference path compresses and adds an IM3 of its own. See [The canceller](#canceller). | G = −(`IL` − 10·log10(1 − c)), NF from the reference path's noise |
 | N-way splitter | The [Combiner](system-components.html#combiner) from its common port, one output followed and the others terminated. | G = −(10·log10 N + `IL`), NF = −G |
 | S-parameter data (`SnP`) | A Touchstone file on the [SnP](components.html#snp) block, read from port `In` to port `Out`. See [S-parameter data](#snp). | G = \|S(`Out`,`In`)\|² at the stage's frequency; NF from the file's noise data, or its own loss when passive; `NF` and `IIP3` when stated |
 | N-way array combiner | The [Combiner](system-components.html#combiner), every input an element's branch: one N:1, or a tree of 2:1s, passive or active. See [Arrays](#array) and [the variants](#variants). | Direct, passive: signal +10·log10 N − `IL`, noise −`IL`, NF = `IL` |
@@ -543,7 +543,7 @@ with more than one mixer gets most of them once per [conversion](#conversions):
 | `<chain> Combiners` | the same elements into each of the four [variants](#variants), each fed by its own wave at broadside | one S-parameter run with `Noise=yes` | each variant's gain and NF, beside its budget, intercepts and array gain |
 | `<chain> Levels` | a PnTone per element, two tones 1 MHz apart, each at the input power | multi-tone harmonic balance, on the 2-Tone bench's mixing order | the signal and its IM3 at every node. See [Levels](#levels) |
 | `<chain> Blockers` | a PnTone per element with every blocker, an isolator after every stage | harmonic balance | every blocker at every node |
-| `<chain> Canceller` | the canceller on its own: a wanted signal and an interference from MOD_Sources | envelope runs, swept | the depth against each error, the wanted signal's EVM, SNR and constellation with and without cancellation. See [The canceller](#canceller) |
+| `<chain> Canceller` | the canceller on its own: a wanted signal and an interference from MOD_Sources; and beside it the canceller again, with the stages after it, from PnTones | envelope runs, swept; harmonic balance at its settings and over steps of its amplitude error | the depth against each error, the wanted signal's EVM, SNR and constellation with and without cancellation; each tone's residual, the canceller's own IM3, and after it the IM3, the residual's products with the signal and the signal's compression. It carries [Tune canceller](#tune-canceller)'s tune and goal lines. See [The canceller](#canceller) |
 | `<chain> Demo` | a MOD_Source of NR 64-QAM and one of DBPSK per element; the LO with a phase-noise mask | envelope with `Noise=yes` and `EvmSplit=yes`, the input power swept | the constellation, the EVM against the input power, its noise and distortion parts. See [The demo](#demo) |
 | `<chain> TX` | a chain with a [link](#link): one transmit element's PA, an NR 64-QAM carrier from a MOD_Source, through its `Loss` | envelope, swept over the back-off from `Psat` | the output against the budget's Pout − Loss, the EVM and the adjacent-channel ratios. See [The TX bench](#tx) |
 
@@ -692,7 +692,7 @@ stage k. At every node:
 | IM3 | 3·P − 2·OIP3, each third-order product of the two tones, absolute |
 | Each blocker | its input level plus every stage's gain at its own frequency: a filter's own response there (the model the Filter block simulates with, its IL included), an S-parameter data stage's file there, a mixer moving it to \|f − Flo\| |
 | A canceller's interference | from the canceller's input, where it is stated, and its residual after it |
-| Margin to compression | OP1dB − the larger of the signal and the blockers; before anything compresses, the whole chain's IP1dB less the input's |
+| Margin to compression | OP1dB − the largest of the signal, the blockers and a canceller's residual; before anything compresses, the whole chain's IP1dB less the input's |
 | SNR | the signal over the noise floor |
 
 The simulated points come from three benches: the **Levels** bench (two tones each at the input power: the signal and
@@ -727,6 +727,7 @@ At every node, in dBm:
 | P1dB | the OP1dB of the stages up to the node, from the first stage that compresses, its value written at each node |
 | IM3 | each third-order product of two tones at the input power, from the first stage that has an intercept |
 | each blocker, the interference | as in the table above |
+| canceller IM3 | a canceller's own IM3, dashed in the interference's colour, from its output on: the floor no setting of it tunes under |
 
 Shaded between them: the **SNR**, from the noise floor up to the signal; the **headroom**, from the signal up to the
 P1dB; and, hatched, the **SFDR**, from the noise floor up to where the IM3 would reach it, (2/3)·(OIP3 − noise). The key
@@ -766,6 +767,7 @@ isolated port, the main path being the coupler's through arm.
 | `Pref` | The reference input: the interference at its source, dBm. The path's gain follows from it. |
 | `NFref` | The reference path's noise figure, dB. Blank: passive, at T0. |
 | `AmpErr`, `PhaseErr`, `DelayErr` | The cancellation path's amplitude error (dB), phase error (degrees, an advance) and delay mismatch (the reference path later, seconds: `0.1 ns`). |
+| `IP3` | The reference path's output intercept, dBm, at the coupler's isolated port: its amplitude setting is an Amplifier with the Tanh law, its 1 dB compression point 9.96 dB under it at the output. Blank: linear. |
 
 **On the wanted signal** it is the through arm, a loss L_t = 10^(`IL`/10)/(1 − c), and the noise the reference path
 injects. That path needs a gain G_ref with G_ref·P_ref·c = P_int·(1 − c); its output is at T0·F_ref·G_ref, coupled by
@@ -789,6 +791,67 @@ R = 1 + a² − 2a·cos(φ − 2πντ)·sinc(πBτ),      sinc x = sin x / x,  
 40 MHz. The window's **Canceller** tab draws the depth against the phase error for five amplitude errors, and against the
 bandwidth for four delay mismatches. The levels carry the interference and its residual node by node.
 
+### Its nonlinearity {#canceller-nl}
+
+With an `IP3` the reference path is nonlinear; the main path, a coupler, stays linear, so the wanted signal's gain, NF
+and intercepts do not change. The interference is taken as two tones each at `Pint`, as the levels take the signal as two
+tones each at the input power. The reference path's output per tone, the level that cancels, is
+P_ro = `Pint` + 10·log10((1 − c)/c) + `AmpErr`, at a share y = P_ro/OIP3 of its intercept, and the Tanh law's two-tone
+expansion to fifth order gives
+
+```
+each tone's gain        g = 1 − 3y + (40/3)·y²
+its own IM3             3·P_ro − 2·OIP3 + 20·log10(1 − (20/3)·y) + 10·log10(c) − IL     (each product, at the output)
+the residual            R as above, with the amplitude a·g in place of a
+```
+
+The compression is an amplitude error of the reference path's own, which a setting can take back: `AmpErr` with
+a·g(a²·y₀) = 1. The own IM3 is not in the leak, so the subtraction leaves it; it is the floor no setting tunes under.
+The window's notes say both — how far the reference path compresses and the `AmpErr` that takes it back, and whether
+its own IM3 sits under the residual (the settings set what is left) or over it (the intercept does) — and so do the
+`chain` verb's report and its DataSet (`CancComp_dB`, `CancAmpNull_dB`, `CancIM3_dBm`). The series is the law's to
+2×10⁻⁵ dB in gain and 0.003 dB in IM3 at 25 dB under the intercept; past 13 dB under it the notes say the series no longer
+reads the law.
+
+**Through the stages after it** the residual is a carrier of its own, two tones at its level, and the budget carries it
+through each later stage's nonlinearity, a cubic's as the cascade's intercept sums are, OIP3′ being the intercept of the
+stages from the canceller's output to the node:
+
+| At each node after it | |
+|---|---|
+| The residual's own IM3 | 3·P_r − 2·OIP3′, each product |
+| Its products with the signal | 2·P_s + P_r − 2·OIP3′ at 2·f_s − f_r, and 2·P_r + P_s − 2·OIP3′ at 2·f_r − f_s |
+| The canceller's own IM3 | carried by the gains. With the residual and the signal it makes a product on 2·f_r − f_s too, twice the amplitude of a two-tone one, 20·log10(1 + 2·√(P_c/P_r)) over the residual's own there: taken in phase, the worst case, as the intercepts sum. A reference path set short of the null adds it in phase, one set long against it |
+| The signal's compression by them | Σ 20·log10(1 − 4·(P_r,i + P_c,i)/IIP3_i) over the stages, P_r,i and P_c,i the residual and the canceller's IM3 at stage i's input |
+| The margin to compression | counts the residual as a carrier, as it counts a blocker |
+
+The window's Canceller tab draws them node by node beside its two depth plots, the depth plots with the compression in
+them and, dashed, the depth the canceller's own IM3 leaves. The [level diagram](#level-diagram) draws the canceller's own
+IM3 under the residual.
+
+{{ui: chain-canceller}}
+
+### Tune canceller {#tune-canceller}
+
+**Tune canceller**, on the Canceller tab, runs circuitRF's own [optimizer](optimization.html) on the Canceller bench's
+harmonic-balance part, from the canceller's own settings: `tune` lines on the part's amplitude, phase and delay
+(`amp_hb`, `phase_hb`, `delay_hb`), and a `goal` on the residual at the canceller's output, the mean of its two tones'
+powers, at most 20 dB under the floor its settings cannot tune under — its own IM3 at the null's amplitude, or the noise
+in the interference's bandwidth there, whichever is higher; 20 dB under it adds 0.04 dB to it. The trust-region
+algorithm takes it, needing no derivatives, in about a hundred harmonic-balance runs. The tab then says each setting
+before and after, beside the closed form's null (the `AmpErr` above, no phase error and no delay mismatch), and the
+residual before and after; **Write into the chain** writes the three settings into the canceller as one step, which
+Undo takes back.
+
+The bench Transfer writes carries the same lines, so `circuitrf opt` on it, or the Optimizer window on it, runs the
+same search; the part has settings of its own because the envelope runs sweep `amp_err`, `phase_err` and `delay_err`,
+and the optimizer moves no value a sweep moves. From the command line:
+
+```text
+circuitrf chain "Front End.cchain" --tune-canceller           the search, and what it found
+circuitrf chain "Front End.cchain" --tune-canceller --apply   and the settings written into the .cchain
+```
+
 **The Canceller bench** studies it with real signals. Two MOD_Sources, which the [Signal
 Designer](signal-designer.html) edits: the wanted signal, an NR 64-QAM carrier and a QPSK one, and the interference,
 three NR carriers of 10, 5 and 20 MHz, the first two under the wanted ones. The interference is split: one share leaks
@@ -805,6 +868,19 @@ signal). Its envelope runs:
 
 Open either source in the Signal Designer to change its modulation (LTE, NR, DBPSK, FSK, CSS and the rest it offers) or
 its bandwidth; the bench measures whatever it sends.
+
+Its envelope runs keep the reference path linear, so their depths are the settings' alone. Beside them, apart, is its
+**harmonic-balance part**: the canceller again, its reference path's Amp carrying the `IP3`, then the stages after it up
+to a mixer or a combiner, from PnTones — the wanted signal one tone at the frequency and the interference two, 0.25 of its
+bandwidth under the frequency and 0.35 over it, off every frequency an envelope run drives. Its own VAR block's
+`amp_hb`, `phase_hb` and `delay_hb` are its settings. Its runs:
+
+- **HBC**, at the canceller's settings: each tone's residual and the canceller's own IM3 at its output, beside their closed
+  forms (each tone's at its own offset), and the residual Tune canceller's goal reads;
+- **HBA**, over steps of the amplitude error (−3, −1.5, 1.5 and 3 dB): the residual and the canceller's own IM3 at its
+  output and, at the last stage's output, the interference's IM3, the residual's two products with the signal and the
+  signal's compression by it (against the same run with the interference off, `int_on` 0), each beside the budget's
+  form of it.
 
 ## The modulated-signal demo {#demo}
 
@@ -895,8 +971,18 @@ Blockers bench reads each blocker 0.001 to 0.003 dB below the budget, the blocke
 coupled noise, on the formula to 10⁻⁶ dB.
 
 The Canceller bench's depth, at each of the three interference carriers and every swept error, is the closed form's to
-within 1.4 % of the depth, 0.7 dB at 49.7 dB deep and under 0.3 dB everywhere shallower than 45 dB. With cancellation the
-64-QAM carrier's EVM falls from 840 % to 3.2 % and the QPSK one's from 1036 % to 8.6 %.
+within 1.2 % of the depth, 0.6 dB at 49.7 dB deep. With cancellation the 64-QAM carrier's EVM falls from 799 % to 3.2 %
+and the QPSK one's from 973 % to 8.7 %.
+
+Its harmonic-balance part, the front end's reference path 25 dB under its intercept, reads each tone's residual 0.002 and
+0.003 dB and the canceller's own IM3 0.004 dB off the closed forms. Over the steps of the amplitude error the residual
+reads within 4×10⁻⁴ dB and the own IM3 within 0.011 dB, and at AMP2's output the interference's IM3 within 0.008 dB, the
+residual's products with the signal within 0.08 and 0.17 dB, and the signal's compression by both within 0.2 %. The
+0.17 dB is the run's: that product sits 100 dB or more under the drive, where a mixing order of 5 folds a little of the
+products it leaves out onto it, and 7 reads it 0.02 dB from the closed form. A linear canceller ahead of an LNA its
+residual drives 30 dB under the intercept reads the LNA's own IM3 of the residual within 0.06 dB, its products within
+0.10 dB and its compression within 0.6 %. Tune canceller, from 1 dB, 10° and 0.5 ns off, ends within 0.001 dB, 0.001° and
+2 ps of the closed form's null, where its goal holds it within 0.0025 dB, 0.016° and 15 ps.
 
 The superhet's Demo bench reads the SNR 0.20 dB under the budget at its lowest power, where noise dominates, and the
 EVM's noise part 57.0 % against the budget's 1/√SNR of 56.2 %. Higher up, two floors the budget does not model take
@@ -964,7 +1050,7 @@ as the part's netlist line carries them.
 
 | Key | Meaning |
 |---|---|
-| `FormatVersion` | 1; 2 for a chain that uses a value of the frequency, a budget-only parameter, a `Levels` combiner, a link, a sweep or a readout input; 3 for a transmit chain, an IQ modulator, an Amplifier's `Law`, `Psat`, `P`, `PhiSat` or `PhiMax`, or a converter's `Sideband`. A file from a newer circuitRF is refused, not read in part. |
+| `FormatVersion` | 1; 2 for a chain that uses a value of the frequency, a budget-only parameter, a `Levels` combiner, a link, a sweep or a readout input; 3 for a transmit chain, an IQ modulator, an Amplifier's `Law`, `Psat`, `P`, `PhiSat` or `PhiMax`, or a converter's `Sideband`; 4 for a canceller's `IP3`. A file from a newer circuitRF is refused, not read in part. |
 | `Direction` | Optional: `"Transmit"` for a [transmit chain](#transmit). Absent: a receive chain. |
 | `RxBandOffsetHz`, `RxBandHz` | Optional: a transmit chain's receive band, its centre's offset from the carrier at the output and its width. |
 | `FrequencyHz`, `BandwidthHz`, `InputPowerDbm`, `TemperatureK`, `RequiredSnrDb` | The [system inputs](#inputs). Absent: 2.45 GHz, 1 MHz, −70 dBm, 290 K, 10 dB. |
@@ -988,12 +1074,14 @@ circuitrf chain Superhet.cchain -o budget.npy        the budget as a DataSet: pe
 circuitrf chain "26 GHz Link.cchain" -o link.npy     the link's numbers as scalars, each sweep a group of its own
 circuitrf chain Superhet.cchain --level-diagram levels.svg   the level diagram, as a .svg or a .png
 circuitrf chain Superhet.cchain --to-schematic       the benches and their displays, beside the .cchain
+circuitrf chain "Front End.cchain" --tune-canceller  Tune canceller; --apply writes what it found into the .cchain
 circuitrf hb "Superhet 2-Tone/schematic/Superhet 2-Tone.csch"
 ```
 
 A transmit chain's report reads its output in place of a receiver's sensitivity: the output power and its CW
 compression, the back-off from OP1dB and from Psat, the ACLR, the noise floor and the receive band's noise, and an IQ
-modulator's image and LO.
+modulator's image and LO. A chain with a canceller has a line for it: its depth and residual and, with an `IP3`, its own
+IM3 against the residual and its compression.
 
 `--to-schematic [dir]` writes into another folder, `--name` names the benches, `--demo` adds the demo bench, and an
 existing bench is a refusal unless `--replace` is given. `circuitrf check` reads a `.cchain` through the same budget and reports its refusals. Over the MCP

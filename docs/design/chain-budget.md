@@ -32,7 +32,7 @@ flowchart LR
     write --> steer["Steering bench (array)<br/>plane wave, sweeps of<br/>theta_in × theta_steer"]
     write --> comb["Combiners bench (array)<br/>the four variants side by side"]
     write --> lev["Levels, Blockers benches<br/>every node, two tones and blockers"]
-    write --> canc["Canceller bench<br/>envelope, real signals"]
+    write --> canc["Canceller bench<br/>envelope, real signals;<br/>harmonic balance, tune lines"]
     write --> demo["Demo bench (asked for)<br/>demodulated end to end"]
     write --> tx["TX bench (a link)<br/>the PA against its back-off"]
     write --> txc["a transmit chain's benches<br/>1-Tone, 2-Tone, Envelope, PA"]
@@ -166,6 +166,30 @@ path's injected noise, F = L_t + (F_ref·G_ref − 1)·c/(1 − c); on the inter
 |1 − a·e^(j(φ − 2πfτ))|², R = 1 + a² − 2a·cos(φ − 2πντ)·sinc(πBτ). On the ordinary benches the reference path is only its
 noise (an Amp of the gain it would need, from a T0 termination, or a T0 termination when passive); the Canceller bench
 drives it with the interference itself.
+
+**The canceller's nonlinearity** (`ChainCanceller.cs`, beside `CancellerSpec`) is its reference path's: the amplitude
+setting is an Amplifier with the Tanh law, its `IP3` stated at its output, the coupler's isolated port. The main path is
+a coupler and stays linear, so no cascade number moves. The interference is two tones each at `Pint`, as the levels'
+signal is two tones each at the input power, and the reference path's own terms are the Tanh law's two-tone expansion to
+fifth order, y the output per tone over OIP3: each tone's gain g = 1 − 3y + (40/3)·y², its IM3 the cubic's times
+1 − (20/3)·y. The cubic alone misses by 0.1 to 0.2 dB at 25 dB under the intercept, which the bench reads; the series
+is the law's own (its coefficients integrated over both tones' phases in `testdata/chain/canceller_reference.py`) to
+2×10⁻⁵ dB in gain and 0.003 dB in IM3 there. The compression is an amplitude error of its own, taken back by
+a·g(a²·y₀) = 1 (`AmpErrForNullDb`); the own IM3 is not in the leak and stays. `ChainCanceller.Levels` carries the
+residual through every stage after the canceller, a cubic's there as the cascade's intercept sums are: its own IM3, its
+two products with the signal, the canceller's IM3 by the gains, and the signal's compression by two residual tones and
+two IM3 products, 1 − 4·(P_r + P_c)/IIP3 a stage. The bench showed one more term: the canceller's IM3 at 2·f_a − f_b,
+the residual at f_b and the signal make a product on 2·f_a − f_s, 2·C·R_b·S against R_a²·S, so the product there is
+the residual's own times 1 + 2·√(P_c/P_r)·e^(jψ) — in phase when the reference is short of the null, against it when it is
+long; the budget takes it in phase, the worst case, and the bench's row takes each tone's own phases. Before the term
+was in, the bench read 0.9 dB over the budget at 0.5 dB short. `ChainLevels` counts the residual in the margin as a
+carrier. The readout's two notes come from the stage's own budget, so the window, the CLI's `--json` and every sweep
+point say them. A canceller's `IP3` makes the `.cchain` version 4.
+
+**Tune canceller** (`ChainCancellerTune`) builds the Canceller bench in memory as Transfer builds it and hands it to
+`OptimizationRun`, the object the Optimizer window drives; it owns no search. The bench's harmonic-balance part carries
+its `tune`, `goal` and `optimize` lines, so `circuitrf opt` and the Optimizer window run the same search on the
+transferred bench. The write-back is `ChainCancellerTune.Apply`, one undo step in the window and `--apply` on the verb.
 
 **The demo** uses what the envelope run already measures at every IProbe — EVM, the constellation, EvmSplit's noise and
 distortion parts and the in-channel SNR — over a sweep of the input power. Nothing demodulates but the envelope run.
@@ -378,6 +402,25 @@ an Amplifier of `IP3 = Psat + 3.9224 dBm`.
 **A flat phase needs a behavioural part.** A TLIN's phase is a delay as well, so the Canceller bench's phase setting is
 one path of a 2-way Combiner, whose `Phase[k]` is flat, and its delay a line.
 
+**The Canceller bench's harmonic-balance part.** Four things decided its shape:
+
+- *A run refuses a source off its grid.* Harmonic balance takes a MOD_Source as a CW tone at its `Fc` and refuses one
+  whose `Fc` is no product of the run's tones, so the wanted tone is at the frequency itself (the envelope part's sources
+  then drive their own circuit, harmlessly, and the two parts never meet). An envelope run drives a PnTone only on its own
+  products, so the interference's two tones, off the frequency, drive nothing there. They sit at −0.25 and +0.35 of the
+  interference's bandwidth: symmetric ones put 2·f_s − f_a on f_b, and these keep any two products of order 11 or
+  less apart.
+- *Order 3 for the tune, 5 for the products.* At a mixing order of 3 a run takes 0.6 s on the example and reads each
+  tone's residual and the canceller's own IM3 0.002 dB from order 5's, which takes 7 s; but the residual's products with
+  the signal and the signal's compression by it sit 60 to 130 dB under the drive, and at 3 the fifth-order products the
+  lattice leaves out fold onto them: 2·f_s − f_r read −131.9 dBm where the budget and a run at 5 read −158.1 and −158.5.
+  So HBC, which the optimizer evaluates, is at 3 and HBA, the swept one, at 5.
+- *The optimizer moves no value a sweep moves*, and the envelope runs sweep `amp_err`, `phase_err` and `delay_err`. The
+  harmonic-balance part's settings are its own VARs, `amp_hb`, `phase_hb` and `delay_hb`, and HBA sweeps a step,
+  `amp_step`, added to its amplitude.
+- *The trust-region algorithm, not Levenberg–Marquardt.* On the residual in dB from 1 dB, 10° and 0.5 ns off, LM stalled
+  at −88 dBm after 488 evaluations, the delay's pull weak against the phase's; trust region met the goal in 92 to 116.
+
 **A splitter-fed plane wave gives each element its own noise.** One Port into a lossless N-way Combiner used as a
 splitter: by Bosma the splitter's isolation network puts kT0·(I − s·s†) on its outputs and the Port's termination
 kT0·s·s†, so each element sees kT0 of its own, uncorrelated with the others — what an element of a real array receives
@@ -486,10 +529,22 @@ The levels, the canceller and the demo, read from the example's benches as the G
   budget, its own slight compression at −40 and −50 dBm (`ChainBudgetExampleTests.Superhet_LevelsAndBlockers_EveryNodeOnTheBudget`).
 - **The canceller's noise**: the front end's 1-Tone NF on F = L_t + (F_ref·G_ref − 1)·c/(1 − c) to 10⁻⁶ dB.
 - **The canceller's depth**: at three carriers (10 MHz centred, 5 MHz at −15 MHz, 20 MHz at +20 MHz) and every swept
-  error, within 1.4 % of the closed form's depth, worst 0.7 dB at 49.7 dB deep, under 0.3 dB shallower than 45 dB. The
-  wanted 64-QAM carrier's EVM goes from 840 % to 3.2 %, the QPSK one's from 1036 % to 8.6 %.
+  error, within 1.2 % of the closed form's depth, worst 0.6 dB at 49.7 dB deep. The wanted 64-QAM carrier's EVM goes
+  from 799 % to 3.2 %, the QPSK one's from 973 % to 8.7 % (840 % and 1036 % uncancelled before the harmonic-balance
+  part was added beside it).
 
 ![The Canceller bench's display: depth against each error, EVM and constellations with and without](../images/rf-chain-budget/canceller-display.png)
+
+- **The canceller's nonlinearity**: `testdata/chain/canceller_reference.py` (standard library only) works the example's
+  front end out, the Tanh law's two-tone coefficients by quadrature, and the budget agrees with it to 10⁻⁶ dB in every
+  canceller number and every term after it (`ChainCancellerTests.TheFrontEnd_IsTheIndependentReference`). The bench's
+  harmonic-balance part reads each tone's residual and the own IM3 0.002 to 0.004 dB off the closed forms; over the
+  amplitude error's steps, at AMP2's output, the IM3 (the own, carried, and the later stages', added with their phases)
+  within 0.008 dB, the residual's products with the signal within 0.08 and 0.17 dB and the signal's compression within
+  0.2 %; a linear canceller ahead of a hot LNA, 0.06, 0.10 and 0.6 % (`ChainCancellerTests.TheHarmonicBalancePart_*`).
+- **Tune canceller**: from 1 dB, 10° and 0.5 ns off, 94 evaluations end 0.0008 dB, 0.0009° and 1.8 ps from the closed
+  form's null, the goal holding it within 0.0025 dB, 0.016° and 15 ps
+  (`ChainCancellerTests.TuneCanceller_FromAMistunedStart_RecoversTheClosedFormsNull`).
 
 - **The demo**: the SNR 0.20 dB under the budget at the lowest power, the EVM's noise part 57.0 % against 1/√SNR's
   56.2 %. Higher, two floors the budget leaves out: the distortion part's 1.23 %, the LO mask integrated over the channel

@@ -138,7 +138,7 @@ convention behind both.</p>
 | `yield sens` | `.csch` or `.cnl` | The [Sensitivity](sensitivity.html) panel's ranking — each value stepped up and down on its own | Per goal, the values that move it most and their shares, to stdout; the steps to `<design>.sens.npy`; **nothing** in the design |
 | `model new`, `import`, `deembed`, `fit`, `check-charge`, `explain`, `export`, `validate`, `report` | a `.cmc` | The [Model Composer](#model)'s steps — the same functions its window calls | The `.cmc`, its cache, a `.cmodel` or a cell, a report folder — as the noun says |
 | `rail` | `.crail` | The same DC solve and via check [railRF](railrf.html)'s **Run** button calls | The ports, the ranked breakdown and the via check to stdout; `-o .csv/.npy/.mat/.txt/.svg/.pdf` |
-| `chain` | `.cchain` | The same budget the [RF Chain Budget](chain-budget.html) window recomputes on every edit, and its Transfer to Schematic | The cascade to stdout; `-o .npy/.mat/.txt` for the budget as a DataSet; `--to-schematic` writes the test benches (and an array's Steering and Combiners benches) and their displays |
+| `chain` | `.cchain` | The same budget the [RF Chain Budget](chain-budget.html) window recomputes on every edit, its Transfer to Schematic and its Tune canceller | The cascade to stdout; `-o .npy/.mat/.txt` for the budget as a DataSet; `--to-schematic` writes the test benches (and an array's Steering and Combiners benches) and their displays; `--tune-canceller [--apply]` runs the optimizer on the Canceller bench and writes what it found |
 | `smith` | `.csmith` | The same cascade evaluator the Smith Chart window walks on every edit | The reading and the per-node table to stdout; `-o .s1p` for the load Γ, `-o .svg/.pdf/.png` for the chart |
 | `snp` | a Touchstone `.sNp` | The same reading and plots the [S-Parameter Viewer](sparameter-viewer.html) shows | What the file states, to stdout; `-o .svg/.pdf/.png` for the four plots, `-o .cdd` for a Data Display of them |
 | `lvs` | a cell folder, a workspace, a `.clay` or a `.csch` | The same comparison the [LVS panel](lvs.html)'s **Compare** button calls | **Nothing** — the report to stdout; `-o report.txt` |
@@ -1572,7 +1572,7 @@ writes nothing but `-o`'s PDF.
 
 ## `chain` — an RF chain budget, headless {#chain}
 
-<pre><code class="cmd"><span class="prompt">$ </span>circuitrf chain &lt;rx.cchain&gt; [-o budget.{npy,mat,txt}] [--level-diagram levels.{png,svg}] [--to-schematic [dir]] [--name &lt;stem&gt;] [--replace] [--demo]</code></pre>
+<pre><code class="cmd"><span class="prompt">$ </span>circuitrf chain &lt;rx.cchain&gt; [-o budget.{npy,mat,txt}] [--level-diagram levels.{png,svg}] [--to-schematic [dir]] [--name &lt;stem&gt;] [--replace] [--demo] [--tune-canceller [--apply]]</code></pre>
 
 `chain` budgets a **`.cchain`** — the document the [RF Chain Budget](chain-budget.html) window edits — and prints
 the cascade, one row per stage, and the chain's totals: gain, NF, the intercepts and compression points, the noise
@@ -1600,8 +1600,16 @@ test benches; `Blockers` for a chain with blockers, `Canceller` for one with a c
 to end; a chain with a link also its `TX` bench, the PA against its back-off. A transmit chain's are its own `1-Tone`,
 `2-Tone`, `Envelope` and `PA` benches. Each comes with its Data Display, beside
 the `.cchain` or in `dir`. A bench that already exists is a refusal naming it; `--replace` writes it again. Nothing is written when any
-bench is refused. Exit **0** when it budgeted (and
-transferred), **1** on a refusal.
+bench is refused.
+
+A chain with a canceller has a line for it: its depth and residual and, with an `IP3`, its own IM3 against the residual
+and its compression; the DataSet carries them (`CancDepth_dB`, `CancRes_dBm`, `CancComp_dB`, `CancAmpNull_dB`,
+`CancIM3_dBm`). `--tune-canceller` is the window's [Tune canceller](chain-budget.html#tune-canceller): circuitRF's
+optimizer on the chain's Canceller bench, built as Transfer builds it, from the canceller's own settings. It prints each
+setting before and after beside the closed form's null and the residual before and after, and the DataSet carries
+them as a `tune` group. `--apply` writes the three settings into the `.cchain`, after a history checkpoint when the
+workspace keeps one, and the rest of the run — the report, `-o`, the diagram, the transfer — is the tuned chain's;
+alone, it is a refusal. Exit **0** when it budgeted (and transferred, and tuned), **1** on a refusal.
 
 ## `smith` — a matching network, headless {#smith}
 

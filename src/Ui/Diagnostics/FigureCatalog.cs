@@ -808,6 +808,13 @@ public static class FigureCatalog
           + "between them. Left of the input, the link: the EIRP, the path down to the power each element receives, and the "
           + "receiver's ceiling. The combiner is selected, and so is its node."),
 
+        new("chain-canceller", DocChainFixtures.Canceller, 1560, 960,
+            WindowFrame.Titled("RF Chain Budget — Front End.cchain"),
+            "The example's front end on its Canceller tab: the depth against the phase error and against the bandwidth, the "
+          + "reference path's compression in every curve and, flat across both, the depth its own IM3 leaves; the residual "
+          + "through the LNA, the filter and AMP2 with the canceller's IM3 under it; and Tune canceller, which runs the "
+          + "optimizer on the Canceller bench and writes what it finds into the chain."),
+
         // ── Signal Designer (MOD_Source) ──────────────────────────────────────────
 
         new("signal-designer", DocSignalFixtures.DesignerNr20, 1199, 800,

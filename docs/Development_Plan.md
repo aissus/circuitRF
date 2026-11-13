@@ -294,6 +294,14 @@ before or Rapp's and Saleh's bandpass laws, in the budget and the simulation ali
 node, with the back-off, the noise floor and the ACLR estimate in its key. The example is a 3.5 GHz linear transmitter
 for a 100 MHz NR carrier.
 
+**A canceller's nonlinearity and Tune canceller (2026-11).** A canceller's reference path may have an `IP3`, the Tanh
+law's: its compression is an amplitude error of its own and its IM3 a floor the subtraction leaves, both in closed form
+(the law's two-tone expansion to fifth order), and the budget carries the residual through every later stage's
+nonlinearity — its own IM3, its products with the signal, the signal's compression by it, and its share of the margin.
+The Canceller bench gains a harmonic-balance part that reads each of them beside its closed form, and **Tune canceller**
+runs circuitRF's own optimizer on it for the amplitude, phase and delay, writing the result back into the chain as one
+undo step (`circuitrf chain … --tune-canceller --apply`). The example's front end has a canceller with an IP3.
+
 **Deferred:**
 
 - **Image noise from earlier stages.** The budget takes each mixer's image as filtered of the stages before it, and the
@@ -317,9 +325,10 @@ for a 100 MHz NR carrier.
   with `PathIL` for its unequal paths, or Levels for a tree's loss on one combiner, is the remedy).
 - **Unequal paths in an active combiner.** `PathIL` is a passive combiner's; an active one's level amplifiers would see
   unequal powers, which the per-element budget does not follow.
-- **A canceller's own nonlinearity and its adaptation.** The canceller is linear and its settings are variables to sweep
-  or tune by hand; there is no loop that adapts them, and no stage of the budget follows a residual through a later
-  nonlinearity other than as a level.
+- **A canceller that adapts.** Tune canceller finds the settings once, on two tones; a loop that adapts them as the
+  interference moves, inside an envelope run, is not modelled. The envelope runs keep the reference path linear: a
+  modulated interference compresses it as a Gaussian signal does, not as two tones, and in-band distortion of three
+  carriers has no closed form beside them. A canceller's reference path has the Tanh law only, not Rapp's or Saleh's.
 - **Per-node EVM.** The demo reads EVM at the output only; a probe at every node would give it node by node.
 - **The Steering bench through a mixer.** It needs an S-parameter run to reach the combiner, so an array whose branch
   has a mixer gets no Steering or Combiners bench.
