@@ -85,6 +85,15 @@ internal static class Chain
             Console.WriteLine($"  sweep {s.Of}: {s.From / scale:0.###} to {s.To / scale:0.###}{unit}, {s.Values().Length} points, "
                             + $"rate {D(rate.Min())} to {D(rate.Max())} Gb/s (group '{s.Of}' of the DataSet)");
         }
+        if (design.Response is { } rsp && budget.Design is { } bd)
+        {
+            // One design across its band, every LO where the carrier put it: not a carrier sweep.
+            static string Span(double[] v) => v.Where(double.IsFinite).ToArray() is { Length: > 0 } f ? $"{D(f.Min())} to {D(f.Max())}" : "-";
+            var hz = rsp.Values(bd.FrequencyHz);
+            Console.WriteLine($"  response: {ChainSnp.Hz(hz[0])} to {ChainSnp.Hz(hz[^1])} in, {hz.Length} points, LOs fixed: "
+                            + $"gain {Span(JsonRun.Data[ChainBudget.ResponseGroup + ".Gain_dB"].RealValues)} dB, "
+                            + $"NF {Span(JsonRun.Data[ChainBudget.ResponseGroup + ".NF_dB"].RealValues)} dB (group '{ChainBudget.ResponseGroup}' of the DataSet)");
+        }
 
         if (output is not null)
         {
@@ -138,7 +147,8 @@ internal static class Chain
         d = r.Design ?? d;   // the chain as budgeted: a link's input power, a fractional bandwidth
         var t = r.Totals!;
         Console.WriteLine($"Chain budget: {r.Stages.Count} stage(s), {d.FrequencyHz / 1e6:0.###} MHz in, {t.OutputFrequencyHz / 1e6:0.###} MHz out, "
-                        + $"{d.BandwidthHz / 1e6:0.###} MHz bandwidth, {D(d.InputPowerDbm)} dBm in, source {d.TemperatureK:0.#} K");
+                        + $"{d.BandwidthHz / 1e6:0.###} MHz bandwidth, {D(d.InputPowerDbm)} dBm in, source {d.TemperatureK:0.#} K"
+                        + (d.Mismatch ? ", every stage's two-port cascaded with mismatch" : ""));
         Console.WriteLine($"  {"stage",-12} {"part",-12} {"G dB",8} {"NF dB",8} {"IIP3",8} {"OIP3",8} {"IP1dB",8} {"OP1dB",8} {"Pout",8} {"SNR dB",8} {"F-1 %",7}");
         foreach (var s in r.Stages)
             Console.WriteLine($"  {s.Name,-12} {s.Part,-12} {D(s.GainDb),8} {D(s.NfDb),8} {D(s.Iip3Dbm),8} {D(s.Oip3Dbm),8} "

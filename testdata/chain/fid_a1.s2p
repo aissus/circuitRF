@@ -1,0 +1,8 @@
+! fidelity_reference.py: a flat amplifier with reflecting ports and noise data
+# GHz S MA R 50
+1 0.35 -60 6.0 110 0.05 20 0.4 -40
+2 0.35 -60 6.0 110 0.05 20 0.4 -40
+3 0.35 -60 6.0 110 0.05 20 0.4 -40
+4 0.35 -60 6.0 110 0.05 20 0.4 -40
+1 0.9 0.35 45 0.25
+4 0.9 0.35 45 0.25

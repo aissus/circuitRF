@@ -1577,7 +1577,12 @@ public static class ChainBenches
                     _meas.Add("G_err = G_sim - G_calc");
                     _meas.Add("NF_err = NF_sim - NF_calc");
                     // Each stage's cumulative NF from the run's own shares of F − 1: Fc_<stage> adds that stage's parts to
-                    // the stages before it, which is Friis' sum one stage at a time.
+                    // the stages before it, which is Friis' sum one stage at a time. With an image counted a stage's share
+                    // also holds the noise it sends through a later mixer's image, so the budget's side is then the same
+                    // sum of its own shares rather than the chain cut at the stage.
+                    bool shared = r.Images.Any(x => x.Counted);
+                    double nfAt(int j) => shared
+                        ? 10 * Math.Log10(1 + rows.Take(j + 1).Sum(x => x.NoiseSharePct) / 100 * _t.TeK / ChainBudget.T0) : rows[j].NfDb;
                     string prevF = "0";
                     for (int j = 0; j < rows.Count; j++)
                     {
@@ -1585,7 +1590,7 @@ public static class ChainBenches
                         var terms = parts[j].Select(part => string.Format(CultureInfo.InvariantCulture, noise, part)).ToList();
                         _meas.Add($"{fc} = {string.Join(" + ", terms.Prepend(prevF).Where(x => x != "0" || terms.Count == 0))}");
                         prevF = fc;
-                        _meas.Add($"NF_{rows[j].Name}_calc = {G(rows[j].NfDb)}");
+                        _meas.Add($"NF_{rows[j].Name}_calc = {G(nfAt(j))}");
                         _meas.Add($"NF_{rows[j].Name}_sim = 10*log10(1 + {fc}{ka})");
                     }
                     double lo = Finite(_t.Ip1dbDbm, 0);
@@ -1605,15 +1610,16 @@ public static class ChainBenches
                     var lv = ChainLevels.Evaluate(d, r);
                     NodeAxis(lv.Count);
                     _meas.Add($"NF_node_sim = {NodeCube(lv.Count, k => k == 0 ? "0" : $"NF_{rows[k - 1].Name}_sim")}");
-                    _meas.Add($"NF_node_calc = {NodeCube(lv.Count, k => G(lv[k].NfDb))}");
+                    _meas.Add($"NF_node_calc = {NodeCube(lv.Count, k => G(k == 0 ? lv[0].NfDb : nfAt(k - 1)))}");
+                    double gnAt(int k) => rows[k - 1].NoiseOutDbm - (10 * Math.Log10(ChainBudget.K * (d.TemperatureK + rows[k - 1].TeK) * d.BandwidthHz) + 30);
                     string floor(int k)
                     {
                         if (k == 0) return G(lv[0].NoiseDbm);
-                        double gn = rows[k - 1].NoiseOutDbm - (10 * Math.Log10(ChainBudget.K * (d.TemperatureK + rows[k - 1].TeK) * d.BandwidthHz) + 30);
-                        return $"(10*log10({G(ChainBudget.K)}*({G(d.TemperatureK)} + {G(ChainBudget.T0)}*(10^(NF_{rows[k - 1].Name}_sim/10) - 1))*{G(d.BandwidthHz)}) + 30 + {G(gn)})";
+                        return $"(10*log10({G(ChainBudget.K)}*({G(d.TemperatureK)} + {G(ChainBudget.T0)}*(10^(NF_{rows[k - 1].Name}_sim/10) - 1))*{G(d.BandwidthHz)}) + 30 + {G(gnAt(k))})";
                     }
                     _meas.Add($"Noise_node_sim = {NodeCube(lv.Count, floor)}");
-                    _meas.Add($"Noise_node_calc = {NodeCube(lv.Count, k => G(lv[k].NoiseDbm))}");
+                    _meas.Add($"Noise_node_calc = {NodeCube(lv.Count, k => G(k == 0 || !shared ? lv[k].NoiseDbm
+                        : 10 * Math.Log10(ChainBudget.K * (d.TemperatureK + ChainBudget.T0 * (Math.Pow(10, nfAt(k - 1) / 10) - 1)) * d.BandwidthHz) + 30 + gnAt(k)))}");
                     break;
                 }
                 case ChainBench.TwoTone:

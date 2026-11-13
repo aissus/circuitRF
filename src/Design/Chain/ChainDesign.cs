@@ -95,6 +95,15 @@ public sealed class ChainDesign
     /// the carrier, the transmit elements and the receive elements.</summary>
     public List<ChainSweep> Sweeps { get; set; } = [];
 
+    /// <summary>The in-band response of this design as it stands (<see cref="ChainBudget.Response"/>): the budget across a
+    /// band of input frequencies with every LO and filter where the carrier put them. Not a sweep of the carrier, which
+    /// designs the chain again at every point. Null: none.</summary>
+    public ChainResponse? Response { get; set; }
+
+    /// <summary>Cascade every stage's two-port S-parameters and noise correlation (<see cref="ChainMismatch"/>), so the
+    /// gain and the NF are those between real ports; false, the default: every stage matched, the gains multiplied.</summary>
+    public bool Mismatch { get; set; }
+
     public List<ChainStage> Stages { get; set; } = [];
 
     /// <summary>Blockers at the chain's input, each a carrier at an offset from the frequency and a level, carried
@@ -189,6 +198,7 @@ public sealed class ChainDesign
         foreach (var sw in Sweeps)
             if (sw.Refusal(this) is { } no) r.Add(no);
         if (Sweeps.GroupBy(sw => sw.Of).Any(g => g.Count() > 1)) r.Add("A chain sweeps each of the frequency and the two arrays once at most.");
+        if (Response?.Refusal(FrequencyHz) is { } rno) r.Add(rno);
         foreach (var b in Blockers)
             if (!double.IsFinite(b.OffsetHz) || !double.IsFinite(b.LevelDbm))
                 r.Add("A blocker is an offset and a level, \"150 MHz, -40\"; one of them is not a number.");
@@ -215,7 +225,34 @@ public sealed class ChainDesign
         FractionalBandwidth = FractionalBandwidth, Streams = Streams, NfAllowanceDb = NfAllowanceDb, RxBackoffDb = RxBackoffDb,
         Link = Link?.Clone(), Sweeps = [.. Sweeps],
         Direction = Direction, RxBandOffsetHz = RxBandOffsetHz, RxBandHz = RxBandHz,
+        Response = Response, Mismatch = Mismatch,
     };
+}
+
+/// <summary>
+/// The in-band response's band: <see cref="Points"/> input frequencies evenly from <see cref="From"/> to <see cref="To"/>,
+/// Hz, offsets from the carrier when <see cref="Offset"/> and absolute frequencies otherwise.
+/// </summary>
+public sealed record ChainResponse(double From, double To, int Points, bool Offset = true)
+{
+    /// <summary>The most points a response takes: each is a whole budget.</summary>
+    public const int MaxPoints = 2001;
+
+    /// <summary>The input frequencies, Hz, for a design whose carrier is <paramref name="carrierHz"/>.</summary>
+    public double[] Values(double carrierHz)
+    {
+        double at = Offset ? carrierHz : 0;
+        return Points < 2 ? [at + From] : [.. Enumerable.Range(0, Points).Select(i => at + From + i * (To - From) / (Points - 1))];
+    }
+
+    /// <summary>Why it cannot be run, or null.</summary>
+    public string? Refusal(double carrierHz) =>
+        !double.IsFinite(From) || !double.IsFinite(To) || !(To > From)
+            ? "The response runs from a frequency to a higher one: from, to, points (\"-100 MHz, 100 MHz, 41\")."
+        : Points < 2 || Points > MaxPoints ? $"The response takes 2 to {MaxPoints} points, and it asks for {Points}."
+        : (Offset ? carrierHz + From : From) <= 0
+            ? $"The response starts at {ChainSnp.Hz(Offset ? carrierHz + From : From)}, which is not a frequency above 0 Hz."
+        : null;
 }
 
 /// <summary>A stage parameter's text as a number: a bare number, or one with a unit (<c>2.35 GHz</c>, <c>16 dB</c>,
@@ -253,13 +290,15 @@ public static class ChainValue
 public static class ChainDesignIo
 {
     public const string Extension = ".cchain";
-    public const int CurrentFormatVersion = 3;
+    public const int CurrentFormatVersion = 4;
 
-    /// <summary>A chain is written as version 2 or 3 only when it uses what the version before did not have, so an older
+    /// <summary>A chain is written as version 2, 3 or 4 only when it uses what the version before did not have, so an older
     /// reader refuses it rather than dropping it on save, and every other chain stays readable there. Version 3: a
-    /// transmit chain, an IQ modulator, an amplifier's law, a converter's sideband.</summary>
+    /// transmit chain, an IQ modulator, an amplifier's law, a converter's sideband. Version 4: an in-band response, the
+    /// cascade with mismatch.</summary>
     private static int VersionOf(ChainDesign d) =>
-        d.IsTransmit || d.RxBandOffsetHz is not null
+        d.Response is not null || d.Mismatch ? 4
+        : d.IsTransmit || d.RxBandOffsetHz is not null
         || d.Stages.Any(s => s.Part == ChainParts.IqMod || s.Parameters.Keys.Any(k => k is "Law" or "Psat" or "P" or "PhiSat" or "PhiMax" or "Sideband")) ? 3
         : d.FractionalBandwidth is not null || d.Streams != 1 || d.Link is not null || d.Sweeps.Count > 0 || d.NfAllowanceDb != 1 || d.RxBackoffDb != 10
         || d.Stages.Any(s => s.Parameters.Any(kv => kv.Key is "Pdc" or "GainPerStage" || ChainScaling.IsScaled(kv.Value)))
@@ -294,6 +333,8 @@ public static class ChainDesignIo
         public List<ChainSweep>? Sweeps { get; set; }
         public double? RxBandOffsetHz { get; set; }
         public double? RxBandHz { get; set; }
+        public ChainResponse? Response { get; set; }
+        public bool? Mismatch { get; set; }
     }
 
     public static string Serialize(ChainDesign d) => JsonSerializer.Serialize(new CchainFile
@@ -307,6 +348,7 @@ public static class ChainDesignIo
         NfAllowanceDb = d.NfAllowanceDb != 1 ? d.NfAllowanceDb : null, RxBackoffDb = d.RxBackoffDb != 10 ? d.RxBackoffDb : null,
         Link = d.Link, Sweeps = d.Sweeps.Count > 0 ? d.Sweeps : null,
         RxBandOffsetHz = d.RxBandOffsetHz, RxBandHz = d.RxBandOffsetHz is not null ? d.RxBandHz : null,
+        Response = d.Response, Mismatch = d.Mismatch ? true : null,
     }, JsonOpts);
 
     /// <summary>The design as written, unvalidated: a half-built chain still opens, and
@@ -336,6 +378,8 @@ public static class ChainDesignIo
         d.Direction = f.Direction ?? ChainDesign.Receive;
         d.RxBandOffsetHz = f.RxBandOffsetHz;
         d.RxBandHz = f.RxBandHz ?? d.RxBandHz;
+        d.Response = f.Response;
+        d.Mismatch = f.Mismatch ?? false;
         if (f.Link is { } l)
             d.Link = new ChainLink { Tx = new(l.Tx ?? [], StringComparer.Ordinal), Path = new(l.Path ?? [], StringComparer.Ordinal) };
         foreach (var s in f.Stages ?? [])

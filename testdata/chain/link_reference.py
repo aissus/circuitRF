@@ -37,6 +37,8 @@ DESIGN = {
         st("PS", "PhaseShifter", Phase=0, IL=6, IIP3=10),
         st("CMB", "Combiner", N=8, Topology="Levels", IL=0.8),
         st("DRV", "Amp", Gain=10, NF="0.045*f_GHz + 1.29", IP3=15, IP3Ref="Output", Pdc=0.015),
+        # The example's preselector, following the carrier, which keeps the mixer's image (6 GHz below) out of the budget.
+        st("BPF", "Filter", Response="Butterworth", Form="Bandpass", Order=3, F1="freq - 1.5e9", F2="freq + 1.5e9", IL=1),
         st("MIX", "Mixer", ConvGain=-7, NF=9, NFType="ssb", IIP3=3, Plo=7, Flo="freq - 3e9", Pdc=0.025),
     ],
     "Link": {
@@ -65,7 +67,7 @@ def lin(x):
 
 def stage_budget(s, f):
     """(signal gain, noise gain, NF, input IP1dB) of one stage at its input frequency f, dB and dBm."""
-    p = {k: value(v, f) for k, v in s["Parameters"].items() if k not in ("IP3Ref", "NFType", "Topology")}
+    p = {k: value(v, f) for k, v in s["Parameters"].items() if k not in ("IP3Ref", "NFType", "Topology", "Response", "Form")}
     part = s["Part"]
     if part == "Switch":
         return -p["IL"], -p["IL"], p["IL"], math.inf
@@ -78,6 +80,8 @@ def stage_budget(s, f):
         n = int(p["N"])
         loss = math.ceil(math.log2(n)) * p["IL"]
         return db(n) - loss, -loss, loss, math.inf
+    if part == "Filter":   # in its passband: its IL
+        return -p["IL"], -p["IL"], p["IL"], math.inf
     if part == "Mixer":
         return p["ConvGain"], p["ConvGain"], max(p["NF"], NOISELESS_MIXER_SSB), p["IIP3"] - TANH_P1DB_BELOW_IIP3
     raise ValueError(part)

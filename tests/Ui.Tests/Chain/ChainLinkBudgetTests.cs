@@ -297,7 +297,7 @@ public sealed class ChainLinkBudgetTests(ITestOutputHelper output) : IDisposable
         Assert.Equal((0.1, 2, 0.5, 8.0), (back.FractionalBandwidth!.Value, back.Streams, back.NfAllowanceDb, back.RxBackoffDb));
         // An expression or a budget-only value is version 2 as well: version 1 would put it on a netlist line.
         Assert.Contains("\"FormatVersion\": 2", ChainDesignIo.Serialize(Scaled()));
-        Assert.Throws<InvalidDataException>(() => ChainDesignIo.Deserialize("{\"FormatVersion\": 4}"));
+        Assert.Throws<InvalidDataException>(() => ChainDesignIo.Deserialize("{\"FormatVersion\": 5}"));
 
         // The window keeps them through an edit.
         var vm = new CircuitRF.Ui.Chain.ChainBudgetViewModel(d);
@@ -533,7 +533,7 @@ public sealed class ChainLinkBudgetTests(ITestOutputHelper output) : IDisposable
     }
 
     [Fact]
-    public void ASweepPointTheBudgetRefuses_IsNoNumber_AndSaidOnce_AsIsAFilterLeftBehind()
+    public void ASweepPointTheBudgetRefuses_IsNoNumber_AndSaidOnce_AndAFilterLeftBehindRollsOff()
     {
         Directory.CreateDirectory(_ws);
         File.WriteAllText(Path.Combine(_ws, "atm.csv"), "freq,dB/km\n20 GHz, 0.1\n30 GHz, 0.12\n");
@@ -546,7 +546,10 @@ public sealed class ChainLinkBudgetTests(ITestOutputHelper output) : IDisposable
         Assert.Equal([false, false, false, true, true], f["SNR_dB"].RealValues.Select(double.IsNaN));
         Assert.Contains(notes, x => x.StartsWith("The Frequency sweep leaves out 2 of its 5 points", StringComparison.Ordinal)
                                     && x.Contains("covers 20 GHz to 30 GHz", StringComparison.Ordinal));
-        Assert.Contains(notes, x => x.StartsWith("At 2 of the Frequency sweep's carriers a Filter's passband", StringComparison.Ordinal));
+        // A band written as numbers stays put while the carrier moves: at 20 GHz the 25 to 27 GHz filter's own response,
+        // 50 dB of it, where the IL alone was taken before.
+        Assert.True(f["SNR_dB"].RealValues[0] < f["SNR_dB"].RealValues[1] - 20, $"{f["SNR_dB"].RealValues[0]} dB at 20 GHz");
+        Assert.DoesNotContain(notes, x => x.Contains("passband", StringComparison.Ordinal));
         d.Sweeps = [new(ChainSweep.Frequency, 30e9, 20e9, 5)];
         Assert.Contains(ChainBudget.Evaluate(d).Refusals, x => x.Contains("runs from a value above 0 to a larger one", StringComparison.Ordinal));
         d.Sweeps = [new(ChainSweep.TxElements, 2, 8, 3)];

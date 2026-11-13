@@ -38,10 +38,11 @@ public static class ChainLevelDiagram
 
     /// <summary>What the figure draws. <paramref name="ElementNodes"/>: how many nodes, from the input, carry one array
     /// element's levels (up to the combiner's input); 0 with no array. <paramref name="Tx"/>: a transmit chain's readouts,
-    /// and <paramref name="PsatDbm"/> its Psat referred to each node (+∞ before anything saturates); null for a receiver.</summary>
+    /// and <paramref name="PsatDbm"/> its Psat referred to each node (+∞ before anything saturates); null for a receiver.
+    /// <paramref name="Image"/>: what the image bands the budget counts add to the NF, as the key says it; null for none.</summary>
     public sealed record Plan(IReadOnlyList<ChainNodeLevel> Nodes, IReadOnlyList<double> FrequencyHz, int ElementNodes, int ArrayN,
                               IReadOnlyList<string> Blockers, double RequiredSnrDb, Front? Link, double Lo, double Hi,
-                              ChainTxReadout? Tx = null, IReadOnlyList<double>? PsatDbm = null);
+                              ChainTxReadout? Tx = null, IReadOnlyList<double>? PsatDbm = null, string? Image = null);
 
     /// <summary>The level plan of a budget; null when it was refused.</summary>
     public static Plan? For(ChainDesign d, ChainBudgetResult r)
@@ -69,9 +70,14 @@ public static class ChainLevelDiagram
             topOnly = topOnly.Concat([front.EirpDbm, front.CeilingDbm]);
         }
         var (lo, hi) = ChainBudgetDisplay.LevelWindow(framed, topOnly);
+        // The image bands the budget counts are in the noise floor from their mixer on; the key says how much of it.
+        var counted = r.Images.Where(x => x.Counted).ToList();
+        string? image = counted.Count == 0 ? null
+            : $"image noise +{r.ImageNfDb.ToString("0.00", CultureInfo.InvariantCulture)} dB of NF ("
+              + string.Join(", ", counted.Select(x => $"{x.Name} at {ChainSnp.Hz(x.ImageHz)}")) + ")";
         return new Plan(lv, [d.FrequencyHz, .. r.Stages.Select(s => s.FrequencyHz)], cmb >= 0 ? cmb + 1 : 0,
                         cmb >= 0 ? ChainParts.ReadCombiner(d.Stages[cmb]).N : 1,
-                        [.. d.Blockers.Select((b, k) => $"blocker {k + 1}")], d.RequiredSnrDb, front, lo, hi, tx, psat);
+                        [.. d.Blockers.Select((b, k) => $"blocker {k + 1}")], d.RequiredSnrDb, front, lo, hi, tx, psat, image);
     }
 
     // ── where things go ───────────────────────────────────────────────────────
@@ -414,11 +420,12 @@ public static class ChainLevelDiagram
             if (Level(o.SfdrDb)) keys.Add(($"SFDR {D(o.SfdrDb)} dB", cIm3));
             keys.Add(($"sensitivity: MDS + {D(p.RequiredSnrDb).Replace(".0", "")} dB", Palette(theme, 3)));
         }
+        if (p.Image is { } im) keys.Add((im, cNoise));
         float kx = plot.Left, ky = plot.Bottom + f.Font * 2.4f;
         foreach (var (t, col) in keys)
         {
             bool line = t.StartsWith("sens", StringComparison.Ordinal) || t.StartsWith("noise", StringComparison.Ordinal)
-                        || t.StartsWith("ACLR", StringComparison.Ordinal),
+                        || t.StartsWith("ACLR", StringComparison.Ordinal) || t.StartsWith("image", StringComparison.Ordinal),
                  hatched = t.StartsWith("SFDR", StringComparison.Ordinal);
             using var sw = new SKPaint
             {
