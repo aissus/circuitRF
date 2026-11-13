@@ -209,7 +209,7 @@ public partial class ChainBudgetWindow : Window, ICrfMenuWindow
     {
         foreach (var name in (string[])["CascadePlotControl", "LevelsPlotControl", "LevelsDbPlotControl", "DepthPhasePlotControl", "DepthBandPlotControl",
                                        "LinkPlotControl", "ReceiverPlotControl",
-                                       .. Enumerable.Range(0, 4).SelectMany(i => new[] { $"SweepF{i}", $"SweepT{i}", $"SweepR{i}" })])
+                                       .. Enumerable.Range(0, 4).SelectMany(i => new[] { $"SweepF{i}", $"SweepT{i}", $"SweepR{i}", $"Response{i}" })])
             if (this.FindControl<CircuitRF.Ui.DataDisplay.Controls.PlotControl>(name) is { } p) yield return p;
     }
 

@@ -28,7 +28,7 @@ using CircuitRF.Design.Layout;
 // UiSnapshot <file.cdd> -o <out.png> [--view canvas|inspector|display] [--plot n] [--size WxH] [--results <dir>]
 //            [--click x,y] [--drag x0,y0:x1,y1] [--key <Key>] [--shot <png>] ...
 // UiSnapshot --signal "<carrier>" [--signal "<carrier>"] -o <out.png> [--tab n] [--fc <expr>] [--size WxH] [steps]
-// UiSnapshot --chain <file.cchain> -o <out.png> [--select <stage>] [--levels] [--dark] [--blocks-png <png>] [--size WxH] [steps]
+// UiSnapshot --chain <file.cchain> -o <out.png> [--select <stage>] [--levels] [--chain-tab <header>] [--dark] [--blocks-png <png>] [--size WxH] [steps]
 //   the RF Chain Budget window; --levels turns the Blocks view's Levels strip on, and prints where each of its nodes
 //   stands against the blocks' gaps; --blocks-png also writes the Blocks view's Copy picture, the clipboard's 2x bitmap
 // UiSnapshot --snp <file.sNp> -o <out.png> [--size WxH] [steps]
@@ -172,7 +172,7 @@ string? planarMeshCem = null;       // brief-pms-4: --clay with a .cem's planar 
 string? planarRunCem = null;        // brief-pms-6: --clay with a .cem RUN, its mesh and current-density map on the canvas
 string? place = null;
 string? cdd = null, output = null, view = "canvas", results = null, fc = "2", iq = null, tuning = null, clay = null, cem = null;
-string? chainFile = null, chainBlocksPng = null;
+string? chainFile = null, chainBlocksPng = null, chainTab = null;
 bool chainLevels = false;
 // brief-dfr32-3 — a .c3d's setup cards beside its Properties panel: --delete-fields runs a card's Delete Saved Fields (into a
 // scratch folder, never the Trash) and --c3d-row selects an Object Tree row (a field plot) for the panel.
@@ -258,6 +258,7 @@ for (int i = 0; i < args.Length; i++)
         case "--chain" when i + 1 < args.Length: chainFile = Path.GetFullPath(args[++i]); break;
         case "--blocks-png" when i + 1 < args.Length: chainBlocksPng = Path.GetFullPath(args[++i]); break;
         case "--levels": chainLevels = true; break;
+        case "--chain-tab" when i + 1 < args.Length: chainTab = args[++i]; break;
         case "--snp" when i + 1 < args.Length: snp = Path.GetFullPath(args[++i]); break;
         case "--tab" when i + 1 < args.Length: previewTab = int.Parse(args[++i]); break;
         case "--standalone": standalone = true; break;
@@ -1351,6 +1352,12 @@ else if (chainFile is not null)
     if (sizeGiven) { host.Width = width; host.Height = height; }
     host.Show();
     Pump();
+    // --chain-tab: the results' tab of that header selected, as a click on it would.
+    if (chainTab is not null)
+    {
+        foreach (var t in chainWindow.GetVisualDescendants().OfType<TabItem>().Where(t => Equals(t.Header, chainTab))) t.IsSelected = true;
+        Pump();
+    }
     // The window's own placement of the strip's nodes, read back: each must stand in the gap between two blocks.
     if (chainLevels && chainWindow.FindControl<CircuitRF.Ui.Views.Chain.ChainLevelStrip>("LevelStrip") is { NodeX: { } nodeX } strip
         && chainWindow.FindControl<ItemsControl>("BlockItems") is { } items)

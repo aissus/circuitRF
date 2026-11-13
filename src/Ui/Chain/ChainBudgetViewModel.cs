@@ -252,6 +252,29 @@ public sealed partial class ChainBudgetViewModel : ObservableObject
             }
         }
     }
+    // The response's tab: one design across its band (not a carrier sweep), four plots.
+    private readonly CircuitRF.Ui.DataDisplay.ViewModels.PlotContainerViewModel?[] _response = new CircuitRF.Ui.DataDisplay.ViewModels.PlotContainerViewModel?[4];
+    public CircuitRF.Render.DataDisplay.Plot?[] ResponsePlots => [.. _response.Select(h => h?.PlotVM.Plot)];
+    [ObservableProperty] private bool _hasResponse;
+
+    /// <summary>The chain's response, budgeted point by point, into its tab's plots, over the offset in MHz or the input
+    /// frequency in GHz; its notes join the chain's.</summary>
+    private void RefillResponse(ChainDesign d, List<string> notes)
+    {
+        HasResponse = d.Response is not null;
+        if (d.Response is not { } rsp) return;
+        var data = ChainBudget.Response(d, notes);
+        var cfg = CircuitRF.Render.DataDisplay.ChainBudgetDisplay.WindowResponse(rsp.Offset);
+        for (int i = 0; i < cfg.Count; i++)
+        {
+            Refill(ref _response[i], nameof(ResponsePlots), cfg[i], BudgetSource, data);
+            if (_response[i] is { } h && h.PlotVM.Plot.FreqUnits != cfg[i].FreqUnit)
+            {
+                h.PlotVM.Plot.FreqUnits = cfg[i].FreqUnit;
+                h.RequestPlotRedraw();
+            }
+        }
+    }
     public CircuitRF.Render.DataDisplay.Plot? LinkPlot => _linkTable?.PlotVM.Plot;
     public CircuitRF.Render.DataDisplay.Plot? ReceiverPlot => _receiverTable?.PlotVM.Plot;
 
@@ -508,6 +531,7 @@ public sealed partial class ChainBudgetViewModel : ObservableObject
         RequiredSnrDb = N(d.RequiredSnrDb);
         Blockers = FormatBlockers(d.Blockers);
         Demo = d.Demo;
+        Mismatch = d.Mismatch;
         HasLink = d.Link is not null;
         FillLink(d);
         Stages.Clear();
@@ -538,6 +562,8 @@ public sealed partial class ChainBudgetViewModel : ObservableObject
         NfAllowanceDb = Parse(Rx("NfAllowance"), 1, double.NaN),
         RxBackoffDb = Parse(Rx("RxBackoff"), 1, double.NaN),
         Sweeps = ParseSweeps(),
+        Response = ParseResponse(),
+        Mismatch = Mismatch,
         Direction = Tr("Direction").Trim() is { Length: > 0 } dir ? dir : ChainDesign.Receive,
         RxBandOffsetHz = Tr("RxOffset").Trim().Length == 0 ? null : Mhz(Tr("RxOffset")),
         RxBandHz = Mhz(Tr("RxBandwidth")),
@@ -577,11 +603,38 @@ public sealed partial class ChainBudgetViewModel : ObservableObject
     [ObservableProperty] private bool _hasLink;
     partial void OnHasLinkChanged(bool value) => Edited(null);
 
+    /// <summary>The cascade with mismatch: every stage's two-port S and noise, cascaded (<see cref="ChainDesign.Mismatch"/>).</summary>
+    [ObservableProperty] private bool _mismatch;
+    partial void OnMismatchChanged(bool value) => Edited(null);
+
     public ObservableCollection<ChainParamViewModel> LinkTx { get; } = [];
     public ObservableCollection<ChainParamViewModel> LinkPath { get; } = [];
     public ObservableCollection<ChainParamViewModel> ReceiverInputs { get; } = [];
     public ObservableCollection<ChainParamViewModel> SweepInputs { get; } = [];
-    private IEnumerable<ChainParamViewModel> LinkParams => LinkTx.Concat(LinkPath).Concat(ReceiverInputs).Concat(SweepInputs).Concat(TransmitInputs);
+    public ObservableCollection<ChainParamViewModel> ResponseInputs { get; } = [];
+    private IEnumerable<ChainParamViewModel> LinkParams => LinkTx.Concat(LinkPath).Concat(ReceiverInputs).Concat(SweepInputs).Concat(ResponseInputs).Concat(TransmitInputs);
+
+    /// <summary>The response: the band, one line as a sweep's, and whether its ends are offsets from the carrier.</summary>
+    public static readonly IReadOnlyList<ChainParam> ResponseParameters =
+    [
+        new("Band", "", "", Numeric: false, BlankAllowed: true,
+            Help: "this design across a band, every LO and filter where the carrier put them: from, to, points (\"-100 MHz, 100 MHz, 41\"; MHz when bare); blank: none"),
+        new("Of", "Offset", "", Numeric: false, Options: ["Offset", "Frequency"],
+            Help: "Offset: the band's ends are offsets from the carrier. Frequency: they are input frequencies"),
+    ];
+
+    private string Re(string name) => ResponseInputs.FirstOrDefault(p => p.Name == name)?.Value ?? "";
+
+    /// <summary>The response typed; one that is not "from, to, points" is kept as no numbers, which the budget refuses.</summary>
+    private ChainResponse? ParseResponse()
+    {
+        string text = Re("Band").Trim();
+        if (text.Length == 0) return null;
+        bool offset = !Re("Of").Trim().Equals("Frequency", StringComparison.OrdinalIgnoreCase);
+        var parts = text.Split(',', StringSplitOptions.TrimEntries);
+        return parts.Length == 3 && int.TryParse(parts[2], NumberStyles.Integer, CultureInfo.InvariantCulture, out int n)
+            ? new ChainResponse(Mhz(parts[0]), Mhz(parts[1]), n, offset) : new ChainResponse(double.NaN, double.NaN, 0, offset);
+    }
 
     /// <summary>The sweeps, one line each as the Blockers are: "from, to, points".</summary>
     public static readonly IReadOnlyList<ChainParam> SweepParameters =
@@ -632,6 +685,9 @@ public sealed partial class ChainBudgetViewModel : ObservableObject
         Fill(LinkPath, ChainLink.PathParameters, "Path.", d.Link?.Path);
         Fill(ReceiverInputs, ReceiverParameters, "Rx.", rx);
         Fill(SweepInputs, SweepParameters, "Sw.", d.Sweeps.GroupBy(s => s.Of).ToDictionary(g => g.Key, g => FormatSweep(g.First())));
+        Fill(ResponseInputs, ResponseParameters, "Re.", d.Response is { } rsp
+            ? new Dictionary<string, string> { ["Band"] = $"{ChainSnp.Hz(rsp.From)}, {ChainSnp.Hz(rsp.To)}, {rsp.Points}", ["Of"] = rsp.Offset ? "Offset" : "Frequency" }
+            : null);
         Fill(TransmitInputs, TransmitParameters, "Tr.", new Dictionary<string, string>
         {
             ["Direction"] = d.IsTransmit ? ChainDesign.Transmit : ChainDesign.Receive,
@@ -644,6 +700,7 @@ public sealed partial class ChainBudgetViewModel : ObservableObject
         LinkTx.Select(p => ("Tx." + p.Name, p.Value)).Concat(LinkPath.Select(p => ("Path." + p.Name, p.Value)))
               .Concat(ReceiverInputs.Select(p => ("Rx." + p.Name, p.Value)))
               .Concat(SweepInputs.Select(p => ("Sw." + p.Name, p.Value)))
+              .Concat(ResponseInputs.Select(p => ("Re." + p.Name, p.Value)))
               .Concat(TransmitInputs.Select(p => ("Tr." + p.Name, p.Value))).ToDictionary(x => x.Item1, x => x.Item2));
 
     /// <summary>An edit that is an undo step of its own: a stage added, inserted, removed or moved.</summary>
@@ -666,7 +723,7 @@ public sealed partial class ChainBudgetViewModel : ObservableObject
     /// <summary>The document's content, compared to decide dirtiness; the selection rides beside it.</summary>
     private sealed record UndoContent(string Frequency, string Bandwidth, string InputPower, string Temperature,
                                       string RequiredSnr, string Blockers, bool Demo, string Stages, bool HasLink = false,
-                                      string Link = "");
+                                      string Link = "", bool Mismatch = false);
 
     private sealed record UndoState(UndoContent Content, int Selected);
 
@@ -692,7 +749,7 @@ public sealed partial class ChainBudgetViewModel : ObservableObject
     private UndoState Capture() => new(new UndoContent(
         Frequency, BandwidthMHz, InputPowerDbm, TemperatureK, RequiredSnrDb, Blockers, Demo,
         System.Text.Json.JsonSerializer.Serialize(Stages.Select(st => st.ToStage()).Select(st => new { st.Name, st.Part, st.Parameters })),
-        HasLink, LinkSnapshot()),
+        HasLink, LinkSnapshot(), Mismatch),
         SelectedStageIndex);
 
     /// <summary>A document just opened, made or loaded: nothing to undo, and this content is the clean state.</summary>
@@ -783,6 +840,7 @@ public sealed partial class ChainBudgetViewModel : ObservableObject
             (Frequency, BandwidthMHz, InputPowerDbm, TemperatureK, RequiredSnrDb, Blockers, Demo) =
                 (c.Frequency, c.Bandwidth, c.InputPower, c.Temperature, c.RequiredSnr, c.Blockers, c.Demo);
             HasLink = c.HasLink;
+            Mismatch = c.Mismatch;
             FillLink(new ChainDesign(), System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, string>>(c.Link));
             Stages.Clear();
             foreach (var st in System.Text.Json.JsonSerializer.Deserialize<List<ChainStage>>(c.Stages) ?? [])
@@ -840,7 +898,7 @@ public sealed partial class ChainBudgetViewModel : ObservableObject
         RefillCanceller(r.Design ?? d);
         RefillLink(r);
         var sweepNotes = new List<string>();
-        if (r.Totals is not null) RefillSweeps(d, sweepNotes);
+        if (r.Totals is not null) { RefillSweeps(d, sweepNotes); RefillResponse(d, sweepNotes); }
         PlotsUpdated?.Invoke(this, EventArgs.Empty);
         Refusals = string.Join("\n", r.Refusals);
         Notes = string.Join("\n", r.Notes.Concat(ChainLink.Power(r)?.Note is { } dc ? [dc] : []).Concat(sweepNotes));

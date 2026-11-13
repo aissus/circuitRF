@@ -233,6 +233,10 @@
                     <TextBox Classes="p" Text="{Binding RequiredSnrDb}" Classes.invalid="{Binding RequiredSnrInvalid}" ToolTip.Tip="The SNR the demodulator needs: sensitivity is the MDS plus this"/>
                     <TextBlock Classes="unit" Text="dB"/>
                 </StackPanel>
+                <CheckBox IsChecked="{Binding Mismatch}" Margin="0,0,8,0"
+                          ToolTip.Tip="Cascade every stage's two-port S-parameters and noise: the gain and the NF between real ports, every reflection between neighbours included. A stage with no S data is its budget's matched two-port; off, every stage is matched">
+                    <TextBlock Text="with mismatch" FontSize="12"/>
+                </CheckBox>
                 <StackPanel Orientation="Horizontal">
                     <TextBlock Classes="lbl" Text="Blockers"/>
                     <TextBox Classes="p" Text="{Binding Blockers}" Classes.invalid="{Binding BlockersInvalid}" MinWidth="200" PlaceholderText="offset MHz, level dBm; …"
@@ -466,7 +470,7 @@
                                 <ddc:PlotControl Name="ReceiverPlotControl" ClipToBounds="True" Height="70"
                                                  Plot="{Binding ReceiverPlot}" Library="{Binding PlotHost.Library}"
                                                  CanDeletePlot="False" CanEditPlotProperties="False" CanAddMarkers="False"/>
-                                <Grid ColumnDefinitions="100,*" RowDefinitions="Auto,Auto,Auto,Auto">
+                                <Grid ColumnDefinitions="100,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto">
                                     <TextBlock Classes="lbl" Text="Transmitter" VerticalAlignment="Top" Margin="0,4,0,0" IsVisible="{Binding HasLink}"/>
                                     <ItemsControl Grid.Column="1" ItemsSource="{Binding LinkTx}" IsVisible="{Binding HasLink}">
                                         <ItemsControl.ItemsPanel><ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate></ItemsControl.ItemsPanel>
@@ -481,6 +485,11 @@
                                     </ItemsControl>
                                     <TextBlock Grid.Row="3" Classes="lbl" Text="Sweeps" VerticalAlignment="Top" Margin="0,4,0,0"/>
                                     <ItemsControl Grid.Row="3" Grid.Column="1" ItemsSource="{Binding SweepInputs}">
+                                        <ItemsControl.ItemsPanel><ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+                                    </ItemsControl>
+                                    <!-- Not a sweep: this one design across a band, its LOs and filters where the carrier put them. -->
+                                    <TextBlock Grid.Row="4" Classes="lbl" Text="Response" VerticalAlignment="Top" Margin="0,4,0,0"/>
+                                    <ItemsControl Grid.Row="4" Grid.Column="1" ItemsSource="{Binding ResponseInputs}">
                                         <ItemsControl.ItemsPanel><ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate></ItemsControl.ItemsPanel>
                                     </ItemsControl>
                                 </Grid>
@@ -533,6 +542,23 @@
                                              CanDeletePlot="False" CanEditPlotProperties="False" CanAddMarkers="False"/>
                             <ddc:PlotControl Grid.Column="6" Name="SweepR3" ClipToBounds="True"
                                              Plot="{Binding RxSweepPlots[3]}" Library="{Binding PlotHost.Library}"
+                                             CanDeletePlot="False" CanEditPlotProperties="False" CanAddMarkers="False"/>
+                        </Grid>
+                    </TabItem>
+                    <!-- The response: the design as it stands across a band, every LO where the carrier put it. -->
+                    <TabItem Header="Response" FontSize="13" IsVisible="{Binding HasResponse}">
+                        <Grid ColumnDefinitions="*,4,*,4,*,4,*">
+                            <ddc:PlotControl Grid.Column="0" Name="Response0" ClipToBounds="True"
+                                             Plot="{Binding ResponsePlots[0]}" Library="{Binding PlotHost.Library}"
+                                             CanDeletePlot="False" CanEditPlotProperties="False" CanAddMarkers="False"/>
+                            <ddc:PlotControl Grid.Column="2" Name="Response1" ClipToBounds="True"
+                                             Plot="{Binding ResponsePlots[1]}" Library="{Binding PlotHost.Library}"
+                                             CanDeletePlot="False" CanEditPlotProperties="False" CanAddMarkers="False"/>
+                            <ddc:PlotControl Grid.Column="4" Name="Response2" ClipToBounds="True"
+                                             Plot="{Binding ResponsePlots[2]}" Library="{Binding PlotHost.Library}"
+                                             CanDeletePlot="False" CanEditPlotProperties="False" CanAddMarkers="False"/>
+                            <ddc:PlotControl Grid.Column="6" Name="Response3" ClipToBounds="True"
+                                             Plot="{Binding ResponsePlots[3]}" Library="{Binding PlotHost.Library}"
                                              CanDeletePlot="False" CanEditPlotProperties="False" CanAddMarkers="False"/>
                         </Grid>
                     </TabItem>

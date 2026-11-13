@@ -631,6 +631,30 @@ public static class ChainBudgetDisplay
         return plots;
     }
 
+    /// <summary>
+    /// The response's tab (<see cref="ChainBudget.Response"/>): the design as it stands across its band, the gain and NF,
+    /// the output signal and noise, the intercepts and the compression points, over the offset from the carrier in MHz or
+    /// the input frequency in GHz.
+    /// </summary>
+    public static IReadOnlyList<PlotContainerConfig> WindowResponse(bool offset)
+    {
+        const string src = "budget";
+        string axis = offset ? "offset" : "freq", x = offset ? "offset, MHz" : "input, GHz";
+        List<PlotContainerConfig> plots =
+        [
+            Rect("Gain and NF", x, "dB", 0, 0, 300, 240,
+                 [Over(src, "Gain_dB", axis, "gain", C(1), false), Over(src, "NF_dB", axis, "NF", C(3), false)]),
+            Rect("Output signal and noise", x, "dBm", 0, 0, 300, 240,
+                 [Over(src, "Pout_dBm", axis, "signal", C(1), false), Over(src, "Nout_dBm", axis, "noise in the bandwidth", C(3), false)]),
+            Rect("Intercepts", x, "dBm", 0, 0, 300, 240,
+                 [Over(src, "IIP3_dBm", axis, "IIP3", C(4), false), Over(src, "OIP3_dBm", axis, "OIP3", C(2), false)]),
+            Rect("Compression", x, "dBm", 0, 0, 300, 240,
+                 [Over(src, "IP1dB_dBm", axis, "IP1dB", C(4), false), Over(src, "OP1dB_dBm", axis, "OP1dB", C(2), false)]),
+        ];
+        foreach (var p in plots) p.FreqUnit = offset ? FreqUnit.MHz : FreqUnit.GHz;
+        return plots;
+    }
+
     /// <summary>A table a combiner variant, in the bench's order.</summary>
     private static List<PlotContainerConfig> Combiners(string src, ChainDesign design)
     {
