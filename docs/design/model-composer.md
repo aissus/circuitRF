@@ -2327,7 +2327,7 @@ untouched. `sample` writes `N0 = 1`, `W0 = 1 um` unless told otherwise.
 ### 26.6 Measured
 
 Hand runs, not tests: `circuitrf lp` over the 20 Hero-3 loads to 3 dB of Gt compression, Release, the shortest of several
-runs on a shared machine, process start (0.33 s) included; the detail is in `src/Design/RESOLVED.md` (LP-3).
+runs, process start (0.33 s) included; the detail is in `src/Design/RESOLVED.md` (LP-3).
 
 | Device | Device | Stand-in | With LP-1's parallel grid: device / stand-in |
 |---|---|---|---|

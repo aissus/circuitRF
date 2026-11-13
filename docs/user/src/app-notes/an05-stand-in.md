@@ -140,7 +140,7 @@ in 0.82 s on the parallel grid.
 
 These are hand runs, not tests: each device was load-pulled with `circuitrf lp` over the 20 loads of the Hero-3 grid at
 2 GHz, each driven to 3 dB of Gt compression, with the stand-in placed on the same bench. The times include starting the
-process (0.33 s). They are the shortest of several runs on a shared machine, so read the ratios rather than the seconds. The last column has the
+process (0.33 s). They are the shortest of several runs, so read the ratios rather than the seconds. The last column has the
 parallel loadpull grid: it runs a stand-in's loads side by side and keeps a compiled model on its one worker.
 
 | Device | Device | Stand-in | Parallel grid: device / stand-in |

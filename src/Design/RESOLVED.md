@@ -30877,8 +30877,8 @@ excitation index, so the plot's solution must omit `Port`; the Loop Sensor's plo
 
 `model sample` (`Modeling/StandInSampling.cs`, `docs/design/model-composer.md` §26) builds a quasi-static `.cmodel` of
 tables from DC and S that circuitRF computes for a device it already runs. The speed and the `crf_fet`, GaN and HBT
-accuracy below are hand runs, not tests (Hero-2's accuracy is the frozen benchmark): measured on 1.8.2, Release, on a
-shared machine under load (load average 40–70); every time is the shortest of two to five runs of `circuitrf lp`,
+accuracy below are hand runs, not tests (Hero-2's accuracy is the frozen benchmark): measured on 1.8.2, Release;
+every time is the shortest of two to five runs of `circuitrf lp`,
 process start included (0.33 s for `--version`), over the 20 Hero-3 loads (`testdata/Hero3/hero3_load.gam`) driven to
 3 dB of Gt compression.
 
