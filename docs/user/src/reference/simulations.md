@@ -559,8 +559,8 @@ blocks are handled as follows.
   envelope, where the line stays exact at DC. A line is usually shorter than one step, so the
   delayed wave is interpolated between steps: at *standard* this is off by up to about 1.5 % at the edge
   of the signal band, at *fine* about 0.2 %. The Messages pane gives each line's delay and how far it
-  is from the line across the band, and a warning names any line far enough off to move ACPR by about
-  0.1 dB.
+  is from the line across the band, with and without its interpolation between steps (a whole number of steps is
+  exact), and a warning names any line far enough off to move ACPR by about 0.1 dB.
 - **S-parameter blocks** ([SnP](components.html#snp)), the System [Filter](components.html#filter)
   and [Duplexer](components.html#duplexer), an [Impedance N-Port](components.html#zport) with a
   `Z(freq)`, and any other part whose response bends across a harmonic's band by more than the fit's
@@ -585,10 +585,11 @@ bias node's droop, or a polar transmitter's amplitude and phase. A [MOD_Source](
 `Polar=amp` or `Polar=phase` drives it with the signal's envelope or phase, and the
 [polar-transmitter blocks](system-components.html#polar) read it and write it; the run measures the pair's signal
 once, through its amplitude half, so Pin, gain, ACLR and EVM at the output are against the signal the pair
-stands for. Polar halves and those blocks need a single envelope: the multi-fundamental envelope refuses them by
-name. The warm-up estimate does not see a polar block's own ports, so a line between two of them can read as a
-memory of seconds and make the run one segment; state `Warmup` (the polar example uses 1 µs) to run it in
-parallel, and the seam error still reports what that costs.
+stands for; beside an RF source of the same signal (envelope tracking) the RF source is the one measured. The phase
+half plays the phase unwrapped over the record, continuous, so a filter or a delay on the phase path acts on the
+phase rather than on 2π wraps; it still turns by about π across a null of the envelope. Polar halves need a single
+envelope, and the multi-fundamental envelope refuses them by name; it refuses those blocks too, for as long as its
+solver drops the weighted term they read their carrier's quadrature through.
 
 | Setting | Default | Meaning |
 |---|---|---|

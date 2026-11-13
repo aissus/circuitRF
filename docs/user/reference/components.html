@@ -752,8 +752,10 @@ each must be the source's only carrier.</li>
 <a href="system-components.html#polar">polar transmitter</a>. Absent (or <code>rf</code>) is the RF source. A pair of sources
 with the same carriers, one of each, is the polar pair: the amplitude half's open-circuit voltage is
 <code>|Vs|·|x(t)|</code>, so a matched load reads the RF envelope the source would deliver; the phase half's is
-<code>2·arg x(t)</code>, so a matched load reads the phase, one volt per radian. Add it as a row in the source's
-properties.</li>
+<code>2·φ(t)</code>, the phase unwrapped over the record, so a matched load reads the phase, one volt per radian, continuous
+(it still turns by about π across a null of the envelope). The pair is measured once, through its amplitude half;
+beside an RF source of the same signal (envelope tracking) the RF source is the one measured. Add it as a row in
+the source's properties.</li>
 <li><code>Record</code> — periodic record length (s), whole 0.5 ms slots. <code>Clip</code> — target PAPR (dB) for
 clip-and-filter; absent means <strong>unclipped</strong> (the natural OFDM PAPR, about 11–12 dB).
 <code>Shaping</code> — out-of-channel spectral floor (dBc), or <code>off</code>.</li>

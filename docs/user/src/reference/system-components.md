@@ -281,7 +281,8 @@ frequency-domain weight, `j·sign(ω)`, that a block with a complex S uses for i
 
 That weight is carried by **single-tone harmonic balance and a single envelope**. Two-tone and multi-tone harmonic
 balance and the multi-fundamental envelope (`Envelope=lattice`, or carriers far enough apart to get their own
-fundamentals) refuse these blocks by name rather than run them without it. An S-parameter run sees each block
+fundamentals) refuse these blocks by name for as long as their solvers drop weighted terms of this kind, rather than
+run them without it. An S-parameter run sees each block
 linearised at no drive.
 
 ### Baseband beside the carrier
@@ -290,9 +291,15 @@ In an envelope run every net carries a slowly varying envelope at every harmonic
 envelope is a baseband signal, stepped with the same accuracy as the carrier's. A polar MOD_Source half drives it,
 the [Envelope Detector](components.html#envdetector) writes to it, and the Phase Modulator and the Supply-Modulated
 Amplifier read it; a System [Filter](#filter) shapes it exactly (its rational fit holds from DC up) and a
-[Delay](#delay) delays it exactly (it is stepped as its delay). Drive a control input from a source with an
-impedance, as the polar halves are: an ideal voltage source straight onto a block's port leaves harmonic balance
-nothing to solve at that node.
+[Delay](#delay) delays it (it is stepped as its delay: exactly for a whole number of steps, interpolated between steps
+for a fraction of one).
+
+The phase half plays the phase **unwrapped** over the record, continuous, as a polar transmitter's phase path carries
+it, so a filter or a fraction-of-a-step delay on that path acts on the phase and not on 2π wraps. It still turns by
+about π across a null of the envelope: that is the signal, and why a phase path needs bandwidth.
+
+**Envelope tracking** is the same blocks with an RF source: an RF MOD_Source on the amplifier's input and the
+amplitude half of the same signal on its supply. The run measures the RF source, once.
 
 ## The blocks, one by one {#catalogue}
 
@@ -483,8 +490,8 @@ An ideal matched delay line, stated in time rather than in electrical length:
 `S11 = S22 = 0`, `S21 = S12 = e^(−jωT)`
 
 It has two interchangeable pins, a delay `T` and a reference impedance `Z0`. Its magnitude is 1 at
-every frequency and its group delay is exactly `T`, in a circuit envelope too, where it is stepped as its delay
-at every harmonic and at baseband, so it is how a block diagram states a cable run,
+every frequency and its group delay is exactly `T`. A circuit envelope steps it as its delay at every harmonic and at
+baseband, exactly for a whole number of steps and interpolated between steps otherwise. So it is how a block diagram states a cable run,
 a filter's latency or a processing delay without picking a frequency to quote a phase at. At DC it
 is an ideal through. A negative `T` is accepted. It is not causal, but it is the quickest way to
 cancel a known delay elsewhere in a chain.

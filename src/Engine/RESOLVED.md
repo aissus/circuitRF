@@ -4390,36 +4390,52 @@ needed no new engine mechanism for its blocks — only the quadrature bucket `sr
 envelope did need:
 
 - **A source at baseband.** `EnvelopeEngine` drives each MOD_Source at `ModSourceModel.EnvelopeProduct`: 1 for an RF
-  source, 0 for a polar half, with the window turned into `|x|·|Vs|` or `2·arg x` after any phase-noise rotation
-  (`PolarDrive`). The unit right-hand side, the drive added in `Advance` and the harmonic-balance start all follow it.
-  `PolarPair` refuses halves that play different signals (`Spec.CacheKey`, `Fc`) and a phase half alone.
-- **Measured once.** The result's `Sources`, `Drive` and carrier lists leave out every phase half, and an amplitude
-  half records the complex signal `|Vs|·x` as its drive, so Pin, Gt, ACLR and EVM at the output are against the
-  signal the pair stands for. `explain` lists the carriers the same way.
-- **The System Delay is stepped as its delay** (`EnvelopeLineDelay.Ends`): a causal `DelayModel` in a real `Z0`
-  whose ports return to ground is a lossless line between its + nets (`IUniformLine.LineAt = (Z0, jωT)`). Before,
-  it reached the envelope as its tangent at each harmonic and at baseband — `S21 ≈ 1 − jωT`, which over a polar
-  envelope's band (`ωT` ≈ 1.6 at 50 MHz and 5 ns) is neither a delay nor passive. A whole number of steps is now exact
-  to 2e-11 at both products (`PolarEnvelopeTests.ADelay_IsExactAtTheBasebandAndAtTheCarrier`). A negative `T` or a
-  complex `Z0` keeps the old path.
-- **The multi-fundamental envelope refuses** polar halves (it has no one baseband to drive) and carrier blocks.
+  source, 0 for a polar half. The amplitude half plays `|Vs|·|x|`; the phase half `2·φ`, **φ unwrapped over the record**
+  (`UnwrappedPhase`: the record at the step rate, any phase-noise rotation applied, unwrapped from sample 0, each
+  further period adding the record's own winding — a function of the absolute sample, so every segment and window
+  reads the same value). Played wrapped, any filter or fractional delay on the phase path interpolated across the 2π
+  jumps: half a step of delay there read 4.2 % of EVM and −27.5 dBc on the 3.5 GHz example, against 1.1 % and −43 dBc
+  for the same delay on the amplitude path. The unwrapped phase still turns by about π across a null of the envelope,
+  which is the signal. `PolarPair` refuses halves that play different signals (`Spec.CacheKey`, `Fc`) and a phase
+  half alone.
+- **Measured once** (`EnvelopeEngine.Measured`, which `explain` uses too). A polar pair through its amplitude half,
+  whose recorded drive is the complex signal `|Vs|·x`; and an amplitude half beside an RF source of the same signal
+  (envelope tracking) not at all, the RF source being the signal. Counting both had read Pin 6 dB high and listed
+  ACLR and EVM twice.
+- **The System Delay is stepped as its delay** (`EnvelopeLineDelay.Ends`): a causal `DelayModel` in a real `Z0` whose
+  ports return to ground is a lossless line between its + nets (`IUniformLine.LineAt = (Z0, jωT)`), in the single and
+  the multi-fundamental envelope alike. On main the envelope fitted it like any non-affine block — a rational fit
+  from DC to the top of the run (order 40 for 5 ns at 3.5 GHz) — and fell back to its tangent, with a warning, only
+  when the fit missed. Stepped as a delay it needs no fit and no warning, runs ~10× faster (NR 20 MHz through 5 ns:
+  5.4 s → 0.47 s), is exact for a whole number of steps (2e-11 in `PolarEnvelopeTests`), and on the example's 4 ns
+  point reads 4.327 % where the fit read 4.407 %. In the multi-fundamental envelope, two NR carriers through 5 ns and
+  an amplifier read 1.23 % of EVM on main against 0.154 % / 0.138 %. A negative `T`, a complex `Z0` or returns that are
+  not ground keep the old path.
+- **A fraction of a step is interpolated** (quadratic Lagrange on the step grid), so "exact" holds for whole steps
+  only. The line's note now gives both figures: its distance from the line across the band, and the same with the
+  delay as the steps interpolate it (`Interpolated`). The warning still reads the first: at `draft` the band reaches
+  the step's own Nyquist, where half a step's interpolation is off by ~50 % RMS on content the signal barely has.
+- **The warm-up estimate holds a steppable Delay as the line it is** (`BasebandHeldModel.HeldAsLine`), and the Delay
+  declares its own memory, `T`. Before, `EnvelopeMemory.LinearPole` stamped its S-block at 1 Hz and 2 Hz, and a Delay
+  between two nonlinear ports (nothing but gmin on its nodes) read as a pole of tens of seconds: Amp → 5 ns → Amp
+  "remembers 50 s" and ran as one segment, on main too. The held stamp has none of the S-block's branch unknowns, so
+  `HeldError` is not asked (it only sizes a warning, on a netlist the estimate discards).
+- **The multi-fundamental envelope refuses** polar halves (it has no one baseband to drive), and carrier blocks for as
+  long as its solver drops weighted terms.
 
 Findings worth keeping:
 
-- **The warm-up estimate does not see a nonlinear block's own ports.** `EnvelopeMemory.LinearPole` reads the linear
-  partition only, so a Delay between two carrier blocks floats on gmin and its C/G reads as 3.18 s: the run goes to
-  one segment. The polar example states `Warmup` (1 µs) instead, which the runner obeys without asking, and its seam
-  error reads 0. A series capacitor between two FET gates with no bias path would read the same way.
 - **The EVM measurement splits an AM/PM mismatch.** `SignalEvm.Evaluate` fits one delay (the peak of the in-band
   cross-correlation) before its gain, and against `a(t − Δτ)·e^(jφ)` that delay lands at Δτ/2 for an NR signal,
   whose amplitude and phase move equally fast. A prediction that fits only a gain reads 1.6× high at small Δτ. The
   gate (`EvmAgainstDelayMismatch_FollowsTheRecombinationError`) forms the error from the record the run plays and
-  applies both fits in band: within 0.3 % of the run at 2 and 6 steps of an LTE 1.4 MHz record. On the 3.5 GHz NR
-  20 MHz example the same construction is within 1.3 % at 1, 2 and 4 ns (1.108 / 2.188 / 4.312 % against
+  applies both fits in band: 0.008 % from the run at 2 steps and 0.99 % at 6 (LTE 1.4 MHz). On the 3.5 GHz NR 20 MHz
+  example the same construction is within 1.3 % at 1, 2 and 4 ns (1.108 / 2.188 / 4.312 % against
   1.122 / 2.198 / 4.327 %).
-- **Fractional delays want `standard`.** A delay that is not a whole number of steps is interpolated (quadratic
-  Lagrange), and on a polar envelope's wideband content at `draft`'s 8 ns step that costs the ideal example 0.04 pp
-  of EVM and 30 dB of ACPR1 against `standard`.
+- **Fractional delays want `standard`, and set the example's floor.** On a polar envelope's wideband content the
+  interpolation at `draft`'s 8 ns step costs the ideal example 0.04 pp of EVM and 30 dB of ACPR1 against `standard`;
+  at `standard` the 0.32 ns alignment still holds ACPR1 to −74.7 dBc (−82.5 at `fine`, −86.5 with the filter and the
+  alignment delay taken out).
 - **The device pass, not the model, is an envelope step's cost.** On the 9-interface-node polar chain, ~90 % of a
   step is `HbNewton.EvaluateNonlinear`'s O(N²) small FFTs of the Jacobian spectra; making the blocks
   allocation-free (`EvaluateGrid`) did not change it.

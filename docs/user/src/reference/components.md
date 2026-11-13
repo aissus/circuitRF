@@ -384,8 +384,10 @@ source impedance `Z`.
   [polar transmitter](system-components.html#polar). Absent (or `rf`) is the RF source. A pair of sources
   with the same carriers, one of each, is the polar pair: the amplitude half's open-circuit voltage is
   `|Vs|·|x(t)|`, so a matched load reads the RF envelope the source would deliver; the phase half's is
-  `2·arg x(t)`, so a matched load reads the phase, one volt per radian. Add it as a row in the source's
-  properties.
+  `2·φ(t)`, the phase unwrapped over the record, so a matched load reads the phase, one volt per radian, continuous
+  (it still turns by about π across a null of the envelope). The pair is measured once, through its amplitude half;
+  beside an RF source of the same signal (envelope tracking) the RF source is the one measured. Add it as a row in
+  the source's properties.
 - `Record` — periodic record length (s), whole 0.5 ms slots. `Clip` — target PAPR (dB) for
   clip-and-filter; absent means **unclipped** (the natural OFDM PAPR, about 11–12 dB).
   `Shaping` — out-of-channel spectral floor (dBc), or `off`.
