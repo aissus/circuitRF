@@ -21,8 +21,8 @@ public static class CarrierBlockDiagnostics
     /// <summary>A carrier block in an analysis whose device pass does not carry the quadrature bucket.</summary>
     public static Diagnostic QuadratureNotCarried(string type, string instance, string analysis) => Diagnostic.Create(
         "carrier.quadrature-not-carried", DiagnosticSeverity.Error,
-        "{type} '{instance}' reads its carrier's quadrature, which {analysis} does not carry: run it in single-tone " +
-        "harmonic balance or a single envelope (Envelope=single).",
+        "{type} '{instance}' reads its carrier's quadrature, a weighted (w ≥ 2) term that {analysis} drops from its device " +
+        "pass: run it in single-tone harmonic balance or a single envelope (Envelope=single).",
         ("type", type), ("instance", instance), ("analysis", analysis));
 
     /// <summary>A Polar word that is neither half.</summary>

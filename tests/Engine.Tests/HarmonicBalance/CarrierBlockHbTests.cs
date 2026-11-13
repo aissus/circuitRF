@@ -165,7 +165,24 @@ public class CarrierBlockHbTests(ITestOutputHelper output)
         Assert.Equal(0.0, V(ds, "a", 1).Magnitude, 12);
     }
 
-    /// <summary>Two-tone harmonic balance does not carry the quadrature bucket, so it refuses the block by name.</summary>
+    /// <summary>N-tone harmonic balance drops weighted terms as the two-tone solver does, and refuses the block by name.</summary>
+    [Fact]
+    public void ThreeToneHarmonicBalance_RefusesACarrierBlockByName()
+    {
+        var (lib, tb) = new CnlReader().Read("""
+            PnTone:S1 a 0 Freq[1]=1.0 GHz Pavl[1]=-10 Phase[1]=0 Freq[2]=1.01 GHz Pavl[2]=-10 Phase[2]=0 Freq[3]=1.023 GHz Pavl[3]=-10 Phase[3]=0 Z=50
+            EnvDetector:ED7 a 0 b 0 Kd=1
+            R:RL b 0 R=50
+            analysis HB1 type=hb NumFreqs=3 Tone[1]=1.0e9 Tone[2]=1.01e9 Tone[3]=1.023e9 MaxHarm=2 MaxMixOrder=3
+            """);
+        var nl = new Elaborator(lib).Elaborate(tb);
+        var hba = tb.Analyses.OfType<HarmonicBalanceAnalysis>().First();
+        var ex = Assert.ThrowsAny<InvalidOperationException>(() => new HbEngine(nl, tb).Run(HbEngine.Resolve(hba, nl.ResolvedGlobals)));
+        Assert.Contains("ED7", ex.Message);
+        Assert.Contains("multi-tone", ex.Message);
+    }
+
+    /// <summary>Two-tone harmonic balance drops the quadrature bucket, so it refuses the block by name.</summary>
     [Fact]
     public void TwoToneHarmonicBalance_RefusesACarrierBlockByName()
     {

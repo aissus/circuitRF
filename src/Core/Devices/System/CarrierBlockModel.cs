@@ -18,8 +18,9 @@ namespace CircuitRF.Core.Devices;
 /// <para>The node's row is <c>g·v_q + H₂(ω)·g·v_in = 0</c> with the weight <c>H₂(ω) = j·sign(ω)</c> — the quadrature bucket
 /// <see cref="IdealSBlockModel"/>'s passive intermod already uses — so at harmonic k ≥ 1 <c>V_q = −j·V_in</c>, and at DC
 /// <c>V_q = 0</c>. The weight is flat about each harmonic, so the envelope applies it exactly across the signal band.
-/// Only the single-fundamental engines carry such a bucket: two-tone and multi-tone harmonic balance and the
-/// multi-fundamental envelope refuse these blocks by name.</para>
+/// The single-fundamental engines carry such a bucket. Two-tone and multi-tone harmonic balance and the multi-fundamental
+/// envelope refuse these blocks by name for as long as their device passes drop weighted (w ≥ 2) terms
+/// (<see cref="RefuseIn"/>).</para>
 ///
 /// <para><b>Ports.</b> Every external port is a signal net and a reference net, in the System family's ± pair order
 /// (port 0 is always the RF input); the internal ports follow, each an internal node against ground, which the
@@ -128,9 +129,9 @@ public abstract class CarrierBlockModel : ComponentModel
     }
 
     /// <summary>
-    /// Refuses <paramref name="nl"/> in <paramref name="analysis"/>, naming its first carrier block: an analysis whose device
-    /// pass drops the quadrature bucket (two-tone and multi-tone harmonic balance, the multi-fundamental envelope) would
-    /// read every such block as if its quadrature were zero, and run.
+    /// Refuses <paramref name="nl"/> in <paramref name="analysis"/>, naming its first carrier block. Called by a device pass
+    /// that drops weighted (w ≥ 2) terms (two-tone and multi-tone harmonic balance, the multi-fundamental envelope), which
+    /// would otherwise read every such block as if its quadrature were zero, and run. A pass that carries them needs no call.
     /// </summary>
     public static void RefuseIn(ElaboratedNetlist nl, string analysis)
     {
