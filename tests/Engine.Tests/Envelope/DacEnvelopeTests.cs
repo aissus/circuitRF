@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Numerics;
 using CircuitRF.Core.Design;
 using CircuitRF.Core.Devices;
 using CircuitRF.Core.Elaboration;
@@ -135,7 +136,9 @@ public sealed class DacEnvelopeTests(ITestOutputHelper output)
         Assert.InRange(measured, 0.9 * closed, 1.1 * closed);
     }
 
-    /// <summary>The rails of one signal are measured once, through the I rail; beside an RF source of it, not at all.</summary>
+    /// <summary>The rails of one signal are measured once, through the first I rail; beside an RF source of it, not at all. A
+    /// second I rail or a second amplitude half of the same signal is the same signal, and is not measured again (counted,
+    /// it read Pin 6 dB high and listed every EVM row twice).</summary>
     [Fact]
     public void ARailPair_IsMeasuredOnce_ThroughItsIRail()
     {
@@ -152,6 +155,8 @@ public sealed class DacEnvelopeTests(ITestOutputHelper output)
         Assert.Equal([0], EnvelopeEngine.Measured([i, q]));
         Assert.Equal([1], EnvelopeEngine.Measured([q, i, amp]));
         Assert.Equal([0], EnvelopeEngine.Measured([rf, i, q]));
+        Assert.Equal([0], EnvelopeEngine.Measured([i, q, Src("Baseband", "i")]));
+        Assert.Equal([1], EnvelopeEngine.Measured([Src("Polar", "phase"), amp, Src("Polar", "amp")]));
         Assert.Contains("no I rail", Assert.Throws<InvalidOperationException>(() => EnvelopeEngine.BasebandPair([q])).Message);
     }
 
@@ -173,20 +178,105 @@ public sealed class DacEnvelopeTests(ITestOutputHelper output)
         Assert.Contains("Baseband=i or q", ex.Message);
     }
 
-    /// <summary>Harmonic balance has no stream to sample, at any tone count: a DAC is refused there by name.</summary>
-    [Fact]
-    public void HarmonicBalance_RefusesADacByName()
+    /// <summary>Harmonic balance has no stream to sample, at any tone count and through its single-point entry (loadpull
+    /// and the oscillator analysis): a DAC is refused there by name.</summary>
+    [Theory]
+    [InlineData("Tone=1e6", false)]
+    [InlineData("NumFreqs=2 Tone[1]=1e6 Tone[2]=1.1e6 MaxMixOrder=3", false)]
+    [InlineData("NumFreqs=3 Tone[1]=1e6 Tone[2]=1.1e6 Tone[3]=1.3e6 MaxMixOrder=3", false)]
+    [InlineData("Tone=1e6", true)]
+    public void HarmonicBalance_RefusesADacByName(string tones, bool singlePoint)
     {
-        var (lib, tb) = new CnlReader().Read("""
+        var (lib, tb) = new CnlReader().Read($"""
             P1Tone:P1 a 0 Freq=1e6 Pavl=-10 Z=50
             DAC:D9 a 0 b 0 Fs=100e6
             R:RL b 0 R=50
-            analysis HB1 type=hb Tone=1e6 MaxHarm=5
+            analysis HB1 type=hb {tones} MaxHarm=3
             """);
         var nl = new Elaborator(lib).Elaborate(tb);
         var hba = tb.Analyses.OfType<HarmonicBalanceAnalysis>().First();
-        var ex = Assert.ThrowsAny<InvalidOperationException>(() => new HbEngine(nl, tb).Run(HbEngine.Resolve(hba, nl.ResolvedGlobals)));
+        var hb = new HbEngine(nl, tb);
+        var p = HbEngine.Resolve(hba, nl.ResolvedGlobals);
+        var ex = Assert.ThrowsAny<InvalidOperationException>(() => { if (singlePoint) hb.RunSinglePoint(p); else hb.Run(p); });
         Assert.Contains("DAC 'D9'", ex.Message);
         Assert.Contains("harmonic balance", ex.Message);
+    }
+
+    /// <summary>What a DAC's stream cannot be, refused by name: an Fs that does not put whole samples in the record (named
+    /// to nine digits, so 3.8401 MHz is not read as 3.84), an Fs below what the rail carries, and a phase-noise mask on it.</summary>
+    [Theory]
+    [InlineData("", "3.8401e6", "3.8401 MHz does not put a whole number of samples")]
+    [InlineData("", "1e6", "below the 1.08 MHz")]
+    [InlineData("PhaseNoise=\"10kHz:-80,1MHz:-120\"", "3.84e6", "PhaseNoise")]
+    public void AStreamTheDacCannotConvert_IsRefusedByName(string extra, string fs, string expected)
+    {
+        var (lib, tb) = new CnlReader().Read($"""
+            MOD_Source:SI bi 0 Fc=1e9 Pavg=-10 Z=50 Baseband=i {extra} {Lte}
+            DAC:D5 bi 0 o 0 Fs={fs}
+            R:RL o 0 R=50
+            """);
+        using var nl = new Elaborator(lib).Elaborate(tb);
+        var ex = Assert.ThrowsAny<InvalidOperationException>(() => new EnvelopeEngine(nl).Run(
+            new EnvelopeParams { StopS = 5e-6, Oversample = 1, MaxHarm = 1 }));
+        Assert.Contains("DAC 'D5'", ex.Message);
+        Assert.Contains(expected, ex.Message);
+    }
+
+    /// <summary>The multi-fundamental envelope (a second carrier at 2 GHz) has no one baseband: it refuses a rail, and a DAC
+    /// with no rail, by name.</summary>
+    [Theory]
+    [InlineData("MOD_Source:SI bi 0 Fc=1e9 Pavg=-10 Z=50 Baseband=i " + Lte + "\nR:R1 bi 0 R=50", "MOD_Source 'SI' is a baseband rail")]
+    [InlineData("MOD_Source:S1 a 0 Fc=1e9 Pavg=-10 Z=50 " + Lte + "\nDAC:D3 a 0 b 0 Fs=3.84e6\nR:R1 b 0 R=50", "DAC 'D3'")]
+    public void TheMultiFundamentalEnvelope_RefusesRailsAndDacsByName(string body, string expected)
+    {
+        var ex = Assert.ThrowsAny<InvalidOperationException>(() => RunPlan($"""
+            {body}
+            MOD_Source:SX x 0 Fc=2e9 Pavg=-10 Z=50 {Lte}
+            R:RX x 0 R=50
+            analysis ENV1 type=env Accuracy=draft MaxHarm=1 Segments=1 Warmup=1e-6 Stop=5e-6
+            """));
+        Assert.Contains(expected, ex.Message);
+    }
+
+    /// <summary>
+    /// A rail plays its signal about its own Fc, whatever source is listed first and sets the run's fundamental: a CW rail
+    /// at +1 MHz, alone and behind an RF source at 1.004 GHz, reads the same 1 MHz line on its own net and through its
+    /// DAC (it used to read 3 MHz behind the RF source), and no line at 3 MHz. Both runs at the same step.
+    /// </summary>
+    [Fact]
+    public void ARailsWaveform_DoesNotDependOnAnotherSourcesCarrier()
+    {
+        // a 1.4 MHz LTE carrier 200 dB down only gives the record a modulated carrier's rate
+        const string cw = "Carrier[1]=\"CW;Off=1MHz;P=0\" Carrier[2]=\"LTE;BW=1.4MHz;Mod=QPSK;Off=0;P=-200;Seed=1\" Record=1e-4";
+        Complex[] Lines(string first)
+        {
+            var (lib, tb) = new CnlReader().Read(first + $"""
+                MOD_Source:SI bi 0 Fc=1e9 Pavg=0 Z=50 Baseband=i {cw}
+                R:RL bi 0 R=50
+                MOD_Source:SJ di 0 Fc=1e9 Pavg=0 Z=50 Baseband=i {cw}
+                DAC:D1 di 0 o 0 Bits=24 FS=2 Fs=15.36e6
+                R:RO o 0 R=50
+                """);
+            using var nl = new Elaborator(lib).Elaborate(tb);
+            var r = new EnvelopeEngine(nl).Run(new EnvelopeParams { StopS = 1e-4, StepS = 1 / 61.44e6, MaxHarm = 1, Probes = ["bi", "o"] });
+            int n = r.Time.Length - 1;
+            Complex Line(string node, double hz)
+            {
+                int k = Array.IndexOf(r.ProbeNames, node);
+                Complex acc = 0;
+                for (int t = 0; t < n; t++) acc += r.Probe[t][k][0].Real * Complex.FromPolarCoordinates(1, -2 * Math.PI * hz * r.Time[t]);
+                return 2.0 * acc / n;
+            }
+            return [Line("bi", 1e6), Line("o", 1e6), Line("bi", 3e6), Line("o", 3e6)];
+        }
+        var alone = Lines("");
+        var behind = Lines("MOD_Source:SX x 0 Fc=1.004e9 Pavg=-60 Z=50 Carrier[1]=\"CW;Off=0;P=0\" Record=1e-4\nR:RX x 0 R=50\n");
+        output.WriteLine($"1 MHz on bi: {alone[0].Magnitude:F6} / {behind[0].Magnitude:F6} V, through the DAC {alone[1].Magnitude:F6} / {behind[1].Magnitude:F6} V; 3 MHz {behind[2].Magnitude:E1} / {behind[3].Magnitude:E1} V");
+        for (int i = 0; i < 2; i++)
+        {
+            Assert.True(alone[i].Magnitude > 0.1);
+            Assert.True((alone[i] - behind[i]).Magnitude < 1e-9 * alone[i].Magnitude);
+            Assert.True(behind[i + 2].Magnitude < 1e-6 * alone[i].Magnitude);    // 24 bits' quantisation noise, no line
+        }
     }
 }

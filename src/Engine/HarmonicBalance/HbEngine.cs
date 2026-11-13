@@ -465,9 +465,7 @@ public sealed class HbEngine
     /// </summary>
     public HbRunResult Run(HbAnalysisParams p, Complex[,]? warmStart = null)
     {
-        // A DAC samples a digital stream at its own rate, and harmonic balance has no stream: refused by name, at any tone count.
-        if (_netlist.Components.FirstOrDefault(c => c.Model is DacModel) is { } dac)
-            throw new InvalidOperationException(DacDiagnostics.NotInHarmonicBalance(dac.InstancePath).Render());
+        RefuseDac();
         // Before any evaluation reads charge, warm-started or not (brief-modelcomposer-21 R-mc21-3).
         BiasFreeze.Ensure(_netlist, _settings);
         // TWO OR MORE tones go to the APFT lattice path. Two tones used to be routed to the
@@ -1914,11 +1912,22 @@ public sealed class HbEngine
         "whose real part starves a high-impedance input, or a Tol left at a value meant for a " +
         "milliamp-scale circuit.";
 
+    /// <summary>
+    /// A DAC samples a digital stream at its own rate, and harmonic balance has no stream: refused by name at both entries,
+    /// <see cref="Run"/> (every tone count) and <see cref="RunSinglePoint"/> (loadpull and the oscillator analysis).
+    /// </summary>
+    private void RefuseDac()
+    {
+        if (_netlist.Components.FirstOrDefault(c => c.Model is DacModel) is { } dac)
+            throw new InvalidOperationException(DacDiagnostics.NotInHarmonicBalance(dac.InstancePath).Render());
+    }
+
     public SinglePointResult RunSinglePoint(
         HbAnalysisParams  p,
         Complex[,]?       warmStart        = null,
         AnalysisSettings? settingsOverride  = null)
     {
+        RefuseDac();
         // Before any evaluation reads charge, warm-started or not (brief-modelcomposer-21 R-mc21-3).
         BiasFreeze.Ensure(_netlist, settingsOverride ?? _settings);
         int    K      = p.MaxHarmonic;

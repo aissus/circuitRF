@@ -32,7 +32,7 @@ internal static class EnvelopeDac
     /// sample alone, as every drive is). <paramref name="bandHz"/> is the run's signal band. Refuses a DAC whose input is not
     /// one rail's own net, by name.
     /// </summary>
-    public static void Apply(ElaboratedNetlist nl, ElaboratedComponent[] srcEcs, Complex[][] drive, double f0,
+    public static void Apply(ElaboratedNetlist nl, ElaboratedComponent[] srcEcs, Complex[][] drive,
                              int recordSamples, double bandHz, long i0)
     {
         foreach (var ec in nl.Components)
@@ -42,18 +42,19 @@ internal static class EnvelopeDac
             var src = (ModSourceModel)srcEcs[s].Model;
             if (EnvelopePhaseNoise.Mask(srcEcs[s]) is not null)
                 throw new InvalidOperationException(DacDiagnostics.PhaseNoiseOnStream(ec.InstancePath, srcEcs[s].InstancePath).Render());
+            // The stream is the rail about its own Fc, as the rail plays it (EnvelopeEngine.RailWindow): no other source moves it.
             var sig = src.Signal;
-            double fs = dac.SampleRateHz, centre = f0 - src.FcHz;
+            double fs = dac.SampleRateHz;
             int n;
             try { n = sig.LengthAt(fs); }
             catch (ArgumentException) { throw new InvalidOperationException(DacDiagnostics.RecordNotWhole(ec.InstancePath, fs, sig.RecordSeconds).Render()); }
-            double reach = sig.Carriers.Max(c => Math.Abs(c.OffsetHz - centre) + 0.5 * c.OccupiedBwHz);
+            double reach = sig.Carriers.Max(c => Math.Abs(c.OffsetHz) + 0.5 * c.OccupiedBwHz);
             if (fs < 2 * reach)
                 throw new InvalidOperationException(DacDiagnostics.RateBelowSignal(ec.InstancePath, fs, 2 * reach).Render());
 
             // What the DAC's input reads of the rail: its open-circuit drive through the divider into Zin.
             double divider = dac.Zin / (src.Z.Real + dac.Zin);
-            var x = sig.Composite(fs, centre);
+            var x = sig.Composite(fs);
             var v = new double[n];
             for (int i = 0; i < n; i++) v[i] = divider * src.VsPeak * (src.Baseband == IqRail.I ? x[i].Real : x[i].Imaginary);
             var y = dac.Convert(v, sig.RecordSeconds, recordSamples, bandHz);

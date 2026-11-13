@@ -301,19 +301,19 @@ public sealed class EnvelopeEngine
             phase?.Apply(sources[s], x, i0);
             signalDrive[s] = x;
             // A polar half drives the baseband with its share of the signal: the amplitude half |x| (|Vs| in it), the phase
-            // half twice the phase, unwrapped over the whole record (UnwrappedPhase); a baseband rail Re x or Im x.
+            // half twice the phase, unwrapped over the whole record (UnwrappedPhase); a baseband rail Re x or Im x of the
+            // signal about its OWN Fc (RailWindow), so that no other source's carrier moves it.
             drive[s] = (sources[s].Polar, sources[s].Baseband) switch
             {
                 (PolarHalf.Amp, _) => [.. x.Select(v => new Complex(v.Magnitude, 0))],
                 (PolarHalf.Phase, _) => UnwrappedPhase(signals[s], sources[s], phase, recordRate, f0 - sources[s].FcHz,
                                                        (int)Math.Round(nRec), i0, nDrive),
-                (_, IqRail.I) => [.. x.Select(v => new Complex(v.Real, 0))],
-                (_, IqRail.Q) => [.. x.Select(v => new Complex(v.Imaginary, 0))],
+                (_, { } rail) => RailWindow(signals[s], sources[s], rail, phase, recordRate, i0, nDrive),
                 _ => x,
             };
         }
         // A rail a DAC converts plays the DAC's conversion of it, over the run's signal band (EnvelopeDac).
-        EnvelopeDac.Apply(_nl, srcEcs, drive, f0, (int)Math.Round(nRec), 0.5 * rate, i0);
+        EnvelopeDac.Apply(_nl, srcEcs, drive, (int)Math.Round(nRec), 0.5 * rate, i0);
         Complex Drv(int s, int step) => drive[s][step];
         int[] productOf = [.. sources.Select(src => src.EnvelopeProduct)];
 
@@ -676,6 +676,20 @@ public sealed class EnvelopeEngine
     }
 
     /// <summary>
+    /// A baseband rail's drive window: Re x or Im x of the signal about the source's own Fc (centre 0) at
+    /// <paramref name="rate"/>, |Vs| in it, any phase-noise rotation applied. Its recorded drive, the complex signal the
+    /// run measures against, stays relative to the run's fundamental like every source's.
+    /// </summary>
+    internal static Complex[] RailWindow(ModulatedSignal sig, ModSourceModel src, IqRail rail, EnvelopePhaseNoise? pn,
+                                         double rate, long i0, int count)
+    {
+        var x = sig.CompositeWindow(rate, 0, i0, count);
+        double vs = src.VsPeak;
+        pn?.Apply(src, x, i0);
+        return [.. x.Select(v => new Complex(vs * (rail == IqRail.I ? v.Real : v.Imaginary), 0))];
+    }
+
+    /// <summary>
     /// Refuses baseband rails (<c>Baseband=</c>) that are not the rails of one signal: every rail states the same carriers
     /// at the same Fc, and an I rail is there to measure it through.
     /// </summary>
@@ -691,21 +705,25 @@ public sealed class EnvelopeEngine
     }
 
     /// <summary>
-    /// The sources a run measures: every RF source; a pair of baseband rails once, through the I rail; and a polar pair
-    /// once, through its amplitude half — the phase half and the Q rail are the same signal. An amplitude half beside an
-    /// RF source or an I rail playing that same signal (envelope tracking: that source is the signal, the amplitude half
-    /// its supply) is not measured again, and neither is an I rail beside an RF source of it.
+    /// The sources a run measures: every RF source; a signal's baseband rails once, through its first I rail; and a polar
+    /// pair once, through its first amplitude half — the phase half, the Q rail and a second I rail or amplitude half of
+    /// the same signal are the same signal. An amplitude half beside an RF source or an I rail playing that same signal
+    /// (envelope tracking: that source is the signal, the amplitude half its supply) is not measured again, and neither
+    /// is an I rail beside an RF source of it.
     /// </summary>
     public static int[] Measured(ModSourceModel[] sources)
     {
-        bool PlayedAs(ModSourceModel a, Func<ModSourceModel, bool> kind) =>
-            sources.Any(o => kind(o) && o.FcHz == a.FcHz && o.Spec.CacheKey() == a.Spec.CacheKey());
+        bool Same(int s, int o) => sources[o].FcHz == sources[s].FcHz && sources[o].Spec.CacheKey() == sources[s].Spec.CacheKey();
+        bool PlayedAs(int s, Func<ModSourceModel, bool> kind) => Enumerable.Range(0, sources.Length).Any(o => kind(sources[o]) && Same(s, o));
+        bool Earlier(int s, Func<ModSourceModel, bool> kind) => Enumerable.Range(0, s).Any(o => kind(sources[o]) && Same(s, o));
         static bool Rf(ModSourceModel o) => o.Polar is null && o.Baseband is null;
+        static bool I(ModSourceModel o) => o.Baseband == IqRail.I;
+        static bool Amp(ModSourceModel o) => o.Polar == PolarHalf.Amp;
         return [.. Enumerable.Range(0, sources.Length).Where(s => (sources[s].Polar, sources[s].Baseband) switch
         {
             (null, null) => true,
-            (_, IqRail.I) => !PlayedAs(sources[s], Rf),
-            (PolarHalf.Amp, _) => !PlayedAs(sources[s], o => Rf(o) || o.Baseband == IqRail.I),
+            (_, IqRail.I) => !PlayedAs(s, Rf) && !Earlier(s, I),
+            (PolarHalf.Amp, _) => !PlayedAs(s, o => Rf(o) || I(o)) && !Earlier(s, Amp),
             _ => false,
         })];
     }

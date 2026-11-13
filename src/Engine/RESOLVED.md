@@ -4461,20 +4461,34 @@ its gain. A function of the absolute sample, as every drive is, so segments and 
   the band — is named in a note per DAC (`DacDiagnostics.Band`), with the first image and the bound
   `|H(f)| ≤ Fs/(π·f)` against the signal's own `|H|` at its edge.
 - **Inside the band the step's warp still applies to the filter.** An image at 25 MHz through a fifth-order
-  Butterworth at 12.3 MHz reads 1.3 dB lower at `standard` than the closed form (3.4 % of warp × order 5), 0.3 dB at
+  Butterworth at 12.3 MHz reads 1.3 dB lower at `standard` than the closed form (3.4 % of warp × order 5), 0.4 dB at
   `fine`: the envelope's accuracy, not the DAC's.
-- **Measured once, through the I rail** (`Measured`): the I rail's recorded drive is the complex signal, as a polar
+- **Measured once, through the first I rail** (`Measured`): the I rail's recorded drive is the complex signal, as a polar
   pair's amplitude half's is; a Q rail is never measured, and a Q rail alone is refused (`BasebandPair`). An amplitude
-  half beside an I rail of the same signal is not measured again.
+  half beside an I rail of the same signal is not measured again, and neither is a second I rail or a second amplitude
+  half of the same signal (Fc and `Spec.CacheKey`): a second I rail through its own DAC had read Pin 6 dB high, Gt 6 dB
+  low and every EVM row twice. The amplitude-half case came with the polar pair and is fixed with it.
+- **A rail plays its signal about its own Fc** (`RailWindow`, and the DAC's stream in `EnvelopeDac`), not about the
+  run's fundamental, which is the first MOD_Source's Fc: a CW rail at +1 MHz played 3 MHz behind an unrelated RF source
+  at 1.004 GHz listed first. Its recorded drive, what the run measures against, stays relative to the fundamental.
+- **Harmonic balance refuses a DAC at both entries,** `HbEngine.Run` and `RunSinglePoint`: loadpull and the oscillator
+  analysis call the latter directly, where a DAC had run silently as its through.
 - **A phase-noise mask on a rail a DAC converts is refused**: the mask is drawn at the envelope rate and a digital
   stream has none.
-- **Not DAC-specific, found on the way:** with System Filters at baseband between the rails and two mixers, and a
-  compressing (tanh) amplifier after them, `EnvelopeRunner`'s seam check reads the mixers' summing node (the amplifier's
-  input) up to ~36 % of its RMS apart across a seam, at isolated steps a few apart, while the amplifier's output agrees
-  to 2e-4 and EVM and ACLR to 0.1 % against one segment. The same with the DACs replaced by wires; gone with a linear
-  amplifier, with the filters out, or with one segment. The `DigitalTx` example leaves that net unlabelled.
+- **Not DAC-specific, found on the way: a recording artefact on a net only nonlinear ports touch.** The mixers' summing
+  node, the amplifier's input, is touched by nothing but nonlinear-device ports, so the value `Record` reads for it,
+  `products[k].Xm1` (the linear state after the update), turns a residual within the Newton tolerance into a large
+  voltage error there. With System Filters at baseband between the rails and two mixers and a compressing amplifier
+  after them, the seam check read that node up to ~36 % of its RMS apart across a seam, at isolated steps, while the
+  amplifier's output and EVM and ACLR agreed against one segment. It is reproduced on main with RF amplifiers alone (a
+  seam error of 20.6 with that node labelled, 0.0025 unlabelled, EVM unchanged), it scales with `Tol`, and outputs agree
+  to 2e-5. Recording interface nodes from the accepted interface spectrum `V` is the fix, and is not made here; the
+  `DigitalTx` example leaves that net unlabelled, so it is not recorded.
 
 Gates: `tests/Engine.Tests/Envelope/DacEnvelopeTests.cs` — a rail through a DAC is its conversion step for step
 (5e-11), ideal DACs read the source's own EVM through an I/Q modulator, EVM against bits within 10 % of the closed form
 in quadrature with the source's own EVM (6 and 8 bits: −2.8 % and +2.0 %; one envelope run per case, so each stays
-routine), the pair measured once, the refusals in the envelope and in harmonic balance.
+routine), the pair measured once (a second I rail and a second amplitude half not again), a rail's waveform the same
+whatever source sets the fundamental, and every refusal: a DAC off a rail's net, harmonic balance at one, two and three
+tones and its single-point entry, the multi-fundamental envelope with a rail and with a DAC, an Fs that does not divide
+the record or is below the rail's content, and a phase-noise mask on a converted rail.

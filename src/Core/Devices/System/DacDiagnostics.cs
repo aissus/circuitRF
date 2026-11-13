@@ -58,8 +58,8 @@ public static class DacDiagnostics
     /// <summary>An Fs that does not put whole samples in the record: the stream would not be periodic.</summary>
     public static Diagnostic RecordNotWhole(string instance, double fsHz, double recordSeconds) => Diagnostic.Create(
         "dac.record", DiagnosticSeverity.Error,
-        "DAC '{instance}': Fs = {fs} does not put a whole number of samples in the {record} ms record.",
-        ("instance", instance), ("fs", Mhz(fsHz)), ("record", G6(recordSeconds * 1e3)));
+        "DAC '{instance}': Fs = {fs} MHz does not put a whole number of samples in the {record} ms record.",
+        ("instance", instance), ("fs", (fsHz / 1e6).ToString("G9", CultureInfo.InvariantCulture)), ("record", G6(recordSeconds * 1e3)));
 
     /// <summary>An Fs below what the rail carries: the stream could not hold the signal.</summary>
     public static Diagnostic RateBelowSignal(string instance, double fsHz, double needHz) => Diagnostic.Create(
