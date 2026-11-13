@@ -45,8 +45,10 @@ public sealed class ChainLevelDiagramTests : IDisposable
     private static ChainDesign SuperhetWithABlockerOnTheLo(double level = -45, string ifGain = "20")
     {
         var d = Example("Superhet");
-        // The example's first two blockers, then one on the LO: blocker 3 here (the example has a third of its own).
+        // The example's first two blockers, then one on the LO: blocker 3 here (the example has a third of its own), and its
+        // LO clean, as the superhet these tests were written on (its mask's reciprocal mixing is a line of its own).
         d.Blockers = [.. d.Blockers.Take(2), new ChainBlocker(2.1e9 - d.FrequencyHz, level)];
+        d.Stages.First(s => s.Name == "MIX").Parameters.Remove("PhaseNoise");
         d.Stages.First(s => s.Name == "IFA").Parameters["Gain"] = ifGain;
         return d;
     }
