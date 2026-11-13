@@ -43,4 +43,9 @@ public interface IReportsWarnings
 public interface IReportsRunWarnings
 {
     IReadOnlyList<(string Key, string Message)> DrainRunWarnings();
+
+    /// <summary>Adds what <paramref name="copy"/>, this model's counterpart on another elaboration of the same netlist, has
+    /// accrued, and clears it there, so this model's one drain reports both (<c>ElaboratedNetlist.TakeRunWarningsFrom</c>).
+    /// Safe to call from several threads at once, each with its own copy.</summary>
+    void Absorb(IReportsRunWarnings copy);
 }

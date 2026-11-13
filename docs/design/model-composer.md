@@ -2306,11 +2306,11 @@ accrued since the last, with the run's totals so far. Every other model extrapol
 `DrainAllModelWarnings` is called by `CircuitEvaluation.DrainWarnings` (the GUI's runs, validation's runs), by the CLI's
 `PrintWarnings` (`dc`, `hb`, `lp`, `sparam`, and MCP `run`, which goes through it), and on the other netlist at the top
 of `MergeDiagnosticsFrom`, so each point of a parametric sweep, run on a netlist of its own, reports. harmonicaRF shows
-no run warnings, so a stand-in there says nothing. **LP-1's parallel loadpull** replays each load's copy through
-`TakeRunDiagnostics`, not `MergeDiagnosticsFrom`, so `LoadpullEngine`'s per-load `finally` calls
-`copy.DrainAllModelWarnings()` immediately before `copy.TakeRunDiagnostics()`; without it a parallel grid lost the
-warning. The caller keeps the first load's in grid order, so on a parallel grid the warning's counts are that load's
-worker's running totals, not the grid's, and can differ from run to run; the warning itself is there once.
+no run warnings, so a stand-in there says nothing. **LP-1's parallel loadpull** runs each load on a worker's own copy
+of the netlist, which is gone before the caller drains its own. So `LoadpullEngine`'s per-load `finally` calls
+`ElaboratedNetlist.TakeRunWarningsFrom(copy)` on the caller's netlist, immediately before `copy.TakeRunDiagnostics()`:
+each copy's stand-in hands its counts to the caller's (`IReportsRunWarnings.Absorb`), and the caller's one drain once
+the run is over reports the grid's totals, word for word the serial run's at any worker count.
 
 `ModelValidation` keeps those warnings per run (`Context.StandInWarnings`) and adds them as notes beside the set whose run
 raised them. Every operating point counts, every drive step and Newton iterate, so a swing that leaves the table only

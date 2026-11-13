@@ -139,24 +139,32 @@ public sealed class StandInSamplingTests(ITestOutputHelper output) : IDisposable
         Assert.Single(Outside(sweep));
     }
 
-    /// <summary>A loadpull's grid on two workers: each load runs on a worker's own copy of the netlist, which is drained
-    /// before its diagnostics are taken, so the stand-in's warning reaches <c>circuitrf lp</c>, once (without the drain the
+    /// <summary>A loadpull's grid on one, two and three workers: each load of a parallel grid runs on a worker's own copy of
+    /// the netlist, whose counts join the caller's stand-in once the load is done, so <c>circuitrf lp</c> prints one warning
+    /// with the grid's totals, word for word the serial run's, however the loads were shared out (without the hand-over the
     /// parallel grid printed none). The gate swing at the top rungs leaves the sampled vgs −2 to 0 V.</summary>
     [Fact]
     public void TheWarning_SurvivesAParallelLoadpullGrid_Once()
     {
         string model = SmallStandIn();
         File.WriteAllLines(Path.Combine(_root, "grid.gam"), ["# gamma Z0=50 mag_ang", "0 0", "0.2 0", "0.2 90", "0.2 180", "0.2 270", "0.4 45"]);
-        File.WriteAllText(Path.Combine(_root, "lp.cnl"), $"""
-            ComposedFET:X1 g d 0 File="{model}"
-            Tuner:Src g 0 Zdefault=50 Z0=50 BiasTee=on Vbias=-1 Z[1]=50
-            Tuner:Load d 0 Zdefault=50 Z0=50 BiasTee=on Vbias=3 Z[1]=50
-            analysis LP1 type=loadpull Tone=1e8 MaxHarm=3 LoadTuner=Load SourceTuner=Src Grid="grid.gam" Sweep=Load TuneHarm=1 Compression=3 GainType=Gt PinStart=-10 PinStep=5 PinMax=10 MaxIter=100 Workers=2
-            """);
-        var run = ModelCliFixture.Run(_root, "lp", "lp.cnl");
-        output.WriteLine(run.StdErr);
-        Assert.Equal(0, run.ExitCode);
-        Assert.Single(System.Text.RegularExpressions.Regex.Matches(run.StdErr, System.Text.RegularExpressions.Regex.Escape(ComposedCoreModel.OutsideSentence)));
+        string Warning(int workers)
+        {
+            File.WriteAllText(Path.Combine(_root, "lp.cnl"), $"""
+                ComposedFET:X1 g d 0 File="{model}"
+                Tuner:Src g 0 Zdefault=50 Z0=50 BiasTee=on Vbias=-1 Z[1]=50
+                Tuner:Load d 0 Zdefault=50 Z0=50 BiasTee=on Vbias=3 Z[1]=50
+                analysis LP1 type=loadpull Tone=1e8 MaxHarm=3 LoadTuner=Load SourceTuner=Src Grid="grid.gam" Sweep=Load TuneHarm=1 Compression=3 GainType=Gt PinStart=-10 PinStep=5 PinMax=10 MaxIter=100 Workers={workers}
+                """);
+            var run = ModelCliFixture.Run(_root, "lp", "lp.cnl");
+            Assert.Equal(0, run.ExitCode);
+            string warning = Assert.Single(run.StdErr.Split('\n'), l => l.Contains(ComposedCoreModel.OutsideSentence, StringComparison.Ordinal));
+            output.WriteLine($"Workers={workers}: {warning}");
+            return warning;
+        }
+        string serial = Warning(1);
+        Assert.Equal(serial, Warning(2));
+        Assert.Equal(serial, Warning(3));
     }
 
     /// <summary>One sampled instance: N other than N0 is refused whether the stand-in is placed as a ComposedFET or as its bare

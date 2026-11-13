@@ -30943,12 +30943,13 @@ run, and a count read at a stamp was a snapshot of part of the run whose first c
 is therefore an `IReportsRunWarnings`, read only by `ElaboratedNetlist.DrainAllModelWarnings` once the run is over:
 `CircuitEvaluation`, the CLI's `PrintWarnings` (every run verb and MCP `run`), and `MergeDiagnosticsFrom` on the netlist
 it folds in (a parametric sweep's points). Before the review the CLI and sweeps lost it. LP-1's parallel loadpull
-replays each copy through `TakeRunDiagnostics` instead; with LP-1 merged here (2026-11-13) its per-load `finally` calls
-`DrainAllModelWarnings` on the copy first. Gate: `StandInSamplingTests.TheWarning_SurvivesAParallelLoadpullGrid_Once`
-(`circuitrf lp`, six loads on two workers: one warning, and none without the drain). Its counts are the running
-totals of the worker that ran the first warning load (19 of 484 operating points in one run), so on a parallel grid
-they depend on which loads each worker took, and are not the serial run's grid totals: the one place a parallel
-loadpull's warning text is not bit-identical to the serial one. The key, and so the single warning, is. harmonicaRF shows no run warnings at all.
+replays each copy through `TakeRunDiagnostics` instead, and the copy is gone before the caller drains. With LP-1
+merged here (2026-11-13) its per-load `finally` hands each copy's counts to the caller's stand-in
+(`ElaboratedNetlist.TakeRunWarningsFrom`, `IReportsRunWarnings.Absorb`), so the caller's one drain reports the grid's
+totals. A first version drained each copy instead and let the first load's warning win: it carried one worker's running
+count (19 of 484 operating points against the grid's 187 of 3220). Gate:
+`StandInSamplingTests.TheWarning_SurvivesAParallelLoadpullGrid_Once` (`circuitrf lp`, six loads at 1, 2 and 3 workers:
+one warning each, byte-identical, 187 of 3220; none at 2 workers without the hand-over). harmonicaRF shows no run warnings at all.
 
 **Review fixes (2026-11-12).** Two stand-ins in one folder shared `sampled/tables.npy`, the second silently replacing the
 first's data under the first's record: each document now has `sampled/<name>/`. `N ≠ N0` was refused only in the

@@ -442,6 +442,15 @@ public sealed class ComposedCoreModel : ComponentModel, IBiasFrozen, IReportsRun
                  "stands in for. Sample wider, or check the result against the device.")];
     }
 
+    /// <summary>A copy's counts join this model's: the run's totals are the sum over every copy that ran part of it.</summary>
+    public void Absorb(IReportsRunWarnings copy)
+    {
+        if (copy is not ComposedCoreModel c || ReferenceEquals(c, this)) return;
+        Interlocked.Add(ref _evaluations, Interlocked.Exchange(ref c._evaluations, 0));
+        Interlocked.Add(ref _outside, Interlocked.Exchange(ref c._outside, 0));
+        Interlocked.Add(ref _pending, Interlocked.Exchange(ref c._pending, 0));
+    }
+
     /// <summary>
     /// The whole HB time grid in one pass, written straight into the caller's buffers (R-mc2-5): no
     /// per-sample arrays, no per-grid arrays — the base class's <see cref="EvaluateInto"/> loop still

@@ -230,6 +230,23 @@ public sealed class ElaboratedNetlist : IDisposable
     }
 
     /// <summary>
+    /// Hands what each model of <paramref name="copy"/>, another elaboration of the same testbench (so the same components
+    /// in the same order), has accrued for the run to its counterpart here (<see cref="IReportsRunWarnings.Absorb"/>), and
+    /// drains the copy's per-stamp queues into the copy. A loadpull's parallel grid calls it once per load, so this netlist's
+    /// one drain once the run is over reports the whole grid's totals, the serial run's words, instead of one worker's
+    /// share. Safe from several workers at once, each with its own copy.
+    /// </summary>
+    public void TakeRunWarningsFrom(ElaboratedNetlist copy)
+    {
+        for (int i = 0; i < copy.Components.Count; i++)
+        {
+            var model = copy.Components[i].Model;
+            copy.DrainModelWarnings(model);
+            if (model is IReportsRunWarnings run && Components[i].Model is IReportsRunWarnings into) into.Absorb(run);
+        }
+    }
+
+    /// <summary>
     /// Releases anything a model of this netlist is holding OUTSIDE this process.
     ///
     /// <para><b>Almost every model needs nothing here</b> — a resistor is a few doubles the garbage
