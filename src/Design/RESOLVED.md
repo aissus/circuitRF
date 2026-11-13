@@ -31050,3 +31050,40 @@ After review:
   the linear transmitter's operating point read their IM3 under it, and 20 dB down the PA's products fall at 5:1.
 
 Gates: `tests/Ui.Tests/Chain/ChainTransmitTests.cs`, `tests/Ui.Tests/Examples/ChainBudgetExampleTests.cs` (`LinearTx_*`).
+
+## The chain budget's digital and polar transmitters: a stream as the first stage (CH-3/CH-4, 2026-11-13)
+
+A DAC stage (two System DACs, one per rail) and a polar transmitter stage (a polar pair into a Supply-Modulated
+Amplifier) start a transmit chain from a stream. What building them found:
+
+- **The DAC's floor is one number read two ways.** Δ²/12 per rail, referred to the input into 50 Ω, is a PSD
+  Δ²/(12·50 Ω·Fs) and so a temperature the Friis sum carries; at the DAC's output the cascade's SNR in B is the textbook
+  6.02·N + 1.76 − BO + 10·log10(Fs/B) to 10⁻⁹ dB, with BO = 20·log10(FS/√(2·50 Ω·P)), the System DAC's per-rail
+  convention. No separate SQNR readout is needed, and the noise floor, the receive band and the level diagram's noise
+  line pick it up without code of their own.
+- **The hold's droop is EVM the gain cannot hold.** At zero IF the droop at the carrier is 0 dB; across the band it is
+  the spread of |H|, (π²/(6·√180))·(B/Fs)² for a centred band, which is the DAC pull request's measured sinc-alone
+  floor (0.27 % at 18.36 MHz in 122.88 MHz). It is in the EVM floor.
+- **A rail pair into an IQ modulator gains 3.01 dB over one mixer.** Each mixer takes its own rail at the chain's power
+  (no input hybrid to split it), and I·cos − Q·sin carries both rails' power; the intercept is the mixer's own. The
+  budget takes that from a `Rails` context, set from the DAC to the modulator, rather than a second modulator part.
+- **The mismatch's split is the model's, not a closed form.** The residual after the demodulator's delay fit is
+  e^(2jφ)·conj(ẋ)·dT/2, which has no first-chaos component and spreads over several bandwidths; its in-band and
+  adjacent shares were measured on the complex-Gaussian model (0.436 and 0.215, ±0.0007), and the same Monte Carlo
+  reproduces the System Design PolarTx bench at 1, 2 and 4 ns: in-band EVM 1.101, 2.192, 4.333 % against the bench's
+  1.109, 2.191, 4.324 % (its source floor taken out), ACPR1 −42.5, −36.5, −30.3 against −42.9, −36.9, −30.7 dBc.
+- **The AM path's bandwidth has no short closed form.** The envelope's error lives in its spectral tail (a Rayleigh
+  envelope has a cusp at every null). Its total is exact from the closed-form autocorrelation, (π/4)·₂F₁(−½, −½; 1; ρ²),
+  numerically transformed (0.97, 0.236, 0.056 % at Fam = 40, 80, 160 MHz against the Monte Carlo's 0.98, 0.238,
+  0.056 %), but neither spreading it as the signal nor convolving it with the phase factor's own spectrum splits it as the
+  Monte Carlo does (the error is largest near the envelope's nulls, where the phase turns fastest: the two are not
+  independent). The budget keeps the leading-order term and says it is optimistic once Fam is several times B.
+- **An envelope EVM needs a whole symbol clear of the run's ends.** A 15 kHz NR symbol is 71.4 µs, and the transmit
+  Envelope bench's 0.1 ms holds none with its guard: `SignalEvm.Demodulate` returns no EVM ("lengthen Stop"), which the
+  bench reads as NaN. The stream benches run 0.25 ms, as the System Design examples do; the linear transmitter's 30 kHz
+  carrier was never short of one.
+
+Gates: `tests/Ui.Tests/Chain/ChainTransmitTests.cs` (`ADacsFloor_IsTheTextbookSqnr_AndTheRailsGain3dB`,
+`WhatAStreamRefuses`, `AStream_TransfersToItsEnvelopeBench`, `APolarStage_ItsMismatchOnTheFirstOrderFormula`),
+`tests/Ui.Tests/Examples/ChainBudgetExampleTests.cs` (`Streams_TheBudget_IsTheIndependentReference`, against
+`testdata/chain/stream_reference.py`, and the `DigitalTx_*`/`PolarTx_*` benchmarks).

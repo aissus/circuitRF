@@ -14,6 +14,13 @@
 //                 a flat phase, a TLIN for the delay) that subtracts a copy of the interference from the main path
 //   IQMod         a 90° hybrid splitting the input into I and Q, an LO split into its quadrature by a Combiner, two
 //                 Mixers and a Combiner summing them: an image-reject up-converter (IqModSpec)
+//   PolarTx       a polar pair's two paths into a Supply-Modulated Amplifier: the amplitude through a Delay and a
+//                 Butterworth lowpass into its supply, the phase turning a limited CW carrier in a Phase Modulator and
+//                 delayed by the lowpass's own DC group delay (PolarSpec)
+//
+// And the DAC is the library's DAC block, twice: a chain that starts with one is a digital transmitter's, its input the
+// stream's two rails, each converted, carried through the stages up to the IQ modulator (one per rail) and put on the
+// carrier there as I + jQ (DacSpec).
 //
 // And ONE IS DATA: an SnP stage is a Touchstone file on the library's SnP block, its budget read from the file at the
 // stage's frequency (ChainSnp).
@@ -54,7 +61,12 @@ public sealed record ChainParam(string Name, string Default, string Unit, bool N
 
 /// <summary>Where a stage sits in its chain: the frequency at its INPUT (the chain's, or a mixer's output after one),
 /// Hz, and the directory a relative file reference resolves against (null for a chain that has none).</summary>
-public sealed record ChainStageContext(double FrequencyHz, string? BaseDirectory);
+/// <param name="InputDbm">The signal at the stage's input, dBm; NaN where it is not known.</param>
+/// <param name="BandwidthHz">The chain's bandwidth, Hz; NaN where it is not known.</param>
+/// <param name="Rails">The stage carries a DAC's two rails, one copy of it per rail (the stages from a DAC to the IQ
+/// modulator, which takes them as its I and Q).</param>
+public sealed record ChainStageContext(double FrequencyHz, string? BaseDirectory, double InputDbm = double.NaN,
+                                       double BandwidthHz = double.NaN, bool Rails = false);
 
 /// <summary>What one stage does to a budget, on its own.</summary>
 /// <param name="GainDb">Signal (available-power) gain, dB. A Combiner's includes its coherent 10·log10(N).</param>
@@ -69,6 +81,9 @@ public sealed record StageBudget(double GainDb, double NoiseGainDb, double NfDb,
     /// <summary>An Amplifier's bandpass law (Rapp, Saleh), which sets its compression, saturation and AM-PM; null for
     /// every other stage, which compresses as a tanh limiter of its intercept does, or not at all.</summary>
     public AmplifierLaw? Law { get; init; }
+
+    /// <summary>A saturated output the stage states without a law (a polar transmitter's Ks·Vsat), dBm; null: none.</summary>
+    public double? PsatDbm { get; init; }
 }
 
 /// <summary>A chain part: its token in a <c>.cchain</c>, what it is called, whether the library has it as one block, and
@@ -84,7 +99,12 @@ public static class ChainParts
     public const string Amp = "Amp", Mixer = "Mixer", Atten = "Atten", Filter = "Filter", Switch = "Switch",
                         Circulator = "Circulator", Coupler = "Coupler", PhaseShifter = "PhaseShifter",
                         Limiter = "Limiter", Splitter = "Splitter", Combiner = "Combiner", Canceller = "Canceller",
-                        Snp = "SnP", IqMod = "IQMod";
+                        Snp = "SnP", IqMod = "IQMod", Dac = "DAC", PolarTx = "PolarTx";
+
+    /// <summary>True for a stage that takes the chain's input as a stream rather than a carrier: a DAC (the stream's two
+    /// rails) or a polar transmitter (its amplitude and phase). It is the chain's first stage, and its benches are the
+    /// envelope's.</summary>
+    public static bool IsFront(string part) => part is Dac or PolarTx;
 
     /// <summary>A Mixer's or an IQ modulator's two sidebands: the difference |f − Flo| and the sum f + Flo.</summary>
     public const string Lower = "Lower", Upper = "Upper";
@@ -271,16 +291,41 @@ public static class ChainParts
             "An image-reject up-converter of library blocks: a 90° hybrid splits the input into I and Q, a 2-way Combiner " +
             "splits the LO into its quadrature, two Mixers convert, and a second Combiner sums them, so the wanted sideband " +
             "adds and its image cancels. Its " +
-            "gain is a mixer's ConvGain; its intercept and compression a mixer's, 3.01 dB up for the split.",
-            (s, _) =>
+            "gain is a mixer's ConvGain; its intercept and compression a mixer's, 3.01 dB up for the split. After a DAC it " +
+            "takes the two rails as its I and Q, with no hybrid: 3.01 dB more gain, the mixer's own intercept.",
+            (s, c) =>
             {
                 var notes = new List<string>();
                 double iip3 = MixerIip3(s);
-                if (double.IsFinite(iip3)) iip3 += NoiselessMixerSsbDb;   // each mixer sees half the input
+                // Each mixer sees half the input; fed by a DAC's two rails, each sees its own rail, at the chain's power,
+                // and the two add: I·cos − Q·sin carries both rails' power, 3.01 dB over one mixer's conversion.
+                if (double.IsFinite(iip3) && !c.Rails) iip3 += NoiselessMixerSsbDb;
                 var iq = IqModSpec.Read(s);
-                double g = Num(s, "ConvGain") + iq.WantedDb;
+                double g = Num(s, "ConvGain") + iq.WantedDb + (c.Rails ? NoiselessMixerSsbDb : 0);
                 return new(g, g, MixerNf(s, notes, "IQ modulator"), iip3, P1(iip3), 1, notes);
             }),
+        new(Dac, "DAC pair (I and Q)", true,
+            [Reg(SymbolKind.Dac, "Bits"), Reg(SymbolKind.Dac, "FS", help: "full scale, volts peak at its input; the signal's RMS envelope there is √(2·50 Ω·P)"),
+             Reg(SymbolKind.Dac, "Fs"), Reg(SymbolKind.Dac, "Mode", numeric: false, options: ["nrz", "rz"]),
+             Reg(SymbolKind.Dac, "Duty", help: "rz: the pulse's share of the period"), Reg(SymbolKind.Dac, "Gain"),
+             new("PAPR", "10", "dB", BudgetOnly: true, Implied: "10",
+                 Help: "the signal's peak over its RMS envelope: a back-off from full scale below it clips, which the budget does not count")],
+            "Two DACs, one per rail of the digital stream (the chain's input, its power each rail's), N bits across ±FS, " +
+            "held at Fs. Its quantisation floor is a noise temperature at its input, so its SQNR in the bandwidth is " +
+            "6.02·N + 1.76 dB less the back-off from full scale plus 10·log10(Fs/B); its gain droops by the hold's sinc " +
+            "at the carrier's offset. The first stage of a transmit chain, carried to an IQ modulator.",
+            (s, c) => DacSpec.Read(s).Budget(s.Name, c)),
+        new(PolarTx, "Polar transmitter (composed)", false,
+            [new("Ks", "10", "", Help: "the supply-modulated amplifier's AM-AM, V/V: its output's amplitude over its supply's; the gain is 20·log10(Ks)"),
+             new("Vsat", "0", "V", Help: "its supply's saturation, Ks·Vsat·tanh(VS/Vsat); 0: linear"),
+             new("Fam", "80 MHz", "Hz", Help: "the amplitude path's bandwidth, a Butterworth lowpass whose DC group delay the phase path matches; 0: none"),
+             new("Order", "3", "", Help: "the amplitude path's lowpass order"),
+             new("dT", "0", "s", Help: "the amplitude path's delay against the phase path's; positive: the amplitude later")],
+            "A polar pair (the stream's amplitude and phase, the chain's input) recombined in a Supply-Modulated " +
+            "Amplifier: the amplitude through a Delay of dT and a Butterworth lowpass of Fam into its supply, the phase " +
+            "turning a limited CW carrier in a Phase Modulator, delayed by the lowpass's DC group delay. Its output is " +
+            "Ks² times the input's power; the mismatch and the bandwidth cost EVM and ACLR, the first stage of a transmit chain.",
+            (s, c) => PolarSpec.Read(s).Budget(s.Name, c)),
         new(Atten, "Attenuator", true, [Reg(SymbolKind.Atten, "Loss")],
             "A matched pad. Its noise figure is its loss.", (s, _) => Passive(Num(s, "Loss"))),
         new(Filter, "Filter", true,
@@ -599,4 +644,243 @@ public sealed record IqModSpec(double GainImbDb, double PhaseImbDeg, double PloD
     /// <summary>The LO at the output, dBm; −∞ at the Mixer's isolation sentinel.</summary>
     public double LoLeakDbm => IsoLoIfDb >= 150 ? double.NegativeInfinity
         : PloDbm - IsoLoIfDb + 10 * Math.Log10(1 - (Upper ? 1 : -1) * Math.Sin(PhaseImbDeg * Math.PI / 180));
+}
+
+/// <summary>
+/// A DAC stage read: two DACs, one per rail, each N bits across ±FS at its input, held at Fs (NRZ, or RZ for Duty of
+/// the period), with a gain; into its 50 Ω input, a rail of power P has an RMS envelope x_rms = √(2·50 Ω·P) over the
+/// pair.
+///
+/// <para><b>The floor.</b> Each rail's quantisation error is Δ²/12, Δ = 2·FS/2^N, white over the Nyquist band; referred
+/// to the input as a power in 50 Ω it is a noise of PSD Δ²/(12·50 Ω·Fs), a temperature T_q = PSD/k the cascade adds as
+/// any stage's (its NF is 10·log10(1 + T_q/T0)). Against the signal that is SQNR = 6.02·N + 1.76 − BO dB over the band,
+/// BO = 20·log10(FS/x_rms) the back-off from full scale, and SQNR + 10·log10(Fs/B) in a bandwidth B: W. R. Bennett,
+/// "Spectra of quantized signals", Bell System Technical Journal, 1948; B. Widrow and I. Kollár, <i>Quantization
+/// Noise</i>, Cambridge University Press, 2008, for when the uniform, white model holds.</para>
+///
+/// <para><b>The hold.</b> |H(f)| = d·|sinc(d·f/Fs)|, d = 1 (NRZ) or Duty (RZ): the gain at the carrier's offset f is
+/// Gain + 20·log10|H(f)|. The first image of the band's edge f + B/2 lands at Fs − (f + B/2) below it, at
+/// |H(Fs − f − B/2)| / |H(f + B/2)| against the signal there, f/(Fs − f) for a tone in NRZ (A. V. Oppenheim and R. W.
+/// Schafer, <i>Discrete-Time Signal Processing</i>, Prentice Hall, 1989).</para>
+/// </summary>
+public sealed record DacSpec(int Bits, double FsV, double RateHz, bool Rz, double Duty, double GainDb, double PaprDb)
+{
+    /// <summary>The input's impedance, which the stream's power is stated into.</summary>
+    public const double Zin = 50;
+
+    public static DacSpec Read(ChainStage s) => new(
+        (int)Math.Round(ChainValue.Or(s.Get("Bits"), 12)), ChainValue.Or(s.Get("FS"), 1), ChainValue.Or(s.Get("Fs"), 122.88e6),
+        s.Get("Mode").Trim().Equals("rz", StringComparison.OrdinalIgnoreCase), ChainValue.Or(s.Get("Duty"), 0.5),
+        ChainValue.Or(s.Get("Gain"), 0), ChainValue.Or(s.Get("PAPR"), 10));
+
+    /// <summary>Why it cannot be budgeted, or null.</summary>
+    public string? Refusal() =>
+        Bits is < 1 or > 32 ? $"Bits is 1 to 32, and it is {Bits}."
+        : !(FsV > 0) ? "FS, the full scale, is above 0 V."
+        : !(RateHz > 0) ? "Fs, the sample rate, is above 0 Hz."
+        : Rz && !(Duty > 0 && Duty <= 1) ? "an RZ DAC's Duty is above 0 and at most 1."
+        : null;
+
+    /// <summary>The step between two codes, V.</summary>
+    public double LsbV => 2 * FsV / Math.Pow(2, Bits);
+
+    /// <summary>The hold's |H(f)| = d·|sinc(d·f/Fs)|.</summary>
+    public double Hold(double fHz)
+    {
+        double d = Rz ? Duty : 1, x = Math.PI * d * fHz / RateHz;
+        return d * (Math.Abs(x) < 1e-12 ? 1 : Math.Abs(Math.Sin(x) / x));
+    }
+
+    public double HoldDb(double fHz) => 20 * Math.Log10(Hold(fHz));
+
+    /// <summary>The quantisation floor referred to the input, per rail: its PSD, W/Hz, Δ²/(12·Zin·Fs).</summary>
+    public double NoisePsdW => LsbV * LsbV / (12 * Zin * RateHz);
+
+    /// <summary>The floor as a temperature at the input, K, and as a noise figure, dB.</summary>
+    public double TeK => NoisePsdW / ChainBudget.K;
+    public double NfDb => 10 * Math.Log10(1 + TeK / ChainBudget.T0);
+
+    /// <summary>The back-off from full scale at an input of <paramref name="pDbm"/> per rail, dB: 20·log10(FS/x_rms).</summary>
+    public double BackoffDb(double pDbm) => 20 * Math.Log10(FsV / Math.Sqrt(2 * Zin * Math.Pow(10, (pDbm - 30) / 10)));
+
+    /// <summary>6.02·N + 1.76 − BO, dB: the SQNR over the Nyquist band.</summary>
+    public double SqnrDb(double pDbm) => 20 * Bits * Math.Log10(2) + 10 * Math.Log10(1.5) - BackoffDb(pDbm);
+
+    /// <summary>The processing gain of a bandwidth <paramref name="bwHz"/>, 10·log10(Fs/B), dB.</summary>
+    public double ProcessingGainDb(double bwHz) => 10 * Math.Log10(RateHz / bwHz);
+
+    /// <summary>How far the first image's edge nearest the band lands from 0 Hz, Hz: Fs − (f + B/2). A complex stream's
+    /// image of its upper edge is that far below 0 Hz; at zero IF its lower edge's is as far above. A filter's response
+    /// at baseband is even, so the budget carries it at the positive frequency.</summary>
+    public double ImageHz(double fHz, double bwHz) => RateHz - (fHz + bwHz / 2);
+
+    /// <summary>
+    /// The hold's droop across the band [f − B/2, f + B/2] as EVM: the spread of |H| over the band against its mean, with
+    /// no equaliser (the demodulator's gain fit takes the mean out, its delay fit the hold's linear phase). For a centred
+    /// band in NRZ, |H| ≈ 1 − (π·f/Fs)²/6 gives (π²/(6·√180))·(B/Fs)².
+    /// </summary>
+    public double DroopEvm(double fHz, double bwHz)
+    {
+        const int n = 200;
+        double h = bwHz / n, m1 = 0, m2 = 0;
+        for (int k = 0; k <= n; k++)
+        {
+            double w = k == 0 || k == n ? 1 : k % 2 == 1 ? 4 : 2, v = Hold(Math.Abs(fHz - bwHz / 2 + k * h));
+            m1 += w * v; m2 += w * v * v;
+        }
+        m1 /= 3 * n; m2 /= 3 * n;
+        return Math.Sqrt(Math.Max(0, m2 - m1 * m1)) / m1;
+    }
+
+    /// <summary>The first image's level against the signal at the band's edge it is the image of, dB.</summary>
+    public double ImageDb(double fHz, double bwHz) => HoldDb(RateHz - (fHz + bwHz / 2)) - HoldDb(fHz + bwHz / 2);
+
+    public StageBudget Budget(string name, ChainStageContext c)
+    {
+        static string D(double v) => v.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture);
+        double f = c.FrequencyHz, g = GainDb + HoldDb(f);
+        var notes = new List<string>();
+        if (double.IsFinite(c.InputDbm) && c.BandwidthHz > 0)
+        {
+            double b = c.BandwidthHz, bo = BackoffDb(c.InputDbm), sq = SqnrDb(c.InputDbm), pg = ProcessingGainDb(b);
+            notes.Add($"{name}: {Bits} bits, {D(bo)} dB below full scale: an SQNR of {D(sq)} dB over Fs and {D(sq + pg)} dB in " +
+                      $"the bandwidth ({D(pg)} dB of processing gain); the hold droops {D(HoldDb(f + b / 2) - HoldDb(f))} dB at the " +
+                      $"band's edge, and its first image is {D(ImageDb(f, b))} dB against it, {D(ImageHz(f, b) / 1e6)} MHz from 0 Hz.");
+            if (bo < PaprDb)
+                notes.Add($"{name}: its back-off from full scale, {D(bo)} dB, is under the signal's PAPR of {D(PaprDb)} dB: its peaks " +
+                          "clip, which the budget does not count.");
+            if (f + b / 2 >= RateHz / 2)
+                notes.Add($"{name}: the band reaches Fs/2 ({D(RateHz / 2e6)} MHz): its image overlaps it.");
+        }
+        return new StageBudget(g, g, NfDb, double.PositiveInfinity, double.PositiveInfinity, 1, notes);
+    }
+}
+
+/// <summary>
+/// A polar transmitter stage read: the Supply-Modulated Amplifier's AM-AM (Ks, and its saturation Vsat), the amplitude
+/// path's Butterworth lowpass (Fam, Order) whose DC group delay the phase path matches, and the delay dT the amplitude
+/// path has over the phase path.
+///
+/// <para><b>Its output.</b> The amplitude half sets the supply to the RF envelope a = |x|, whose mean square is 2·50 Ω·P
+/// for a power P, and the output's amplitude is Ks·a: P·Ks², 20·log10(Ks) of gain. With Vsat it is Ks·Vsat·tanh(a/Vsat),
+/// averaged over a Rayleigh a (an OFDM carrier's envelope): P_out = Ks²·Vsat²·∫ tanh²(√(2·50·P·u)/Vsat)·e^(−u) du/(2·50).</para>
+///
+/// <para><b>The mismatch.</b> The recombined output is a(t − dT)·e^(jφ(t)), its error to first order −dT·ȧ·e^(jφ). The
+/// demodulator's delay fit takes out its part along ẋ and leaves EVM = dT·√(⟨ȧ²⟩·⟨a²φ̇²⟩ / ((⟨ȧ²⟩ + ⟨a²φ̇²⟩)·⟨a²⟩)), the
+/// trend F. H. Raab worked out for the Kahn transmitter ("Intermodulation distortion in Kahn-technique transmitters",
+/// IEEE Transactions on Microwave Theory and Techniques, 1996). For a complex Gaussian signal with a flat spectrum of
+/// width B (an OFDM carrier), ⟨ȧ²⟩ = ⟨a²φ̇²⟩ = (π·B)²·⟨a²⟩/6, and the whole band's error is π·B·dT/√12. Its spectrum is
+/// wider than the signal's: EtaIn of its power falls in the channel, which the demodulator reads, and EtaAdj in each
+/// adjacent one of width B centred B away. Both are the model's own constants, from its Monte Carlo
+/// (testdata/chain/digital_polar_reference.py).</para>
+///
+/// <para><b>The bandwidth.</b> The model: the envelope's AC part to its leading order, the |ρ|² term of a Rayleigh
+/// envelope's autocorrelation, (π/16)·P spread as a triangle over ±B; the aligned lowpass leaves 1 − H(f)·e^(j2πf·Tg)
+/// of it; and the error, carried on the phase, spreads as the signal does, so the channel takes a triangle's weight
+/// 1 − |f|/B of it and the adjacent channel 1 − |f − B|/B. It leaves out the envelope's spectral tail (an OFDM envelope
+/// has a cusp at every null), so it is optimistic once Fam is several times B.</para>
+/// </summary>
+public sealed record PolarSpec(double Ks, double VsatV, double FamHz, int Order, double DelayS)
+{
+    /// <summary>The supply's and the output's impedance.</summary>
+    public const double R = 50;
+
+    /// <summary>The share of the mismatch's residual power in the channel, and in each adjacent channel (B wide, B
+    /// away), for a complex Gaussian signal with a flat spectrum.</summary>
+    public const double EtaIn = 0.436, EtaAdj = 0.215;
+
+    public static PolarSpec Read(ChainStage s) => new(
+        ChainValue.Or(s.Get("Ks"), 10), ChainValue.Or(s.Get("Vsat"), 0), ChainValue.Or(s.Get("Fam"), 0),
+        (int)Math.Round(ChainValue.Or(s.Get("Order"), 3)), ChainValue.Or(s.Get("dT"), 0));
+
+    /// <summary>Why it cannot be budgeted, or null.</summary>
+    public string? Refusal() =>
+        !(Ks > 0) ? "Ks is above 0."
+        : !(VsatV >= 0) ? "Vsat is 0 (linear) or above."
+        : !(FamHz >= 0) ? "Fam is 0 (no lowpass) or above."
+        : Order is < 1 or > 10 ? $"the lowpass's Order is 1 to 10, and it is {Order}."
+        : !double.IsFinite(DelayS) ? "dT is a time." : null;
+
+    /// <summary>The gain at an input of <paramref name="pinDbm"/>, dB: 20·log10(Ks), or the tanh law's mean.</summary>
+    public double GainDb(double pinDbm)
+    {
+        double lin = 20 * Math.Log10(Ks);
+        if (!(VsatV > 0) || !double.IsFinite(pinDbm)) return lin;
+        double s2 = 2 * R * Math.Pow(10, (pinDbm - 30) / 10);
+        // ∫₀^∞ tanh²(√(s2·u)/Vsat)·e^(−u) du by Simpson's rule; e^(−40) ends it.
+        const int n = 4000;
+        double du = 40.0 / n, sum = 0;
+        for (int k = 0; k <= n; k++)
+        {
+            double t = Math.Tanh(Math.Sqrt(s2 * k * du) / VsatV);
+            sum += (k == 0 || k == n ? 1 : k % 2 == 1 ? 4 : 2) * t * t * Math.Exp(-k * du);
+        }
+        return lin + 10 * Math.Log10(VsatV * VsatV * sum * du / 3 / s2);
+    }
+
+    /// <summary>The saturated output, (Ks·Vsat)²/(2·R), dBm; null when linear.</summary>
+    public double? PsatDbm => VsatV > 0 ? 10 * Math.Log10(Ks * Ks * VsatV * VsatV / (2 * R)) + 30 : null;
+
+    /// <summary>The lowpass's DC group delay, s: Σ sin((2k + 1)·π/(2n)) / (2π·Fam); 0 with no lowpass.</summary>
+    public double AlignS => FamHz > 0
+        ? Enumerable.Range(0, Order).Sum(k => Math.Sin((2 * k + 1) * Math.PI / (2 * Order))) / (2 * Math.PI * FamHz) : 0;
+
+    /// <summary>The mismatch's error over the whole band, after the delay fit: π·B·|dT|/√12.</summary>
+    public double DelayErr(double bwHz) => Math.PI * bwHz * Math.Abs(DelayS) / Math.Sqrt(12);
+
+    /// <summary>The mismatch's EVM in the channel, and its power in an adjacent channel against the signal's.</summary>
+    public double DelayEvm(double bwHz) => Math.Sqrt(EtaIn) * DelayErr(bwHz);
+    public double DelayAdjacent(double bwHz) => EtaAdj * DelayErr(bwHz) * DelayErr(bwHz);
+
+    /// <summary>The lowpass's error on the envelope, aligned: 1 − H(f)·e^(j2πf·Tg).</summary>
+    private System.Numerics.Complex Error(double fHz)
+    {
+        var s = new System.Numerics.Complex(0, fHz / FamHz);
+        System.Numerics.Complex h = 1;
+        for (int k = 0; k < Order; k++)
+        {
+            var p = System.Numerics.Complex.FromPolarCoordinates(1, Math.PI * (2 * k + Order + 1) / (2 * Order));
+            h *= -p / (s - p);
+        }
+        return 1 - h * System.Numerics.Complex.FromPolarCoordinates(1, 2 * Math.PI * fHz * AlignS);
+    }
+
+    /// <summary>The amplitude path's bandwidth: its EVM in the channel, and its power in an adjacent channel against the
+    /// signal's (the leading-order model above); 0 with no lowpass.</summary>
+    public (double Evm, double Adjacent) Bandwidth(double bwHz)
+    {
+        if (!(FamHz > 0)) return (0, 0);
+        // (π/16)·(1/B)·(1 − |f|/B) is the envelope's AC part; the error's weight is |E(f)|²; Simpson over [−B, B].
+        const int n = 800;
+        double h = 2 * bwHz / n, inBand = 0, adj = 0;
+        for (int k = 0; k <= n; k++)
+        {
+            double f = -bwHz + k * h, tri = 1 - Math.Abs(f) / bwHz;
+            double e2 = Error(f).Magnitude * Error(f).Magnitude * Math.PI / 16 / bwHz * tri;
+            double w = k == 0 || k == n ? 1 : k % 2 == 1 ? 4 : 2;
+            inBand += w * e2 * tri;
+            adj += w * e2 * Math.Max(0, 1 - Math.Abs(f - bwHz) / bwHz);
+        }
+        return (Math.Sqrt(inBand * h / 3), adj * h / 3);
+    }
+
+    public StageBudget Budget(string name, ChainStageContext c)
+    {
+        static string D(double v) => v.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture);
+        double g = GainDb(c.InputDbm);
+        var notes = new List<string>();
+        if (c.BandwidthHz > 0)
+        {
+            double b = c.BandwidthHz;
+            var (ebw, abw) = Bandwidth(b);
+            if (DelayS != 0)
+                notes.Add($"{name}: {D(DelayS * 1e9)} ns of AM/PM mismatch leaves {D(100 * DelayErr(b))} % of error over the band, " +
+                          $"{D(100 * DelayEvm(b))} % of it in the channel and {D(10 * Math.Log10(DelayAdjacent(b)))} dBc in each adjacent one.");
+            if (FamHz > 0)
+                notes.Add($"{name}: the amplitude path's {D(FamHz / 1e6)} MHz lowpass leaves {D(100 * ebw)} % of EVM and " +
+                          $"{D(10 * Math.Log10(Math.Max(abw, 1e-30)))} dBc in each adjacent channel (an estimate, optimistic once Fam is " +
+                          "several times the bandwidth).");
+        }
+        return new StageBudget(g, g, 0, double.PositiveInfinity, double.PositiveInfinity, 1, notes) { PsatDbm = PsatDbm };
+    }
 }

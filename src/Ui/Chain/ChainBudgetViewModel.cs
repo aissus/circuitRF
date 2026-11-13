@@ -856,11 +856,15 @@ public sealed partial class ChainBudgetViewModel : ObservableObject
             (ChainTransmit.Read(r) is { } x
                 ? $"\nTransmit: Pout {D(x.PoutDbm)} dBm, CW {D(x.PoutCwDbm)} dBm ({D(x.CompressionDb)} dB compressed)    " +
                   $"Back-off {D(x.BackoffP1dbDb)} dB from OP1dB, {D(x.BackoffPsatDb)} dB from Psat {D(x.PsatDbm)} dBm    " +
-                  $"ACLR estimate {D(x.AclrDbc)} dBc from OIP3 {D(x.Oip3Dbm)} dBm{(x.CubicEquivalent ? " (a Rapp stage's the cubic's)" : "")}    " +
+                  $"ACLR estimate {D(x.AclrDistortionDbc)} dBc from OIP3 {D(x.Oip3Dbm)} dBm{(x.CubicEquivalent ? " (a Rapp stage's the cubic's)" : "")}    " +
                   $"Noise {D(x.NoisePsdDbmHz)} dBm/Hz" +
                   (double.IsFinite(x.RxNoiseDbm) ? $"    In the receive band {D(x.RxNoiseDbm)} dBm ({D(x.RxNoisePsdDbmHz)} dBm/Hz)" : "") +
                   (double.IsFinite(x.ImageDbc) ? $"    Image {D(x.ImageDbc)} dBc" : "") +
-                  (double.IsFinite(x.LoLeakDbc) ? $"    LO {D(x.LoLeakDbc)} dBc" : "")
+                  (double.IsFinite(x.LoLeakDbc) ? $"    LO {D(x.LoLeakDbc)} dBc" : "") +
+                  // A chain from a stream: what its first stage leaves in the channel and beside it.
+                  (double.IsNaN(x.EvmFloorPct) ? "" :
+                   $"\nStream: EVM floor {D(x.EvmFloorPct)} %    ACLR {D(x.AclrDbc)} dBc with the stream's share" +
+                   (double.IsFinite(x.DacImageDbc) ? $"    DAC image {D(x.DacImageDbc)} dBc" : ""))
                 : "") +
             (r.Design is { IsTransmit: false } && ChainCapacity.Read(r) is { } o
                 ? $"\nNF of the array {D(o.NfArrayDb)} dB    Margin {D(o.MarginDb)} dB    " +
@@ -979,6 +983,8 @@ public sealed partial class ChainBudgetViewModel : ObservableObject
                 ChainParts.Snp => Path.GetFileName(ChainSnp.FileText(st)),
                 ChainParts.Canceller => CancellerSpec.Read(st) is var cs
                     ? $"depth {cs.DepthDb:0.#} dB, residual {cs.ResidualDbm:0.#} dBm" : "",
+                ChainParts.Dac => $"{st.Get("Bits")} bits, {ChainValue.Or(st.Get("Fs"), 0) / 1e6:0.###} MHz",
+                ChainParts.PolarTx => $"AM {ChainValue.Or(st.Get("Fam"), 0) / 1e6:0.###} MHz, dT {ChainValue.Or(st.Get("dT"), 0) * 1e9:0.###} ns",
                 _ => "",
             };
             if (i < r.Stages.Count)
@@ -1021,7 +1027,8 @@ public sealed partial class ChainBudgetViewModel : ObservableObject
             ChainParts.Switch => SymbolKind.Switch, ChainParts.Circulator => SymbolKind.Circulator,
             ChainParts.Coupler => SymbolKind.Coupler, ChainParts.PhaseShifter => SymbolKind.Tline,
             ChainParts.Limiter => SymbolKind.Diode, ChainParts.Splitter => SymbolKind.Combiner,
-            ChainParts.Canceller => SymbolKind.Coupler, ChainParts.Snp => SymbolKind.Snp, _ => SymbolKind.Amp,
+            ChainParts.Canceller => SymbolKind.Coupler, ChainParts.Snp => SymbolKind.Snp, ChainParts.Dac => SymbolKind.Dac,
+            ChainParts.PolarTx => SymbolKind.SupplyAmp, _ => SymbolKind.Amp,
         };
         return [new ChainBlockGlyph(kind, st.Part == ChainParts.Splitter ? $"1:{st.Get("N")}" : "")];
     }
@@ -1045,7 +1052,8 @@ public sealed partial class ChainBudgetViewModel : ObservableObject
             ChainParts.Amp => "AMP", ChainParts.Mixer => "MIX", ChainParts.Atten => "ATT", ChainParts.Filter => "FLT",
             ChainParts.Switch => "SW", ChainParts.Circulator => "ISO", ChainParts.Coupler => "CPL",
             ChainParts.PhaseShifter => "PS", ChainParts.Limiter => "LIM", ChainParts.Splitter => "SPL",
-            ChainParts.Canceller => "CANC", ChainParts.Snp => "SNP", ChainParts.IqMod => "IQ", _ => "CMB",
+            ChainParts.Canceller => "CANC", ChainParts.Snp => "SNP", ChainParts.IqMod => "IQ", ChainParts.Dac => "DAC",
+            ChainParts.PolarTx => "POL", _ => "CMB",
         };
         int n = 1;
         while (Stages.Any(s => s.Name.Equals($"{stem}{n}", StringComparison.OrdinalIgnoreCase))) n++;

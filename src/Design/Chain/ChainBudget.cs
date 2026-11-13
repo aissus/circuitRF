@@ -59,7 +59,18 @@ public static class ChainBudget
         var notes = new List<string>();
         var rows = new List<ChainStageResult>();
         var inputHz = d.StageInputFrequencies();
-        var budgets = d.Stages.Select((s, i) => ChainParts.Find(s.Part)!.Budget(s, new ChainStageContext(inputHz[i], d.BaseDirectory))).ToList();
+        // In order, each with the signal at its input; a DAC's rails run up to the IQ modulator that takes them.
+        var budgets = new List<StageBudget>();
+        bool rails = false;
+        double pin = d.InputPowerDbm;
+        for (int i = 0; i < d.Stages.Count; i++)
+        {
+            var s = d.Stages[i];
+            var b = ChainParts.Find(s.Part)!.Budget(s, new ChainStageContext(inputHz[i], d.BaseDirectory, pin, d.BandwidthHz, rails));
+            rails = s.Part == ChainParts.Dac || rails && s.Part != ChainParts.IqMod;
+            budgets.Add(b);
+            pin += b.GainDb;
+        }
         foreach (var b in budgets) notes.AddRange(b.Notes);
         notes.AddRange(BlockersOutsideFiles(d));
 

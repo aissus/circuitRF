@@ -16,6 +16,17 @@
 //               reflects, and adds almost nothing); then 10·log10(k·T·B) + 30
 //   image, LO   an IQ modulator's (IqModSpec), each carried to the output at its own frequency, dBc
 //
+// A chain that starts from a stream, a DAC's rails or a polar pair, adds what its first stage leaves in band and beside
+// it (DacSpec, PolarSpec):
+//   EVM floor   √(10^(−SNR/10) + Σ e²)                         the output's SNR in the bandwidth (the DAC's quantisation
+//                                                              floor in it, as a temperature); the DAC's droop across
+//                                                              the band, or a polar stage's mismatch and bandwidth
+//                                                              errors in the channel. Not the PA's own in-band
+//                                                              distortion, 2·10^(ACLR/20) by the relation below
+//   ACLR        the estimate above, plus the DAC's floor and a polar stage's errors in the adjacent channel, each carried
+//               to the output by the stages after it at B above the carrier
+//   DAC image   its first image against the band's edge, carried to the output at its own frequency, dBc
+//
 // The ACLR relation: a memoryless bandpass nonlinearity to third order, y = a1·x + a3·x·|x|², driven by a complex
 // Gaussian signal x of power P and a flat spectrum of width B. Its third-order output is correlated with x in part
 // (a gain change, 2·a3·P·x, by E|x|⁴ = 2P²) and the rest, of power |a3|²·(E|x|⁶ − 4P³) = 2·|a3|²·P³ (E|x|⁶ = 6P³, by
@@ -41,6 +52,17 @@ public sealed record ChainTxReadout(
 {
     /// <summary>Whether the intercept the ACLR is estimated from takes a Rapp stage's as the cubic's at its 1 dB point.</summary>
     public bool CubicEquivalent { get; init; }
+
+    /// <summary>A chain from a stream (a DAC, a polar transmitter): the EVM its noise floor and its first stage leave in
+    /// the channel, %; NaN for any other chain.</summary>
+    public double EvmFloorPct { get; init; } = double.NaN;
+
+    /// <summary>A DAC's first image at the output, dBc; −∞ without a DAC.</summary>
+    public double DacImageDbc { get; init; } = double.NegativeInfinity;
+
+    /// <summary>The intercept's ACLR estimate alone, dBc, when <see cref="ChainTxReadout.AclrDbc"/> adds a stream's own
+    /// share to it; the same value otherwise.</summary>
+    public double AclrDistortionDbc { get; init; }
 }
 
 public static class ChainTransmit
@@ -79,10 +101,10 @@ public static class ChainTransmit
     public static double StageCwDbm(StageBudget b, double pinDbm)
         => b.Law is { } law ? law.OutputDbm(pinDbm, b.GainDb) : pinDbm + b.GainDb + TanhCompressionDb(pinDbm, b.Iip3Dbm);
 
-    /// <summary>A stage's own saturated output, dBm: its law's Psat, a tanh stage's OIP3 − 10·log10(π²/4); +∞ for a
-    /// linear one.</summary>
+    /// <summary>A stage's own saturated output, dBm: its law's Psat, one it states (a polar transmitter's), a tanh stage's
+    /// OIP3 − 10·log10(π²/4); +∞ for a linear one.</summary>
     public static double StagePsatDbm(StageBudget b) =>
-        b.Law?.PsatDbm(b.GainDb) ?? (double.IsFinite(b.Iip3Dbm) ? b.Iip3Dbm + b.GainDb - TanhPsatBelowOip3Db : double.PositiveInfinity);
+        b.Law?.PsatDbm(b.GainDb) ?? b.PsatDbm ?? (double.IsFinite(b.Iip3Dbm) ? b.Iip3Dbm + b.GainDb - TanhPsatBelowOip3Db : double.PositiveInfinity);
 
     /// <summary>The readouts of a transmit chain's budget; null for a receive chain or a refused budget.</summary>
     public static ChainTxReadout? Read(ChainBudgetResult r)
@@ -102,11 +124,57 @@ public static class ChainTransmit
             rxN = rxPsd + Db(d.RxBandHz);
         }
         var (image, lo) = Spurs(d, r);
+        var (evm, adjacent, dacImage) = Stream(d, r);
+        double total = adjacent > 0 ? Db(Lin(aclr) + adjacent) : aclr;
         return new ChainTxReadout(pout, cw, pout - cw, t.Op1dbDbm, t.Op1dbDbm - pout, psat, psat - pout,
-                                  t.Oip3Dbm, aclr, psd, rxHz, rxPsd, rxN, image - pout, lo - pout)
+                                  t.Oip3Dbm, total, psd, rxHz, rxPsd, rxN, image - pout, lo - pout)
         {
             CubicEquivalent = r.Stages.Any(x => x.Stage.Law?.Kind == Core.Devices.AmplifierLawKind.Rapp),
+            EvmFloorPct = evm, DacImageDbc = dacImage, AclrDistortionDbc = aclr,
         };
+    }
+
+    /// <summary>
+    /// A chain that starts from a stream: the EVM its floor and its first stage leave in the channel, %; what that stage
+    /// puts in the adjacent channel at the output, against the signal (a power ratio); and a DAC's first image at the
+    /// output, dBc. NaN, 0 and −∞ for any other chain.
+    /// </summary>
+    private static (double EvmPct, double Adjacent, double DacImageDbc) Stream(ChainDesign d, ChainBudgetResult r)
+    {
+        if (d.Stages.Count == 0 || !ChainParts.IsFront(d.Stages[0].Part)) return (double.NaN, 0, double.NegativeInfinity);
+        var st = d.Stages[0];
+        double b = d.BandwidthHz, f = d.FrequencyHz, e2 = Math.Pow(10, -r.Totals!.SnrDb / 10), adjacent, image = double.NegativeInfinity;
+        if (st.Part == ChainParts.Dac)
+        {
+            // The floor in the bandwidth at the DAC's output, held at B above the carrier: its share there, against the
+            // signal, carried on.
+            var dac = DacSpec.Read(st);
+            e2 += Math.Pow(dac.DroopEvm(f, b), 2);
+            double nq = Db(ChainBudget.K * dac.TeK * b) + 30 + r.Stages[0].Stage.GainDb;
+            adjacent = Lin(nq + dac.HoldDb(f + b) - dac.HoldDb(f) + After(d, r, f + b) - r.Stages[0].PoutDbm);
+            image = dac.ImageDb(f, b) + After(d, r, dac.ImageHz(f, b));
+        }
+        else
+        {
+            var p = PolarSpec.Read(st);
+            var (ebw, abw) = p.Bandwidth(b);
+            e2 += Math.Pow(p.DelayEvm(b), 2) + ebw * ebw;
+            adjacent = (p.DelayAdjacent(b) + abw) * Lin(After(d, r, f + b));
+        }
+        return (100 * Math.Sqrt(e2), adjacent, image);
+    }
+
+    /// <summary>What the stages after the first give a frequency <paramref name="fHz"/> at the first's output over the
+    /// carrier, dB: each one's gain there (a filter's response, an SnP file's |S21|), a converter moving both.</summary>
+    private static double After(ChainDesign d, ChainBudgetResult r, double fHz)
+    {
+        double fc = d.FrequencyHz, db = 0;
+        for (int i = 1; i < d.Stages.Count; i++)
+        {
+            var b = r.Stages[i].Stage;
+            db += ChainLevels.GainAt(d.Stages[i], b, ref fHz, d.BaseDirectory) - ChainLevels.GainAt(d.Stages[i], b, ref fc, d.BaseDirectory);
+        }
+        return db;
     }
 
     /// <summary>The output's ceiling at every node, dBm: +∞ at the input, then P_k = min(P_(k−1) + g_k, Psat_k) after
@@ -200,5 +268,9 @@ public static class ChainTransmit
         One("RxNoise_dBm", "dBm", x.RxNoiseDbm);
         One("Image_dBc", "dBc", x.ImageDbc);
         One("LoLeak_dBc", "dBc", x.LoLeakDbc);
+        if (double.IsNaN(x.EvmFloorPct)) return;
+        One("EVMfloor_pct", "%", x.EvmFloorPct);
+        One("ACLRdist_dBc", "dBc", x.AclrDistortionDbc);
+        One("DacImage_dBc", "dBc", x.DacImageDbc);
     }
 }

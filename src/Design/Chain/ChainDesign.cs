@@ -1,6 +1,6 @@
 // .cchain file format — rev 1: an RF receive chain as a budget, an ordered list of stages, each a part from the
 // System library with that part's own parameters, plus the system inputs a budget is read against. Rev 3 adds the
-// transmit direction, an IQ modulator, an amplifier's law and a converter's sideband.
+// transmit direction, an IQ modulator, an amplifier's law, a converter's sideband, a DAC and a polar transmitter.
 //
 // System.Text.Json, WriteIndented, WhenWritingNull, reject-on-newer-format-version, AtomicFile write — the .csmith
 // and .crail spelling of the same thing. The system inputs are numbers whose NAMES carry their unit (FrequencyHz,
@@ -133,7 +133,9 @@ public sealed class ChainDesign
     public IReadOnlyList<string> Refusals()
     {
         var r = new List<string>();
-        if (!(FrequencyHz > 0)) r.Add("The frequency must be above 0 Hz.");
+        // A DAC's stream may sit at 0 Hz: a zero-IF transmitter's baseband.
+        if (!(FrequencyHz > 0) && !(FrequencyHz == 0 && Stages.FirstOrDefault()?.Part == ChainParts.Dac))
+            r.Add("The frequency must be above 0 Hz (0 Hz only for a DAC's zero-IF stream).");
         if (!(BandwidthHz > 0)) r.Add("The bandwidth must be above 0 Hz.");
         if (!(TemperatureK >= 0)) r.Add("The source temperature cannot be below 0 K.");
         if (FractionalBandwidth is { } fbw && !(fbw > 0 && fbw < 2)) r.Add("The fractional bandwidth is a fraction of the frequency, above 0 and below 2.");
@@ -176,6 +178,15 @@ public sealed class ChainDesign
             if (ChainParts.Converts(part.Token) && s.Get("Sideband").Trim() is { Length: > 0 } sb
                 && !sb.Equals(ChainParts.Lower, StringComparison.OrdinalIgnoreCase) && !sb.Equals(ChainParts.Upper, StringComparison.OrdinalIgnoreCase))
                 r.Add($"Stage '{s.Name}': Sideband = '{sb}' is {ChainParts.Lower} or {ChainParts.Upper}.");
+            if (ChainParts.IsFront(part.Token) && r.Count == before)
+            {
+                string what = part.Token == ChainParts.Dac ? "a DAC" : "a polar transmitter";
+                if (si > 0) r.Add($"Stage '{s.Name}': {what} takes the chain's input stream, so it is the first stage.");
+                if (!IsTransmit) r.Add($"Stage '{s.Name}': {what} is a transmitter's: set the direction to {Transmit}.");
+                if ((part.Token == ChainParts.Dac ? DacSpec.Read(s).Refusal() : PolarSpec.Read(s).Refusal()) is { } bad)
+                    r.Add($"Stage '{s.Name}': {bad}");
+                if (part.Token == ChainParts.Dac) DacRails(si, r);
+            }
             if (part.Token == ChainParts.Combiner)
             {
                 combiners++;
@@ -195,6 +206,19 @@ public sealed class ChainDesign
             else if (FrequencyHz + b.OffsetHz <= 0)
                 r.Add($"A blocker at {b.OffsetHz / 1e6:G4} MHz below the frequency is not at a positive frequency.");
         return r;
+    }
+
+    /// <summary>A DAC's two rails run through filters, amplifiers and attenuators, one of each per rail, into an IQ
+    /// modulator that puts them on the carrier as I + jQ: its upper sideband.</summary>
+    private void DacRails(int dac, List<string> r)
+    {
+        int iq = Stages.FindIndex(dac + 1, s => s.Part == ChainParts.IqMod);
+        if (iq < 0) { r.Add($"Stage '{Stages[dac].Name}': a DAC's two rails are put on the carrier by an IQ modulator, and the chain has none after it."); return; }
+        foreach (var s in Stages.Skip(dac + 1).Take(iq - dac - 1))
+            if (s.Part is not (ChainParts.Filter or ChainParts.Amp or ChainParts.Atten))
+                r.Add($"Stage '{s.Name}': between a DAC and its IQ modulator each rail has its own filters, amplifiers and attenuators, and a {s.Part} is none of them.");
+        if (!ChainParts.IsUpper(Stages[iq]))
+            r.Add($"Stage '{Stages[iq].Name}': an IQ modulator fed by a DAC's rails puts I + jQ on the carrier, its {ChainParts.Upper} sideband; {ChainParts.Lower} would be its conjugate.");
     }
 
     /// <summary>A stage name is an instance name on the schematic, so it follows the instance-name rule.</summary>
@@ -234,7 +258,7 @@ public static class ChainValue
         else if (!double.TryParse(t, NumberStyles.Float, CultureInfo.InvariantCulture, out _)
                  && Units.TrySplitGluedNumber(t, out var n, out var u)) { num = n; unit = u; }
         if (!double.TryParse(num, NumberStyles.Float, CultureInfo.InvariantCulture, out value)) return false;
-        if (unit.Length == 0 || Units.IsLogarithmic(unit) || unit is "deg" or "Ohm" or "Ω" or "K" or "W" or "%" or "dBi") return true;
+        if (unit.Length == 0 || Units.IsLogarithmic(unit) || unit is "deg" or "Ohm" or "Ω" or "K" or "W" or "V" or "%" or "dBi") return true;
         if (Units.Scale(unit) is { } s) { value *= s; return true; }
         // A time: "s", or a prefix and "s" ("0.5 ns", "50 ps").
         if (unit == "s") return true;
@@ -257,10 +281,11 @@ public static class ChainDesignIo
 
     /// <summary>A chain is written as version 2 or 3 only when it uses what the version before did not have, so an older
     /// reader refuses it rather than dropping it on save, and every other chain stays readable there. Version 3: a
-    /// transmit chain, an IQ modulator, an amplifier's law, a converter's sideband.</summary>
+    /// transmit chain, an IQ modulator, an amplifier's law, a converter's sideband, a DAC, a polar transmitter.</summary>
     private static int VersionOf(ChainDesign d) =>
         d.IsTransmit || d.RxBandOffsetHz is not null
-        || d.Stages.Any(s => s.Part == ChainParts.IqMod || s.Parameters.Keys.Any(k => k is "Law" or "Psat" or "P" or "PhiSat" or "PhiMax" or "Sideband")) ? 3
+        || d.Stages.Any(s => s.Part is ChainParts.IqMod or ChainParts.Dac or ChainParts.PolarTx
+                             || s.Parameters.Keys.Any(k => k is "Law" or "Psat" or "P" or "PhiSat" or "PhiMax" or "Sideband")) ? 3
         : d.FractionalBandwidth is not null || d.Streams != 1 || d.Link is not null || d.Sweeps.Count > 0 || d.NfAllowanceDb != 1 || d.RxBackoffDb != 10
         || d.Stages.Any(s => s.Parameters.Any(kv => kv.Key is "Pdc" or "GainPerStage" || ChainScaling.IsScaled(kv.Value)))
         || d.Stages.Any(s => s.Part == ChainParts.Combiner && s.Get("Topology").Trim().Equals("Levels", StringComparison.OrdinalIgnoreCase)) ? 2 : 1;

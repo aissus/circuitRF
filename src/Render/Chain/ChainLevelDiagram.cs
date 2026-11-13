@@ -38,10 +38,12 @@ public static class ChainLevelDiagram
 
     /// <summary>What the figure draws. <paramref name="ElementNodes"/>: how many nodes, from the input, carry one array
     /// element's levels (up to the combiner's input); 0 with no array. <paramref name="Tx"/>: a transmit chain's readouts,
-    /// and <paramref name="PsatDbm"/> its Psat referred to each node (+∞ before anything saturates); null for a receiver.</summary>
+    /// and <paramref name="PsatDbm"/> its Psat referred to each node (+∞ before anything saturates); null for a receiver.
+    /// <paramref name="Stream"/>: what a transmitter from a stream starts with, as its key names it ("DAC", "polar
+    /// paths"); null for any other chain.</summary>
     public sealed record Plan(IReadOnlyList<ChainNodeLevel> Nodes, IReadOnlyList<double> FrequencyHz, int ElementNodes, int ArrayN,
                               IReadOnlyList<string> Blockers, double RequiredSnrDb, Front? Link, double Lo, double Hi,
-                              ChainTxReadout? Tx = null, IReadOnlyList<double>? PsatDbm = null);
+                              ChainTxReadout? Tx = null, IReadOnlyList<double>? PsatDbm = null, string? Stream = null);
 
     /// <summary>The level plan of a budget; null when it was refused.</summary>
     public static Plan? For(ChainDesign d, ChainBudgetResult r)
@@ -71,7 +73,9 @@ public static class ChainLevelDiagram
         var (lo, hi) = ChainBudgetDisplay.LevelWindow(framed, topOnly);
         return new Plan(lv, [d.FrequencyHz, .. r.Stages.Select(s => s.FrequencyHz)], cmb >= 0 ? cmb + 1 : 0,
                         cmb >= 0 ? ChainParts.ReadCombiner(d.Stages[cmb]).N : 1,
-                        [.. d.Blockers.Select((b, k) => $"blocker {k + 1}")], d.RequiredSnrDb, front, lo, hi, tx, psat);
+                        [.. d.Blockers.Select((b, k) => $"blocker {k + 1}")], d.RequiredSnrDb, front, lo, hi, tx, psat,
+                        d.Stages.Count == 0 || !ChainParts.IsFront(d.Stages[0].Part) ? null
+                        : d.Stages[0].Part == ChainParts.Dac ? "DAC" : "polar paths");
     }
 
     // ── where things go ───────────────────────────────────────────────────────
@@ -397,9 +401,18 @@ public static class ChainLevelDiagram
         if (p.Tx is { } tx)
         {
             // A transmitter's: the back-off from both limits, the floor per hertz, the ACLR the intercept gives.
-            keys.Add(($"back-off {D(tx.BackoffP1dbDb)} dB from P1dB, {D(tx.BackoffPsatDb)} dB from Psat", cComp));
+            // (A stream's chain that nothing compresses, a linear polar one, has no back-off to key.)
+            if (p.Stream is null || Level(tx.BackoffP1dbDb))
+                keys.Add(($"back-off {D(tx.BackoffP1dbDb)} dB from P1dB, {D(tx.BackoffPsatDb)} dB from Psat", cComp));
             keys.Add(($"noise floor {D(tx.NoisePsdDbmHz)} dBm/Hz", cNoise));
-            if (Level(tx.AclrDbc)) keys.Add(($"ACLR {D(tx.AclrDbc)} dBc (estimate, from OIP3)", cIm3));
+            // A stream's own share: the DAC's quantisation floor is in the noise line; its EVM and ACLR, and a polar
+            // stage's, are keys.
+            if (double.IsNaN(tx.EvmFloorPct)) { if (Level(tx.AclrDbc)) keys.Add(($"ACLR {D(tx.AclrDbc)} dBc (estimate, from OIP3)", cIm3)); }
+            else
+            {
+                keys.Add(($"ACLR {D(tx.AclrDbc)} dBc (estimate, with the {p.Stream})", cIm3));
+                keys.Add(($"EVM floor {D(tx.EvmFloorPct)} %", cNoise));
+            }
         }
         else if (Level(o.MarginDb))
         {
