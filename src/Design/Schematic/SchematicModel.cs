@@ -681,6 +681,21 @@ public enum SymbolKind
     /// S21 = S12 = e^(−jωT). A square body carrying τ. Appended last because it is newest — the
     /// enum persists by NAME, so position carries no meaning in a file.</summary>
     Delay,
+
+    /// <summary>Envelope detector (engine "EnvDetector"), a system block of the polar-transmitter set: an RF carrier
+    /// in at (−300,0), its amplitude out at baseband at (300,0).</summary>
+    EnvDetector,
+
+    /// <summary>Limiter (engine "Limiter"): a constant-envelope stage. IN (−300,0), OUT (300,0).</summary>
+    Limiter,
+
+    /// <summary>Phase modulator (engine "PhaseMod"): an RF carrier in at (−300,0), out at (300,0), turned by the
+    /// baseband phase at PH (0,300).</summary>
+    PhaseMod,
+
+    /// <summary>Supply-modulated amplifier (engine "SupplyAmp"): RF in (−300,0) and out (300,0), its output amplitude set
+    /// by the baseband supply at VS (0,−300).</summary>
+    SupplyAmp,
 }
 
 public enum PortConnectionState { Unconnected, Connected }

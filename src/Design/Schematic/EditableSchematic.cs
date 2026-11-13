@@ -299,6 +299,15 @@ public static class SymbolPortDefs
             // Amplifier: unilateral and therefore NOT symmetric — in and out are named.
             case SymbolKind.Amp:
                 return [("IN", -300f, 0f), ("OUT", 300f, 0f)];
+            // The polar-transmitter blocks: RF in on the left, out on the right, a baseband control where there is
+            // one — the phase from below, as a mixer's LO enters, and the supply from above, as a supply does.
+            case SymbolKind.EnvDetector:
+            case SymbolKind.Limiter:
+                return [("IN", -300f, 0f), ("OUT", 300f, 0f)];
+            case SymbolKind.PhaseMod:
+                return [("IN", -300f, 0f), ("OUT", 300f, 0f), ("PH", 0f, 300f)];
+            case SymbolKind.SupplyAmp:
+                return [("IN", -300f, 0f), ("OUT", 300f, 0f), ("VS", 0f, -300f)];
             // Coupler and the two hybrids: ONE pin layout for all three, because they are one component.
             // The four ports in the order a coupler is always specified — in, through, coupled,
             // isolated — which is what the numerals on the glyph name.

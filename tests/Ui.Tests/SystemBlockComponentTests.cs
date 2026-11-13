@@ -19,14 +19,15 @@ namespace CircuitRF.Ui.Tests;
 /// </summary>
 public class SystemBlockComponentTests
 {
-    /// <summary>The eleven tiles this brief adds, and the Delay that issue 55 added after it. Every
-    /// mechanical gate below runs over all of them.</summary>
+    /// <summary>The eleven tiles this brief adds, the Delay that issue 55 added after it, the Combiner, and the four
+    /// polar-transmitter blocks. Every mechanical gate below runs over all of them.</summary>
     public static readonly SymbolKind[] SystemBlocks =
     [
         SymbolKind.Balun, SymbolKind.Circulator, SymbolKind.Switch, SymbolKind.SwitchD,
         SymbolKind.Amp, SymbolKind.Coupler, SymbolKind.Hybrid90, SymbolKind.Hybrid180,
         SymbolKind.Filter, SymbolKind.Atten, SymbolKind.Duplexer, SymbolKind.Delay,
         SymbolKind.Combiner,
+        SymbolKind.EnvDetector, SymbolKind.Limiter, SymbolKind.PhaseMod, SymbolKind.SupplyAmp,
     ];
 
     public static TheoryData<SymbolKind> EachBlock()
@@ -403,6 +404,10 @@ public class SystemBlockComponentTests
     [InlineData(SymbolKind.Duplexer,   "Duplexer")]
     [InlineData(SymbolKind.Delay,      "Delay")]
     [InlineData(SymbolKind.Combiner,   "Combiner")]
+    [InlineData(SymbolKind.EnvDetector, "EnvDetector")]
+    [InlineData(SymbolKind.Limiter,    "Limiter")]
+    [InlineData(SymbolKind.PhaseMod,   "PhaseMod")]
+    [InlineData(SymbolKind.SupplyAmp,  "SupplyAmp")]
     public void EachTileNamesItsEngineComponent(SymbolKind kind, string expected)
         => Assert.Equal(expected, ComponentTypeRegistry.EngineReference(kind));
 
@@ -435,6 +440,10 @@ public class SystemBlockComponentTests
     [InlineData(SymbolKind.Duplexer,   "Duplexer")]
     [InlineData(SymbolKind.Delay,      "Delay")]
     [InlineData(SymbolKind.Combiner,   "Combiner")]
+    [InlineData(SymbolKind.EnvDetector, "Envelope Detector")]
+    [InlineData(SymbolKind.Limiter,    "Limiter")]
+    [InlineData(SymbolKind.PhaseMod,   "Phase Modulator")]
+    [InlineData(SymbolKind.SupplyAmp,  "Supply-Modulated Amplifier")]
     public void EachTileIsNamedForWhatItIs_NotForItsAbbreviation(SymbolKind kind, string expected)
         => Assert.Equal(expected, ComponentTypeRegistry.DisplayName(kind));
 
@@ -465,6 +474,14 @@ public class SystemBlockComponentTests
     [InlineData("Duplexer",   SymbolKind.Duplexer)]
     [InlineData("dl",         SymbolKind.Delay)]
     [InlineData("Delay",      SymbolKind.Delay)]
+    [InlineData("ed",         SymbolKind.EnvDetector)]
+    [InlineData("EnvDetector", SymbolKind.EnvDetector)]
+    [InlineData("lim",        SymbolKind.Limiter)]
+    [InlineData("Limiter",    SymbolKind.Limiter)]
+    [InlineData("pm",         SymbolKind.PhaseMod)]
+    [InlineData("PhaseMod",   SymbolKind.PhaseMod)]
+    [InlineData("sma",        SymbolKind.SupplyAmp)]
+    [InlineData("SupplyAmp",  SymbolKind.SupplyAmp)]
     public void TryParseCode_ResolvesEveryShortCode(string code, SymbolKind expected)
     {
         Assert.True(ComponentTypeRegistry.TryParseCode(code, out var kind, out _));
@@ -681,6 +698,10 @@ public class SystemBlockComponentTests
     [InlineData("duplexer",   SymbolKind.Duplexer)]
     [InlineData("Wilkinson",  SymbolKind.Combiner)]
     [InlineData("splitter",   SymbolKind.Combiner)]
+    [InlineData("envelope detector", SymbolKind.EnvDetector)]
+    [InlineData("constant envelope", SymbolKind.Limiter)]
+    [InlineData("phase modulator", SymbolKind.PhaseMod)]
+    [InlineData("polar",      SymbolKind.SupplyAmp)]
     public void EachBlockIsFoundByTheWordAUserWouldSearchFor(string query, SymbolKind expected)
         => Assert.Contains(LibraryCatalog.Search(query), i => i.Kind == expected);
 

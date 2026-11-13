@@ -352,6 +352,24 @@ public static class ComponentTypeRegistry
             Category: ComponentCategory.System,
             SearchTerms: ["Delay", "time delay", "group delay", "tau", "lag", "latency", "dl"],
             IsCommon: false),
+        // The polar-transmitter blocks: laws of a carrier's amplitude and phase (CarrierBlockModel).
+        [SymbolKind.EnvDetector]   = new("Envelope Detector", "ED",
+            Category: ComponentCategory.System,
+            SearchTerms: ["Envelope detector", "detector", "envelope", "amplitude", "AM", "polar", "ed"],
+            IsCommon: false),
+        [SymbolKind.Limiter]       = new("Limiter", "LIM",
+            Category: ComponentCategory.System,
+            SearchTerms: ["Limiter", "limiting amplifier", "constant envelope", "hard limiter", "polar", "lim"],
+            IsCommon: false),
+        [SymbolKind.PhaseMod]      = new("Phase Modulator", "PM",
+            Category: ComponentCategory.System,
+            SearchTerms: ["Phase modulator", "phase", "PM", "polar", "phase path"],
+            IsCommon: false),
+        [SymbolKind.SupplyAmp]     = new("Supply-Modulated Amplifier", "SMA",
+            Category: ComponentCategory.System,
+            SearchTerms: ["Supply-modulated amplifier", "supply modulation", "polar", "EER", "envelope tracking",
+                          "AM-AM", "AM-PM", "sma"],
+            IsCommon: false),
         [SymbolKind.Duplexer]      = new("Duplexer", "DPX",
             Category: ComponentCategory.System,
             SearchTerms: ["Duplexer", "dpx", "diplexer", "TX", "RX", "antenna", "front end"],
@@ -1012,6 +1030,19 @@ public static class ComponentTypeRegistry
             "The two terminals are interchangeable — this block is symmetric, and its parameters "
           + "describe both ports at once.",
 
+        SymbolKind.EnvDetector =>
+            "IN takes the RF carrier and OUT gives its amplitude at baseband: the two are not interchangeable.",
+
+        SymbolKind.Limiter =>
+            "IN is the RF input and OUT the constant-envelope output: the two are not interchangeable.",
+
+        SymbolKind.PhaseMod =>
+            "IN and OUT carry the RF carrier; PH, entering from below, is the baseband phase input.",
+
+        SymbolKind.SupplyAmp =>
+            "IN and OUT carry the RF carrier; VS, entering from above, is the baseband supply that sets the output "
+          + "amplitude.",
+
         SymbolKind.Combiner =>
             "The common port S comes first, then the paths 1 to N in order. The paths differ only by "
           + "their own IL[k] and Phase[k]; S is the port they combine into, or split from.",
@@ -1189,6 +1220,10 @@ public static class ComponentTypeRegistry
         SymbolKind.Filter        => "Filter",
         SymbolKind.Atten         => "Atten",
         SymbolKind.Delay         => "Delay",
+        SymbolKind.EnvDetector   => "EnvDetector",
+        SymbolKind.Limiter       => "Limiter",
+        SymbolKind.PhaseMod      => "PhaseMod",
+        SymbolKind.SupplyAmp     => "SupplyAmp",
         SymbolKind.Duplexer      => "Duplexer",
         SymbolKind.Combiner      => "Combiner",
         SymbolKind.Term          => "Port",  // engine Reference stays "Port" for .cnl compat
@@ -2094,6 +2129,40 @@ public static class ComponentTypeRegistry
           + "delay is allowed and cancels a delay elsewhere.",
         (SymbolKind.Delay, "Z0") =>
             "Reference impedance of both ports. Each port is this resistance to its own reference.",
+        (SymbolKind.EnvDetector, "Kd") =>
+            "Detector gain: output volts into a matched load per volt of the input carrier's peak amplitude.",
+        (SymbolKind.EnvDetector, "BW") =>
+            "One-pole bandwidth of the detected envelope: the output follows the amplitude through 1/(1 + jf/BW). "
+          + "0 is no pole: the output is the amplitude itself.",
+        (SymbolKind.Limiter, "Pout") =>
+            "Output power into a matched load, whatever the input's level above the knee. The output carrier keeps "
+          + "the input's phase.",
+        (SymbolKind.Limiter or SymbolKind.SupplyAmp, "Knee") =>
+            "Available input power at which the output is 3 dB below its limited level: below it the stage is "
+          + "linear, above it the output amplitude is constant. The block's smoothness; -100 dBm is a hard limit.",
+        (SymbolKind.PhaseMod, "Kp") =>
+            "Phase per volt at the PH input, in rad/V: the output carrier is the input's turned by Kp times the PH "
+          + "voltage.",
+        (SymbolKind.PhaseMod, "Gain") =>
+            "The carrier's gain from IN to OUT, in dB, at every phase.",
+        (SymbolKind.PhaseMod, "Zph") =>
+            "The impedance the PH input presents.",
+        (SymbolKind.SupplyAmp, "Ks") =>
+            "Supply gain: output peak volts into a matched load per volt at VS. The output amplitude is Ks times the "
+          + "supply, whatever the RF input's level above the knee.",
+        (SymbolKind.SupplyAmp, "Vsat") =>
+            "AM-AM compression: the output amplitude is Ks*Vsat*tanh(VS/Vsat), flattening as the supply reaches Vsat. "
+          + "0 is a linear supply law.",
+        (SymbolKind.SupplyAmp, "AMPM") =>
+            "AM-PM against the supply, in degrees per volt: the output phase turns by AMPM times the VS voltage. "
+          + "0 is none.",
+        (SymbolKind.SupplyAmp, "Zs") =>
+            "The impedance the VS supply input presents.",
+        (SymbolKind.EnvDetector or SymbolKind.Limiter or SymbolKind.PhaseMod or SymbolKind.SupplyAmp, "Zin") =>
+            "The impedance the RF input presents.",
+        (SymbolKind.EnvDetector or SymbolKind.Limiter or SymbolKind.PhaseMod or SymbolKind.SupplyAmp, "Zout") =>
+            "The impedance the output presents. Its open-circuit voltage is twice the block's law, so a matched "
+          + "load reads the law itself.",
         (SymbolKind.Atten, "RL") =>
             "Return loss of both ports. The 200 dB default means exactly matched — no reflection "
           + "entry is stamped at all.",
@@ -2525,6 +2594,31 @@ public static class ComponentTypeRegistry
             case SymbolKind.Delay:
                 return [new("T",     "1",    "ns",  true,  UnitDimension.Time),
                         new("Z0",    "50",   "Ω",   false, UnitDimension.Resistance)];
+            // The polar-transmitter blocks. Each default is the model's own when the parameter is absent.
+            case SymbolKind.EnvDetector:
+                return [new("Kd",    "1",    "",    true,  UnitDimension.None),
+                        new("BW",    "0",    "MHz", true,  UnitDimension.Frequency),
+                        new("Zin",   "50",   "Ω",   false, UnitDimension.Resistance),
+                        new("Zout",  "50",   "Ω",   false, UnitDimension.Resistance)];
+            case SymbolKind.Limiter:
+                return [new("Pout",  "0",    "dBm", true,  UnitDimension.Power),
+                        new("Knee",  "-100", "dBm", false, UnitDimension.Power),
+                        new("Zin",   "50",   "Ω",   false, UnitDimension.Resistance),
+                        new("Zout",  "50",   "Ω",   false, UnitDimension.Resistance)];
+            case SymbolKind.PhaseMod:
+                return [new("Kp",    "1",    "",    true,  UnitDimension.None),
+                        new("Gain",  "0",    "dB",  false, UnitDimension.None),
+                        new("Zin",   "50",   "Ω",   false, UnitDimension.Resistance),
+                        new("Zout",  "50",   "Ω",   false, UnitDimension.Resistance),
+                        new("Zph",   "50",   "Ω",   false, UnitDimension.Resistance)];
+            case SymbolKind.SupplyAmp:
+                return [new("Ks",    "1",    "",    true,  UnitDimension.None),
+                        new("Vsat",  "0",    "V",   false, UnitDimension.Voltage),
+                        new("AMPM",  "0",    "",    false, UnitDimension.None),
+                        new("Knee",  "-100", "dBm", false, UnitDimension.Power),
+                        new("Zin",   "50",   "Ω",   false, UnitDimension.Resistance),
+                        new("Zout",  "50",   "Ω",   false, UnitDimension.Resistance),
+                        new("Zs",    "50",   "Ω",   false, UnitDimension.Resistance)];
             // The combiner: N paths, every one at IL unless it states its own IL[k], and Phase[k] per path. The
             // indexed ones are not seeded — a freshly placed combiner is the ideal equal split — and are added as
             // rows when a path needs its own loss or phase, as a P1Tone's Z[k] is.
@@ -3768,6 +3862,16 @@ public static class ComponentTypeRegistry
             case "ATT":    kind = SymbolKind.Atten;        return true;
             case "DELAY":
             case "DL":     kind = SymbolKind.Delay;        return true;
+            case "ENVDETECTOR":
+            case "ENVELOPEDETECTOR":
+            case "ED":     kind = SymbolKind.EnvDetector;  return true;
+            case "LIMITER":
+            case "LIM":    kind = SymbolKind.Limiter;      return true;
+            case "PHASEMOD":
+            case "PHASEMODULATOR":
+            case "PM":     kind = SymbolKind.PhaseMod;     return true;
+            case "SUPPLYAMP":
+            case "SMA":    kind = SymbolKind.SupplyAmp;    return true;
             case "DUPLEXER":
             case "DPX":    kind = SymbolKind.Duplexer;     return true;
             case "COMBINER":
@@ -4122,6 +4226,9 @@ public static class ComponentTypeRegistry
     private static readonly string[] MixerNfTypeOptions =
         [nameof(MixerNoiseFigureType.Ssb).ToLowerInvariant(), nameof(MixerNoiseFigureType.Dsb).ToLowerInvariant()];
 
+    /// <summary>A MOD_Source's <c>Polar</c>: the RF source, or one half of a polar pair (ModSourceModel.Create reads them).</summary>
+    private static readonly string[] PolarOptions = ["rf", "amp", "phase"];
+
     /// <summary>The Tuner family's <c>BiasTee</c> switch. Not an enum anywhere — the engine
     /// string-compares the resolved value against "on" (<see cref="ComponentModelFactory"/>'s
     /// tuner branch), so these two spellings ARE the contract and there is no type to
@@ -4179,6 +4286,8 @@ public static class ComponentTypeRegistry
         (SymbolKind.Duplexer, "TxForm" or "RxForm")               => NetworkFormOptions,
         (SymbolKind.Amp, "IP3Ref")                                => Ip3ReferenceOptions,
         (SymbolKind.Mixer or SymbolKind.MixerD, "NFType")         => MixerNfTypeOptions,
+        // A MOD_Source's polar half (added as a row; no row is the RF source).
+        (SymbolKind.ModSource, "Polar")                           => PolarOptions,
         // The Tuner family (owner request, 2026-09-01). Both parameters accept a closed set of two
         // spellings and neither is a number, so a free-text box could only ever be got wrong — a
         // typo'd "ON " or "0" reads as the default with nothing said anywhere, which is exactly the

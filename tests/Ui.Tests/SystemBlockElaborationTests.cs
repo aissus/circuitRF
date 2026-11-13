@@ -55,6 +55,25 @@ public class SystemBlockElaborationTests
         Assert.Equal(System.Numerics.Complex.Zero, s[0, 0]);   // RL = 200 means MATCHED
     }
 
+    /// <summary>A freshly placed polar-transmitter block elaborates with its RF and control returns on ground, its minted
+    /// quadrature node (and the detector's pole, when it has a bandwidth) after them, at the tile's defaults.</summary>
+    [Theory]
+    [InlineData(SymbolKind.EnvDetector, 4, typeof(EnvelopeDetectorModel))]
+    [InlineData(SymbolKind.Limiter,     4, typeof(LimiterModel))]
+    [InlineData(SymbolKind.PhaseMod,    6, typeof(PhaseModulatorModel))]
+    [InlineData(SymbolKind.SupplyAmp,   6, typeof(SupplyModulatedAmpModel))]
+    public void AFreshlyPlacedPolarBlock_CarriesItsQuadratureNode(SymbolKind kind, int nets, System.Type model)
+    {
+        var ec = Elaborate(kind);
+        var m  = Assert.IsAssignableFrom<CarrierBlockModel>(ec.Model);
+        Assert.IsType(model, m);
+        Assert.Equal(nets, 2 * m.ExternalPortCount);
+        Assert.Equal(nets + 2, ec.Nodes.Length);                 // the quadrature port: its node and ground
+        for (int i = 1; i < nets; i += 2) Assert.Equal(0, ec.Nodes[i]);
+        Assert.True(ec.Nodes[nets] > 0);
+        Assert.Equal(0, ec.Nodes[nets + 1]);
+    }
+
     // Issue 55. The tile's "1 ns" is the proof that the time units reach the engine through the
     // schematic path (µs/ns glyphs, UnitNormalizer, the extractor's unit lift) and not only through
     // a hand-written netlist.

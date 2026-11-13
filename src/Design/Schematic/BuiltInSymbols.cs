@@ -144,6 +144,10 @@ public static class BuiltInSymbols
     private static readonly Symbol _hybrid180     = BuildCoupler(SymbolKind.Hybrid180);
     private static readonly Symbol _atten         = BuildAtten();
     private static readonly Symbol _delay        = BuildDelay();
+    private static readonly Symbol _envDetector  = BuildEnvDetector();
+    private static readonly Symbol _limiter      = BuildLimiter();
+    private static readonly Symbol _phaseMod     = BuildPhaseMod();
+    private static readonly Symbol _supplyAmp    = BuildSupplyAmp();
     private static readonly Symbol _duplexer      = BuildDuplexer();
 
     // Per-N cache for variadic box symbols (SDD and ZPort share body geometry).
@@ -276,6 +280,10 @@ public static class BuiltInSymbols
             case SymbolKind.Hybrid180:  return _hybrid180;
             case SymbolKind.Atten:      return _atten;
             case SymbolKind.Delay:      return _delay;
+            case SymbolKind.EnvDetector: return _envDetector;
+            case SymbolKind.Limiter:    return _limiter;
+            case SymbolKind.PhaseMod:   return _phaseMod;
+            case SymbolKind.SupplyAmp:  return _supplyAmp;
             case SymbolKind.Duplexer:   return _duplexer;
             case SymbolKind.Combiner:   return _combinerCache.GetOrAdd(Math.Max(2, portCount), BuildCombiner);
             // The four dynamic ones answer here with their DEFAULT variant — the same contract
@@ -2208,6 +2216,45 @@ public static class BuiltInSymbols
         }
         return Sym(prims, SymbolKind.Combiner, n);
     }
+
+    // ── The polar-transmitter blocks ──────────────────────────────────────────
+    // Each a square at the Delay's size with what it does drawn inside, RF in on the left and out on the right.
+    //   Envelope detector: |x|, the magnitude of the carrier's complex envelope — what it outputs.
+    //   Limiter: its transfer curve, flat-topped either side of a linear slope.
+    //   Phase modulator: φ, with the phase input entering from below.
+    // The supply-modulated amplifier is the amplifier's triangle with its supply entering from above, at the point where
+    // the lead meets the triangle's upper edge (x = 0, y = −80 on the Amp's own outline).
+
+    private static Symbol BuildEnvDetector() => Sym([
+        RRect(0, 0, 200, 200, 12),
+        Txt("|x|", 0, 0, fontSize: 80),
+        L(-300, 0, -100, 0),
+        L( 100, 0,  300, 0),
+    ], SymbolKind.EnvDetector);
+
+    private static Symbol BuildLimiter() => Sym([
+        RRect(0, 0, 200, 200, 12),
+        PLine(-70, 45, -30, 45, 30, -45, 70, -45),
+        L(-300, 0, -100, 0),
+        L( 100, 0,  300, 0),
+    ], SymbolKind.Limiter);
+
+    private static Symbol BuildPhaseMod() => Sym([
+        RRect(0, 0, 200, 200, 12),
+        Txt("φ", 0, 0, fontSize: 110),
+        L(-300, 0, -100, 0),
+        L( 100, 0,  300, 0),
+        L(   0, 300,   0, 100),
+        Txt("PH", 55, 215, fontSize: MixerPortFontSize),
+    ], SymbolKind.PhaseMod);
+
+    private static Symbol BuildSupplyAmp() => Sym([
+        Poly(false, -140, -150, -140, 150, 160, 0),
+        L(-300, 0, -140, 0),
+        L( 160, 0,  300, 0),
+        L(   0, -300,   0, -80),
+        Txt("VS", 55, -215, fontSize: MixerPortFontSize),
+    ], SymbolKind.SupplyAmp);
 
     // ── Duplexer — a junction that splits into two filters ────────────────────
     // Pins: ANT (-300,0) · TX (+300,-100) · RX (+300,+100).
