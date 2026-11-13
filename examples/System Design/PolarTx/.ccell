@@ -1,0 +1,7 @@
+{
+  "FormatVersion": 1,
+  "Parameters": [],
+  "PrimarySchematic": "PolarTx.csch",
+  "IsTestBench": true,
+  "NumPorts": 0
+}

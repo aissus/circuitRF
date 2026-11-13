@@ -31,6 +31,7 @@ The band is 2400-2483.5 MHz, and it is the one worth building an example on:
 | `RxSuperhet` | preselector, LNA, downconversion, IF strip |
 | `TxFetFinal` | System driver stages into a **nonlinear FET** final |
 | `CascadeBudget` | the gain / IP3 / noise-figure arithmetic, beside a real S-parameter run |
+| `PolarTx` | a **polar transmitter** at 3.5 GHz, an NR signal recombined in the circuit envelope (its own section below) |
 
 A **T/R switch** is the one part all five radio benches share. It is the same SPDT in every one of
 them, wired the same way - `T1` is the transmit arm, `T2` the receive arm - and the only thing the
@@ -61,6 +62,7 @@ same name. Measured wall clock for the whole sweep, release build:
 | `RxDirectConversion` | 15 points | 4.9 s |
 | `TxFetFinal` | 29 points | 3.0 s |
 | `CascadeBudget` | 601 points | 0.2 s |
+| `PolarTx` | 16 envelope points | 14 min 46 s (CLI, a shared and loaded 64-core machine) |
 
 They render headlessly too, which is how the pictures in this file were checked:
 
@@ -69,7 +71,9 @@ circuitrf hb    "TxDirectConversion/schematic/TxDirectConversion.csch" -o result
 circuitrf render TxDirectConversion.cdd --data results/TxDirectConversion.npy -o tx.png
 ```
 
-`CascadeBudget` is an S-parameter bench, so it is `circuitrf sparam`, not `hb`.
+`CascadeBudget` is an S-parameter bench, so it is `circuitrf sparam`, not `hb`, and `PolarTx` is an envelope
+bench, so it is `circuitrf env`. The CLI writes an envelope run's cubes without the `ENV1.` group the display
+reads, which Simulate writes; open `PolarTx.cdd` after a Simulate.
 
 ## Transmitters
 
@@ -488,3 +492,60 @@ receives, not what a reflective node swings to.
 **Three separately plausible numbers on one passive block can still sum above unity**, because the
 family builds its S-matrix from real, IN-PHASE amplitudes converted straight from dB. The section
 on passive blocks above has the arithmetic and the three shapes it takes here.
+
+## Polar transmitter (envelope)
+
+`PolarTx` is not a 2.4 GHz radio: it is the polar-transmitter blocks put to work at **3.5 GHz** on an **NR
+20 MHz, 30 kHz, 64-QAM** signal from the Signal Designer, in the circuit envelope. The signal is split into its
+two halves by a pair of `MOD_Source`s with the same carrier, `SA` (`Polar=amp`, the envelope) and `SP`
+(`Polar=phase`), and recombined:
+
+- **AM path:** `SA` → `DAM`, a [Delay](../../docs/user/reference/system-components.html#delay) of `dT` → `FAM`, a
+  third-order Butterworth lowpass of bandwidth `Fam` → the supply `VS` of `PA`, a
+  [Supply-Modulated Amplifier](../../docs/user/reference/components.html#supplyamp) with `Ks = 10` (20 dB above the
+  source's 0 dBm).
+- **Phase path:** a CW carrier `LO` → `LIM`, a [Limiter](../../docs/user/reference/components.html#limiter) →
+  `PM`, a [Phase Modulator](../../docs/user/reference/components.html#phasemod) turned by `SP` → `DPM`, a Delay of
+  `Tg` → the amplifier's RF input. `Tg = 2/(2π·Fam)` is the Butterworth's own DC group delay, so the two paths
+  are aligned at `dT = 0` whatever the bandwidth: `dT` is the mismatch, and `Fam` is the bandwidth alone.
+
+The envelope is `Accuracy=standard` (2 ns steps): the delays are fractions of a step and are interpolated, and the
+filter is stepped too. At `draft`'s 8 ns the ideal case reads 0.211 % and −56 dBc instead of 0.169 % and −74.7 dBc. `Warmup=1 µs` is
+stated because the warm-up estimate does not see a polar block's own ports and reads the line `DPM` between two of
+them as a memory of seconds; the real memory is the filter's, a few nanoseconds, and the seam error reads 0.
+
+**The ideal case reads the source's own EVM.** At `dT = 0` and `Fam = 1 GHz` the output's EVM is **0.169 %**,
+which is the signal's own (the same record through a matched pad reads 0.169 %). The recombination is exact: with
+the filter and `DPM` taken out, ACPR1 is the source's own −86.5 dBc; with them in, the 0.32 ns alignment is
+interpolated and ACPR1 reads −74.7 dBc.
+
+**EVM and ACPR1 against the delay mismatch** (rows: the AM bandwidth `Fam`; columns: `dT`):
+
+| `Fam` | EVM 0 ns | 1 ns | 2 ns | 4 ns | ACPR1 0 ns | 1 ns | 2 ns | 4 ns |
+|---|---|---|---|---|---|---|---|---|
+| 40 MHz | 0.391 % | 1.344 % | 2.381 % | 4.462 % | −47.0 dBc | −40.4 | −35.7 | −30.1 |
+| 80 MHz | 0.200 % | 1.179 % | 2.244 % | 4.360 % | −57.6 dBc | −42.5 | −36.6 | −30.6 |
+| 160 MHz | 0.174 % | 1.141 % | 2.213 % | 4.339 % | −65.3 dBc | −42.8 | −36.8 | −30.7 |
+| 1 GHz | 0.169 % | 1.122 % | 2.198 % | 4.327 % | −74.7 dBc | −42.9 | −36.9 | −30.7 |
+
+(ACPR1 is the lower channel; the upper one agrees to 0.2 dB.) What the table says:
+
+- **EVM rises in proportion to the mismatch**, about 1.08 % per nanosecond here, and ACPR1 by 6 dB for each
+  doubling. The recombined output is `a(t − dT)·e^(jφ(t))`, whose error against the signal is
+  `[a(t − dT) − a(t)]·e^(jφ(t)) ≈ −dT·ȧ(t)·e^(jφ(t))`: in proportion to the delay and to how fast the envelope moves.
+  That error formed from the run's own envelope, inside the occupied band and after the demodulator's own delay
+  and gain fits, predicts 1.108 %, 2.188 % and 4.312 % at 1, 2 and 4 ns (with the source's 0.169 % added), within
+  1.3 % of what the run reads. Over the whole band the same first-order error is 1.66 % per nanosecond: a third of
+  its power lies outside the channel, which is where ACPR1 reads it.
+- **The demodulator splits the mismatch.** Its delay fit lands halfway, at `dT/2`, because an NR envelope moves as
+  fast in amplitude as in phase; that is why the EVM is that of half the mismatch in each path.
+- **The AM bandwidth matters for ACPR before it matters for EVM.** Aligned, a 40 MHz AM path (twice the channel)
+  costs 0.39 % of EVM but brings ACPR1 to −47 dBc; 80 MHz is −58 dBc and 160 MHz −65 dBc. The envelope's spectrum
+  is wider than the signal's, and what the filter takes off it lands next to the channel.
+- **Once the paths are misaligned, the mismatch dominates.** From 1 ns on, every bandwidth from 80 MHz up reads
+  the same ACPR1 to 0.4 dB.
+
+Things to try: `AMPM` on `PA` (degrees per volt of supply) adds AM-PM, which the recombination cannot take out;
+`Vsat` adds AM-AM compression; a phase-noise mask on `SP` is the phase path's own phase noise. `MaxHarm=1` is
+enough here because none of these blocks makes harmonics.
+

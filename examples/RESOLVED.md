@@ -1078,3 +1078,16 @@ Three things that took deciding:
 - **The documentation is otherwise vector-only** (`DocsFactoryTests.NoDocumentationImageIsABitmap`). A README's pictures are
   the example's own, shown as the application shows them, so `examples/<folder>/pictures/` is exempted beside
   `assets/fixed/` — not copied into `assets/fixed/`, whose contract is that DocGen never writes there.
+
+## System Design ▸ PolarTx: an envelope bench in a harmonic-balance folder (2026-11-13)
+
+- **Declare the outer sweep first.** `circuitrf env` dispatches at the first `parametric_sweep` that wraps the
+  envelope and only when nothing wraps that one; with `SWT` (inner, `dT`) declared before `SWF` (outer, `Fam`) it ran
+  the bare envelope, one point. `SWF` comes first in the bench.
+- **The CLI's envelope cubes are ungrouped.** `circuitrf env -o` writes `EVM_pct`, Simulate writes `ENV1.EVM_pct`, and
+  `PolarTx.cdd` reads the latter, as every envelope display here does. Checking it headlessly took a copy of the
+  display with the prefix removed.
+- **`Warmup` is stated** (1 µs): the warm-up estimate reads the Delay between the phase modulator and the amplifier
+  as a memory of seconds (`src/Engine/RESOLVED.md`) and would run the record as one segment.
+- **`SaveWaveforms=no`**: sixteen points of 0.25 ms at the standard step with every labeled net recorded is ~0.6 GB
+  of waveforms; the display reads only EVM, ACLR and the spectra.
