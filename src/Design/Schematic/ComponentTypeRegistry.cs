@@ -2125,6 +2125,23 @@ public static class ComponentTypeRegistry
         (SymbolKind.Amp, "Gopt") =>
             "The source reflection coefficient that gives NFopt, referenced to the real part of Zin; complex, e.g. "
           + "0.2+j0.25. Blank means Zin itself.",
+        (SymbolKind.Amp, "Law") =>
+            "The compression law. Tanh, the default, is the soft limiter on IP3: IM3, the 1 dB point (IIP3 - 8.96 dB) "
+          + "and saturation (OIP3 - 3.92 dB) from the one number. Rapp and Saleh are bandpass laws on the envelope, set by "
+          + "Psat, and IP3 is not read: Rapp's smoothness P (1 soft, 3 or more near a hard clip), Saleh's AM-AM peaking at "
+          + "Psat with the AM-PM PhiSat and PhiMax. One tone through a bandpass law makes no harmonics; several tones' "
+          + "products outside their own zone are the run's truncation.",
+        (SymbolKind.Amp, "Psat") =>
+            "A Rapp or Saleh law's saturated output power: Rapp's asymptote, Saleh's peak, reached 6.02 dB into compression. "
+          + "Blank: 30 dBm. Not read by the Tanh law, whose saturation follows from IP3.",
+        (SymbolKind.Amp, "P") =>
+            "A Rapp law's smoothness p. The 1 dB point sits (10/p)·log10(10^(p/10) - 1) dB from the saturated input: 5.87 dB "
+          + "below it at p = 1, 1.16 dB at 2, 0.01 dB at 3. Blank: 2.",
+        (SymbolKind.Amp, "PhiSat") =>
+            "A Saleh law's AM-PM at the drive that saturates it (where the output peaks at Psat). Blank or 0: no AM-PM.",
+        (SymbolKind.Amp, "PhiMax") =>
+            "A Saleh law's AM-PM in the limit of large drive: beyond PhiSat, on the same side of 0. The phase is "
+          + "PhiMax·v/(v + PhiMax/PhiSat - 1), v the drive over the saturating drive.",
         (SymbolKind.Amp, "S12") =>
             "Reverse isolation. The 200 dB default means the amplifier is unilateral - the reverse "
           + "path is absent, not small, which is what makes an ideal amplifier unconditionally "
@@ -2616,7 +2633,14 @@ public static class ComponentTypeRegistry
                         new("NF",     "",       "dB",  false, UnitDimension.None),
                         new("NFopt",  "",       "dB",  false, UnitDimension.None),
                         new("Rn",     "",       "Ω",   false, UnitDimension.Resistance),
-                        new("Gopt",   "",       "",    false, UnitDimension.None)];
+                        new("Gopt",   "",       "",    false, UnitDimension.None),
+                        // The compression law: Tanh on IP3 (the default, as every amplifier before it), or a bandpass
+                        // law on Psat. A blank row is dropped at extraction, so a Tanh amplifier's line is unchanged.
+                        new("Law",    "Tanh",   "",    false, UnitDimension.None),
+                        new("Psat",   "",       "dBm", false, UnitDimension.Power),
+                        new("P",      "",       "",    false, UnitDimension.None),
+                        new("PhiSat", "",       "deg", false, UnitDimension.Angle),
+                        new("PhiMax", "",       "deg", false, UnitDimension.Angle)];
             // 10 dB, which is brief-sys-2's stated default for the MODEL — SYS-1 had seeded 3 here
             // as a label placeholder before there was a model to disagree with, and a tile whose
             // placed value differs from what the same component takes when the parameter is absent
@@ -4265,6 +4289,10 @@ public static class ComponentTypeRegistry
         [nameof(Ip3Reference.Input), nameof(Ip3Reference.Output)];
 
     /// <summary>The mixer's <c>NFType</c>: the two noise figures a datasheet quotes. Lower case, as the key is written.</summary>
+    /// <summary>The amplifier's <c>Law</c>: the tanh limiter, and the two bandpass laws (<c>AmplifierLaw</c>).</summary>
+    private static readonly string[] AmpLawOptions =
+        [nameof(AmplifierLawKind.Tanh), nameof(AmplifierLawKind.Rapp), nameof(AmplifierLawKind.Saleh)];
+
     private static readonly string[] MixerNfTypeOptions =
         [nameof(MixerNoiseFigureType.Ssb).ToLowerInvariant(), nameof(MixerNoiseFigureType.Dsb).ToLowerInvariant()];
 
@@ -4333,6 +4361,7 @@ public static class ComponentTypeRegistry
         (SymbolKind.Duplexer, "TxResponse" or "RxResponse")       => FilterResponseOptions,
         (SymbolKind.Duplexer, "TxForm" or "RxForm")               => NetworkFormOptions,
         (SymbolKind.Amp, "IP3Ref")                                => Ip3ReferenceOptions,
+        (SymbolKind.Amp, "Law")                                   => AmpLawOptions,
         (SymbolKind.Mixer or SymbolKind.MixerD, "NFType")         => MixerNfTypeOptions,
         // A MOD_Source's polar half (added as a row; no row is the RF source).
         (SymbolKind.ModSource, "Polar")                           => PolarOptions,

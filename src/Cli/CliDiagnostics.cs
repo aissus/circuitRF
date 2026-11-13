@@ -4271,8 +4271,20 @@ internal static class CliDiagnostics
 
     public static Diagnostic ChainUnknownOption(string option) => Diagnostic.Create(
         "chain.option.unknown", DiagnosticSeverity.Error,
-        "chain does not take '{option}'. It takes a .cchain, -o, --to-schematic [dir], --name and --replace.",
+        "chain does not take '{option}'. It takes a .cchain, -o, --level-diagram, --to-schematic [dir], --name and --replace.",
         ("option", option));
+
+    public static Diagnostic ChainLevelDiagramKind(string path) => Diagnostic.Create(
+        "chain.level-diagram.kind", DiagnosticSeverity.Error,
+        "--level-diagram writes a .png or an .svg, not '{path}'.", ("path", path));
+
+    public static Diagnostic ChainLevelDiagramNeedsFile() => Diagnostic.Create(
+        "chain.level-diagram.needs-file", DiagnosticSeverity.Error,
+        "--level-diagram needs the file to write: a .png or an .svg.");
+
+    public static Diagnostic ChainLevelDiagramWriteFailed(string path, string why) => Diagnostic.Create(
+        "chain.level-diagram.write-failed", DiagnosticSeverity.Error,
+        "The level diagram was not written to '{path}': {why}", ("path", path), ("why", why));
 
     public static Diagnostic ChainUnreadable(string path, string why) => Diagnostic.Create(
         "chain.document.unreadable", DiagnosticSeverity.Error,
@@ -4286,6 +4298,10 @@ internal static class CliDiagnostics
     /// <summary>What the budget or the drawing has to say that is not a refusal: a blank NF, a drawn net joined by label.</summary>
     public static Diagnostic ChainNote(string note) => Diagnostic.Create(
         "chain.note", DiagnosticSeverity.Info, "{note}", ("note", note));
+
+    /// <summary>A bench Transfer leaves out because no run can hold it, and why: the cap of the analysis it needs.</summary>
+    public static Diagnostic ChainBenchLeftOut(string path, string why) => Diagnostic.Create(
+        "chain.bench.left-out", DiagnosticSeverity.Warning, "'{path}': {why}", ("path", path), ("why", why));
 
     /// <summary>Why the transfer wrote nothing: a cell already there, a bench the drawing refused.</summary>
     public static Diagnostic ChainTransferRefused(string why) => Diagnostic.Create(

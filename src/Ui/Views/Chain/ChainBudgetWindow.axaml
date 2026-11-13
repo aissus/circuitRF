@@ -58,6 +58,14 @@
             <Setter Property="Padding"   Value="4,1"/>
             <Setter Property="MinHeight" Value="24"/>
         </Style>
+        <!-- A parameter's own box and pick grow with what is typed, from a narrower floor than the inputs': the ten fields
+             of a combiner stage then fit on one line at the window's default width. -->
+        <Style Selector="TextBox.param">
+            <Setter Property="MinWidth"  Value="38"/>
+        </Style>
+        <Style Selector="ComboBox.param">
+            <Setter Property="MinWidth"  Value="66"/>
+        </Style>
         <Style Selector="Border.block">
             <Setter Property="BorderBrush"     Value="{DynamicResource CrfTileBorderBrush}"/>
             <Setter Property="BorderThickness" Value="1"/>
@@ -94,6 +102,18 @@
             <Setter Property="Margin"            Value="4,0,14,0"/>
         </Style>
     </Window.Styles>
+
+    <!-- A parameter row's field, for the rows that are not stages (the Link tab's): the stage list's own template. -->
+    <Window.DataTemplates>
+        <DataTemplate DataType="vm:ChainParamViewModel">
+            <StackPanel Orientation="Horizontal" Margin="0,0,5,2" ToolTip.Tip="{Binding Tip}" IsVisible="{Binding Shown}">
+                <TextBlock Classes="lbl" Text="{Binding Name}"/>
+                <TextBox Classes="p param" Text="{Binding Value}" Classes.invalid="{Binding Invalid}" IsVisible="{Binding IsText}" PlaceholderText="{Binding Watermark}"/>
+                <ComboBox Classes="p param" ItemsSource="{Binding Options}" SelectedItem="{Binding Value}" IsVisible="{Binding HasOptions}"/>
+                <TextBlock Classes="lbl" Text="{Binding Unit}" Margin="3,0,0,0"/>
+            </StackPanel>
+        </DataTemplate>
+    </Window.DataTemplates>
 
     <DockPanel>
         <!-- Toolbar: the file, the stage list, the transfer, help. The editors' and the other tools' shape (the Layout
@@ -181,27 +201,43 @@
             </DockPanel>
         </Border>
 
-        <!-- The system inputs. -->
+        <!-- The system inputs, the chain's direction first: a transmit chain is read at its output. Each field's label,
+             box and unit are one StackPanel, so the WrapPanel wraps whole fields and never parts a label from its box. -->
         <Border Classes="pane" DockPanel.Dock="Top">
             <WrapPanel>
-                <TextBlock Classes="lbl" Text="Frequency"/>
-                <TextBox Name="FrequencyBox" Classes="p" Text="{Binding Frequency}" Classes.invalid="{Binding FrequencyInvalid}" ToolTip.Tip="The input (RF) frequency"/>
-                <TextBlock Classes="unit" Text="{Binding FrequencyUnit}"/>
-                <TextBlock Classes="lbl" Text="Bandwidth"/>
-                <TextBox Classes="p" Text="{Binding BandwidthMHz}" Classes.invalid="{Binding BandwidthInvalid}" ToolTip.Tip="The noise bandwidth the floor, the MDS and the SNR are read in"/>
-                <TextBlock Classes="unit" Text="MHz"/>
-                <TextBlock Classes="lbl" Text="Input power"/>
-                <TextBox Classes="p" Text="{Binding InputPowerDbm}" Classes.invalid="{Binding InputPowerInvalid}" ToolTip.Tip="The signal at the input; in an array, at each element"/>
-                <TextBlock Classes="unit" Text="dBm"/>
-                <TextBlock Classes="lbl" Text="Source temperature"/>
-                <TextBox Classes="p" Text="{Binding TemperatureK}" Classes.invalid="{Binding TemperatureInvalid}" ToolTip.Tip="The source's (antenna's) noise temperature; 290 K is T0"/>
-                <TextBlock Classes="unit" Text="K"/>
-                <TextBlock Classes="lbl" Text="Required SNR"/>
-                <TextBox Classes="p" Text="{Binding RequiredSnrDb}" Classes.invalid="{Binding RequiredSnrInvalid}" ToolTip.Tip="The SNR the demodulator needs: sensitivity is the MDS plus this"/>
-                <TextBlock Classes="unit" Text="dB"/>
-                <TextBlock Classes="lbl" Text="Blockers"/>
-                <TextBox Classes="p" Text="{Binding Blockers}" Classes.invalid="{Binding BlockersInvalid}" MinWidth="200" PlaceholderText="offset MHz, level dBm; …"
-                         ToolTip.Tip="Blockers at the input: an offset from the frequency (MHz when bare) and a level, dBm, separated by ';'. Each is carried through every stage's gain and every filter's rejection at its own frequency."/>
+                <ItemsControl ItemsSource="{Binding TransmitInputs}">
+                    <ItemsControl.ItemsPanel><ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+                </ItemsControl>
+                <StackPanel Orientation="Horizontal">
+                    <TextBlock Classes="lbl" Text="Frequency"/>
+                    <TextBox Name="FrequencyBox" Classes="p" Text="{Binding Frequency}" Classes.invalid="{Binding FrequencyInvalid}" ToolTip.Tip="The input (RF) frequency"/>
+                    <TextBlock Classes="unit" Text="{Binding FrequencyUnit}"/>
+                </StackPanel>
+                <StackPanel Orientation="Horizontal">
+                    <TextBlock Classes="lbl" Text="Bandwidth"/>
+                    <TextBox Classes="p" Text="{Binding BandwidthMHz}" Classes.invalid="{Binding BandwidthInvalid}" ToolTip.Tip="The noise bandwidth the floor, the MDS and the SNR are read in"/>
+                    <TextBlock Classes="unit" Text="MHz"/>
+                </StackPanel>
+                <StackPanel Orientation="Horizontal">
+                    <TextBlock Classes="lbl" Text="Input power"/>
+                    <TextBox Classes="p" Text="{Binding InputPowerDbm}" Classes.invalid="{Binding InputPowerInvalid}" IsEnabled="{Binding !HasLink}" ToolTip.Tip="The signal at the input; in an array, at each element. With a link, the power it delivers"/>
+                    <TextBlock Classes="unit" Text="dBm"/>
+                </StackPanel>
+                <StackPanel Orientation="Horizontal">
+                    <TextBlock Classes="lbl" Text="Source temperature"/>
+                    <TextBox Classes="p" Text="{Binding TemperatureK}" Classes.invalid="{Binding TemperatureInvalid}" ToolTip.Tip="The source's (antenna's) noise temperature; 290 K is T0"/>
+                    <TextBlock Classes="unit" Text="K"/>
+                </StackPanel>
+                <StackPanel Orientation="Horizontal">
+                    <TextBlock Classes="lbl" Text="Required SNR"/>
+                    <TextBox Classes="p" Text="{Binding RequiredSnrDb}" Classes.invalid="{Binding RequiredSnrInvalid}" ToolTip.Tip="The SNR the demodulator needs: sensitivity is the MDS plus this"/>
+                    <TextBlock Classes="unit" Text="dB"/>
+                </StackPanel>
+                <StackPanel Orientation="Horizontal">
+                    <TextBlock Classes="lbl" Text="Blockers"/>
+                    <TextBox Classes="p" Text="{Binding Blockers}" Classes.invalid="{Binding BlockersInvalid}" MinWidth="200" PlaceholderText="offset MHz, level dBm; …"
+                             ToolTip.Tip="Blockers at the input: an offset from the frequency (MHz when bare) and a level, dBm, separated by ';'. Each is carried through every stage's gain and every filter's rejection at its own frequency."/>
+                </StackPanel>
             </WrapPanel>
         </Border>
 
@@ -218,15 +254,17 @@
 
         <!-- The three panes share the height, and the gaps between them drag: the Match Designer's and railRF's grippers,
              a 4 px transparent GridSplitter in an Auto row, with no line of its own because the panes already have
-             edges. The blocks and the cascade open at their fixed heights and the stage list takes the rest; nothing
-             is remembered. Each row keeps a floor, so a drag cannot squeeze a pane to nothing. -->
-        <Grid>
+             edges. The blocks open at a fixed height (taller with their Levels strip, about 45 % of the height); the
+             stage list and the results share the rest, two to three, so the results' plots grow with the window. Nothing
+             is remembered. Each row keeps a floor (the stage list three rows in a tall window, set by FitBlocksPane), so a
+             drag cannot squeeze a pane to nothing. -->
+        <Grid Name="Panes">
             <Grid.RowDefinitions>
                 <RowDefinition Height="290" MinHeight="120"/>
                 <RowDefinition Height="Auto"/>
-                <RowDefinition Height="*" MinHeight="90"/>
+                <RowDefinition Height="*" MinHeight="150"/>
                 <RowDefinition Height="Auto"/>
-                <RowDefinition Height="280" MinHeight="120"/>
+                <RowDefinition Height="1.5*" MinHeight="180"/>
             </Grid.RowDefinitions>
             <!-- The chain, two ways, one selection. Blocks: an idealised block per stage with its System block's symbol, its
                  own numbers and the cascade at its output; an array's branch once, "× N", into one combiner block drawn
@@ -234,8 +272,9 @@
                  schematic renderer with the same numbers over each stage; wheel to zoom, middle-drag to pan,
                  double-click to fit. A click on a block or a part selects its stage, in both and in the stage list. -->
             <Border Classes="pane" Grid.Row="0">
+                <Grid>
                 <TabControl Padding="0,4,0,0">
-                    <TabItem Header="Blocks" FontSize="13">
+                    <TabItem Name="BlocksTab" Header="Blocks" FontSize="13">
                         <!-- Right-click ▸ Copy: the whole lineup on the clipboard as a picture, for a slide or a document
                              (ChainBlocksGraphicExport, on the stackup copy's pipeline). Transparent so a right-click on the
                              space around the blocks reaches the menu too. -->
@@ -249,7 +288,11 @@
                             <ScrollViewer.ContextMenu>
                                 <ContextMenu Name="BlocksMenu" Opening="OnBlocksMenuOpening"/>
                             </ScrollViewer.ContextMenu>
-                            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                            <!-- The lineup, and under it, with Levels on, the level diagram with each node on a gap between two
+                                 blocks (ChainLevelStrip; the window measures the gaps). The lineup moves right by the strip's
+                                 dB scale and the link's slot, so node 0 stays on the gap before the first block. -->
+                            <StackPanel VerticalAlignment="Center" HorizontalAlignment="Left">
+                            <StackPanel Name="BlocksRow" Orientation="Horizontal">
                                 <TextBlock Text="IN" FontWeight="SemiBold" VerticalAlignment="Center" Margin="2,0,0,0"/>
                                 <!-- Drag a block left or right to move its stage: the line shows where it will land, and the move is made on
                                      release, through the same move Up and Down make. The schematic does not drag. -->
@@ -300,6 +343,10 @@
                                 </Grid>
                                 <TextBlock Text="⟶  OUT" FontWeight="SemiBold" VerticalAlignment="Center" Margin="4,0,8,0"/>
                             </StackPanel>
+                            <chv:ChainLevelStrip Name="LevelStrip" Height="260" Margin="0,8,0,0" HorizontalAlignment="Left"
+                                                 IsVisible="{Binding ShowLevels}" Plan="{Binding LevelPlan}"
+                                                 SelectedStage="{Binding SelectedStageIndex}"/>
+                            </StackPanel>
                         </ScrollViewer>
                     </TabItem>
                     <TabItem Header="Schematic" FontSize="13">
@@ -321,6 +368,13 @@
                         </Grid>
                     </TabItem>
                 </TabControl>
+                <!-- The Blocks view's Levels toggle, in the tab strip's empty right end, where it covers no block. -->
+                <CheckBox IsChecked="{Binding ShowLevels}" IsVisible="{Binding #BlocksTab.IsSelected}"
+                          HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,2,8,0"
+                          ToolTip.Tip="The level diagram under the blocks: the signal, the noise floor, the sensitivity, the IM3, the blockers and the compression limit at every node, a node on each gap. Click a node to select its stage.">
+                    <TextBlock Text="Levels" FontSize="12"/>
+                </CheckBox>
+                </Grid>
             </Border>
 
             <!-- The stages, one row each: name, part, the part's own parameters, and the stage's budget on its own. -->
@@ -336,7 +390,7 @@
                              AutoScrollToSelectedItem="False">
                         <ListBox.ItemTemplate>
                             <DataTemplate x:DataType="vm:ChainStageViewModel">
-                                <Grid ColumnDefinitions="110,220,*" Margin="0,2">
+                                <Grid ColumnDefinitions="90,208,*" Margin="0,2">
                                     <TextBox Grid.Column="0" Classes="p" Text="{Binding Name}" Classes.invalid="{Binding NameInvalid}" VerticalAlignment="Top" ToolTip.Tip="The stage's name: its instance name on the schematic"/>
                                     <ComboBox Grid.Column="1" Classes="p" ItemsSource="{x:Static vm:ChainStageViewModel.Parts}" SelectedItem="{Binding Part}"
                                               Margin="6,0" HorizontalAlignment="Stretch" VerticalAlignment="Top" ToolTip.Tip="{Binding Part.Summary}">
@@ -351,10 +405,10 @@
                                             </ItemsControl.ItemsPanel>
                                             <ItemsControl.ItemTemplate>
                                                 <DataTemplate x:DataType="vm:ChainParamViewModel">
-                                                    <StackPanel Orientation="Horizontal" Margin="0,0,10,2" ToolTip.Tip="{Binding Tip}">
+                                                    <StackPanel Orientation="Horizontal" Margin="0,0,5,2" ToolTip.Tip="{Binding Tip}">
                                                         <TextBlock Classes="lbl" Text="{Binding Name}"/>
-                                                        <TextBox Classes="p" Text="{Binding Value}" Classes.invalid="{Binding Invalid}" IsVisible="{Binding IsText}" PlaceholderText="{Binding Watermark}"/>
-                                                        <ComboBox Classes="p" ItemsSource="{Binding Options}" SelectedItem="{Binding Value}" IsVisible="{Binding HasOptions}"/>
+                                                        <TextBox Classes="p param" Text="{Binding Value}" Classes.invalid="{Binding Invalid}" IsVisible="{Binding IsText}" PlaceholderText="{Binding Watermark}"/>
+                                                        <ComboBox Classes="p param" ItemsSource="{Binding Options}" SelectedItem="{Binding Value}" IsVisible="{Binding HasOptions}"/>
                                                         <Button Content="…" IsVisible="{Binding IsFile}" Click="OnPickFileClick" Padding="6,0" Margin="3,0,0,0"
                                                                 VerticalAlignment="Stretch" ToolTip.Tip="Pick the Touchstone file"/>
                                                         <TextBlock Classes="lbl" Text="{Binding Unit}" Margin="3,0,0,0"/>
@@ -396,6 +450,91 @@
                                                  CanDeletePlot="False" CanEditPlotProperties="False" CanAddMarkers="False"/>
                             </Grid>
                         </DockPanel>
+                    </TabItem>
+                    <!-- The link in front of the chain, and the readouts every chain has: their inputs as rows of
+                         parameters, as a stage's, and their numbers as Data Display tables over the budget. -->
+                    <TabItem Header="Link" FontSize="13">
+                        <ScrollViewer VerticalScrollBarVisibility="Auto">
+                            <StackPanel Spacing="4">
+                                <CheckBox IsChecked="{Binding HasLink}"
+                                          ToolTip.Tip="A transmit array and a line-of-sight path in front of the chain: the power each receive element gets becomes the input power, and the receive array is the chain's Combiner">
+                                    <TextBlock Text="a transmitter and a path in front of the chain" FontSize="12"/>
+                                </CheckBox>
+                                <ddc:PlotControl Name="LinkPlotControl" ClipToBounds="True" Height="70" IsVisible="{Binding HasLink}"
+                                                 Plot="{Binding LinkPlot}" Library="{Binding PlotHost.Library}"
+                                                 CanDeletePlot="False" CanEditPlotProperties="False" CanAddMarkers="False"/>
+                                <ddc:PlotControl Name="ReceiverPlotControl" ClipToBounds="True" Height="70"
+                                                 Plot="{Binding ReceiverPlot}" Library="{Binding PlotHost.Library}"
+                                                 CanDeletePlot="False" CanEditPlotProperties="False" CanAddMarkers="False"/>
+                                <Grid ColumnDefinitions="100,*" RowDefinitions="Auto,Auto,Auto,Auto">
+                                    <TextBlock Classes="lbl" Text="Transmitter" VerticalAlignment="Top" Margin="0,4,0,0" IsVisible="{Binding HasLink}"/>
+                                    <ItemsControl Grid.Column="1" ItemsSource="{Binding LinkTx}" IsVisible="{Binding HasLink}">
+                                        <ItemsControl.ItemsPanel><ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+                                    </ItemsControl>
+                                    <TextBlock Grid.Row="1" Classes="lbl" Text="Path" VerticalAlignment="Top" Margin="0,4,0,0" IsVisible="{Binding HasLink}"/>
+                                    <ItemsControl Grid.Row="1" Grid.Column="1" ItemsSource="{Binding LinkPath}" IsVisible="{Binding HasLink}">
+                                        <ItemsControl.ItemsPanel><ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+                                    </ItemsControl>
+                                    <TextBlock Grid.Row="2" Classes="lbl" Text="Receiver" VerticalAlignment="Top" Margin="0,4,0,0"/>
+                                    <ItemsControl Grid.Row="2" Grid.Column="1" ItemsSource="{Binding ReceiverInputs}">
+                                        <ItemsControl.ItemsPanel><ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+                                    </ItemsControl>
+                                    <TextBlock Grid.Row="3" Classes="lbl" Text="Sweeps" VerticalAlignment="Top" Margin="0,4,0,0"/>
+                                    <ItemsControl Grid.Row="3" Grid.Column="1" ItemsSource="{Binding SweepInputs}">
+                                        <ItemsControl.ItemsPanel><ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+                                    </ItemsControl>
+                                </Grid>
+                            </StackPanel>
+                        </ScrollViewer>
+                    </TabItem>
+                    <!-- The sweeps, each the whole chain budgeted again at every point, shown when the chain asks for it. -->
+                    <TabItem Header="Frequency sweep" FontSize="13" IsVisible="{Binding HasFrequencySweep}">
+                        <Grid ColumnDefinitions="*,4,*,4,*,4,*">
+                            <ddc:PlotControl Grid.Column="0" Name="SweepF0" ClipToBounds="True"
+                                             Plot="{Binding FrequencySweepPlots[0]}" Library="{Binding PlotHost.Library}"
+                                             CanDeletePlot="False" CanEditPlotProperties="False" CanAddMarkers="False"/>
+                            <ddc:PlotControl Grid.Column="2" Name="SweepF1" ClipToBounds="True"
+                                             Plot="{Binding FrequencySweepPlots[1]}" Library="{Binding PlotHost.Library}"
+                                             CanDeletePlot="False" CanEditPlotProperties="False" CanAddMarkers="False"/>
+                            <ddc:PlotControl Grid.Column="4" Name="SweepF2" ClipToBounds="True"
+                                             Plot="{Binding FrequencySweepPlots[2]}" Library="{Binding PlotHost.Library}"
+                                             CanDeletePlot="False" CanEditPlotProperties="False" CanAddMarkers="False"/>
+                            <ddc:PlotControl Grid.Column="6" Name="SweepF3" ClipToBounds="True"
+                                             Plot="{Binding FrequencySweepPlots[3]}" Library="{Binding PlotHost.Library}"
+                                             CanDeletePlot="False" CanEditPlotProperties="False" CanAddMarkers="False"/>
+                        </Grid>
+                    </TabItem>
+                    <TabItem Header="Mtx sweep" FontSize="13" IsVisible="{Binding HasTxSweep}">
+                        <Grid ColumnDefinitions="*,4,*,4,*,4,*">
+                            <ddc:PlotControl Grid.Column="0" Name="SweepT0" ClipToBounds="True"
+                                             Plot="{Binding TxSweepPlots[0]}" Library="{Binding PlotHost.Library}"
+                                             CanDeletePlot="False" CanEditPlotProperties="False" CanAddMarkers="False"/>
+                            <ddc:PlotControl Grid.Column="2" Name="SweepT1" ClipToBounds="True"
+                                             Plot="{Binding TxSweepPlots[1]}" Library="{Binding PlotHost.Library}"
+                                             CanDeletePlot="False" CanEditPlotProperties="False" CanAddMarkers="False"/>
+                            <ddc:PlotControl Grid.Column="4" Name="SweepT2" ClipToBounds="True"
+                                             Plot="{Binding TxSweepPlots[2]}" Library="{Binding PlotHost.Library}"
+                                             CanDeletePlot="False" CanEditPlotProperties="False" CanAddMarkers="False"/>
+                            <ddc:PlotControl Grid.Column="6" Name="SweepT3" ClipToBounds="True"
+                                             Plot="{Binding TxSweepPlots[3]}" Library="{Binding PlotHost.Library}"
+                                             CanDeletePlot="False" CanEditPlotProperties="False" CanAddMarkers="False"/>
+                        </Grid>
+                    </TabItem>
+                    <TabItem Header="Mrx sweep" FontSize="13" IsVisible="{Binding HasRxSweep}">
+                        <Grid ColumnDefinitions="*,4,*,4,*,4,*">
+                            <ddc:PlotControl Grid.Column="0" Name="SweepR0" ClipToBounds="True"
+                                             Plot="{Binding RxSweepPlots[0]}" Library="{Binding PlotHost.Library}"
+                                             CanDeletePlot="False" CanEditPlotProperties="False" CanAddMarkers="False"/>
+                            <ddc:PlotControl Grid.Column="2" Name="SweepR1" ClipToBounds="True"
+                                             Plot="{Binding RxSweepPlots[1]}" Library="{Binding PlotHost.Library}"
+                                             CanDeletePlot="False" CanEditPlotProperties="False" CanAddMarkers="False"/>
+                            <ddc:PlotControl Grid.Column="4" Name="SweepR2" ClipToBounds="True"
+                                             Plot="{Binding RxSweepPlots[2]}" Library="{Binding PlotHost.Library}"
+                                             CanDeletePlot="False" CanEditPlotProperties="False" CanAddMarkers="False"/>
+                            <ddc:PlotControl Grid.Column="6" Name="SweepR3" ClipToBounds="True"
+                                             Plot="{Binding RxSweepPlots[3]}" Library="{Binding PlotHost.Library}"
+                                             CanDeletePlot="False" CanEditPlotProperties="False" CanAddMarkers="False"/>
+                        </Grid>
                     </TabItem>
                     <TabItem Header="Canceller" FontSize="13" IsVisible="{Binding HasCanceller}">
                         <Grid ColumnDefinitions="*,4,*">

@@ -522,6 +522,56 @@ the 1 dB compression point follows from the intercept and lands at <strong>IIP3 
 input-referred. That is the soft limiter's own value, and it is not the textbook cubic's
 −9.64 dB — the two differ by two-thirds of a decibel, which matters if you are checking
 against a hand calculation.</p>
+<p><strong><code>Law</code> picks the compression law.</strong> <code>Tanh</code>, the default, is the soft limiter above, set by <code>IP3</code>. <code>Rapp</code> and <code>Saleh</code>
+are the two textbook laws of a power amplifier's envelope, set by <code>Psat</code>, and <code>IP3</code> is then not read:</p>
+<table>
+<thead>
+<tr>
+<th><code>Law</code></th>
+<th>AM-AM, AM-PM against the input power s</th>
+<th>1 dB point, input</th>
+<th>Saturated output</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>Tanh</code></td>
+<td>the limiter on the instantaneous input</td>
+<td>IIP3 − 8.96 dB</td>
+<td>OIP3 − 3.92 dB</td>
+</tr>
+<tr>
+<td><code>Rapp</code></td>
+<td>gain (1 + (s/P0)<sup><code>P</code>)</sup>(−1/(2<code>P</code>)), no AM-PM; P0 = <code>Psat</code> − <code>Gain</code></td>
+<td>P0 + (10/<code>P</code>)·log10(10^(<code>P</code>/10) − 1)</td>
+<td><code>Psat</code>, its asymptote</td>
+</tr>
+<tr>
+<td><code>Saleh</code></td>
+<td>gain 1/(1 + v), phase a·v/(1 + b·v); v = s/s_sat, s_sat = <code>Psat</code> − <code>Gain</code> + 6.02 dB</td>
+<td>s_sat + 10·log10(10^(1/20) − 1)</td>
+<td><code>Psat</code>, the AM-AM's peak</td>
+</tr>
+</tbody>
+</table>
+<p><code>P</code> is Rapp's smoothness: 1 is soft, its 1 dB point 5.87 dB below its saturated input, and 3 or more is close to a
+hard clip, 0.01 dB below it at 3. Saleh's phase is stated by its value at the drive that saturates it, <code>PhiSat</code>, and its
+limit, <code>PhiMax</code>, beyond it: a = <code>PhiMax</code>·b, b = <code>PhiSat</code>/(<code>PhiMax</code> − <code>PhiSat</code>); both 0, the default, is no
+AM-PM. Rapp's law is C. Rapp, &quot;Effects of HPA-nonlinearity on 4-DPSK/OFDM-signal for a digital sound broadcasting
+system&quot;, Proc. 2nd European Conference on Satellite Communications, 1991; Saleh's is A. A. M. Saleh,
+&quot;Frequency-independent and frequency-dependent nonlinear models of TWT amplifiers&quot;, IEEE Transactions on
+Communications, 1981.</p>
+<p><strong>A bandpass law acts on the envelope.</strong> The two laws are stated for a narrowband signal, as an amplitude and a phase
+against its envelope, so the amplifier applies them to the input's analytic signal: the input and its quadrature, which a
+linear companion holds on a net of its own (a frequency-flat −90°, as the <a href="#hybrid90">90° Hybrid</a>'s). One
+tone's envelope is constant, so its output is the law at that drive exactly, and nothing else: <strong>one tone through a
+bandpass law makes no harmonics</strong>. Two tones beat, and their products are the law's own intermodulation, Saleh's AM-PM
+in it, all in the first zone; what a multi-tone run shows outside it is the run's truncation (−63.5 dBc at +3 dBm a
+tone, <code>P</code> = 2, MaxMixOrder 9). Every
+analysis carries it — single- and multi-tone harmonic balance, the envelope, and an S-parameter run, where the law is
+its gain. Saleh's third-order intercept is s_sat − 5·log10(1 + a²); Rapp has no third-order term
+unless <code>P</code> is 1 (its IM3 rises 2<code>P</code> + 1 dB per dB), which is why the <a href="chain-budget.html#laws">RF Chain Budget</a> gives
+it the cubic's intercept at its 1 dB point.</p>
 <p>The amplifier is <strong>unilateral</strong> unless you turn <code>S12</code> on. With no reverse path there is no feedback
 loop, which is what makes an ideal amplifier unconditionally stable at every frequency and every
 termination; setting <code>S12</code> is what makes stability a question at all.</p>

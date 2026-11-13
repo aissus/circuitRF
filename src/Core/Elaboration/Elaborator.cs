@@ -1099,6 +1099,19 @@ public sealed class Elaborator
                     resolvedNodes = [..resolvedNodes, ..extra];
                 }
 
+                // An amplifier with a bandpass law (Rapp, Saleh) reads its input's quadrature on a third port: a net minted
+                // here and held at the input's Hilbert transform by a linear companion added beside it (AmplifierLaw).
+                // Keyed on the instance path; the __ prefix keeps it out of every list of the design's own nets.
+                ElaboratedComponent? quadrature = null;
+                if (model is AmplifierModel { NeedsQuadrature: true } && resolvedNodes.Length == 4)
+                {
+                    int nq = netlist.Nodes.GetOrAssign($"__ampq_{childPath}");
+                    quadrature = new ElaboratedComponent(inst.Reference, $"__ampq_{childPath}",
+                        [resolvedNodes[0], resolvedNodes[1], nq, 0],
+                        new Dictionary<string, Value>(StringComparer.Ordinal), new AmplifierQuadratureModel(childPath));
+                    resolvedNodes = [.. resolvedNodes, nq, 0];
+                }
+
                 // Diode with series resistance: three nets, [anode, internal, internal, cathode],
                 // so the model's two ports are the resistor and the junction. The internal node is
                 // minted here and gets an ordinary matrix row for the same reason ExtDevice's do —
@@ -1314,6 +1327,7 @@ public sealed class Elaborator
                          { ReferenceNode = refNode, Multiplicity = ResolveMultiplicity(resolvedParams, childPath), NoiseOff = noiseOff || _noiseOffDepth > 0,
                            NoiseOn = noiseOn };
                 netlist.AddComponent(ec);
+                if (quadrature is not null) netlist.AddComponent(quadrature);
             }
             else
             {
@@ -1572,8 +1586,10 @@ public sealed class Elaborator
             return ResolveEnumNamedParameters(inst, parentScope, "OffState");
         if (inst.Reference.Equals("Circulator", StringComparison.OrdinalIgnoreCase))
             return ResolveEnumNamedParameters(inst, parentScope, "Direction");
+        // Law is a word as IP3Ref is; a Saleh law's PhiSat and PhiMax are angles, a bare number in them degrees, as a
+        // Combiner's Phase[k] is, and they reach the model in radians.
         if (inst.Reference.Equals("Amp", StringComparison.OrdinalIgnoreCase))
-            return ResolveEnumNamedParameters(inst, parentScope, "IP3Ref");
+            return ResolveEnumNamedParameters(inst, parentScope, ["IP3Ref", "Law"], ["PhiSat", "PhiMax"]);
         // The OscProbe's Mode is series or shunt (brief NZ-9) — a word, as IP3Ref is. The DAC's is nrz or rz.
         if (inst.Reference.Equals("OscProbe", StringComparison.OrdinalIgnoreCase)
             || inst.Reference.Equals("DAC", StringComparison.OrdinalIgnoreCase))
@@ -1745,12 +1761,19 @@ public sealed class Elaborator
     /// </summary>
     private IReadOnlyDictionary<string, Value> ResolveEnumNamedParameters(
         Instance inst, Scope parentScope, params string[] enumNamed)
+        => ResolveEnumNamedParameters(inst, parentScope, enumNamed, []);
+
+    /// <param name="degrees">Angles whose bare number is degrees (the site unit), reaching the model in radians.</param>
+    private IReadOnlyDictionary<string, Value> ResolveEnumNamedParameters(
+        Instance inst, Scope parentScope, string[] enumNamed, string[] degrees)
     {
         var result = new Dictionary<string, Value>(StringComparer.Ordinal);
         foreach (var ov in inst.Overrides)
         {
             if (enumNamed.Any(n => ov.Name.Equals(n, StringComparison.OrdinalIgnoreCase)))
                 result[ov.Name] = new Value(Unquote(ov.Expression));
+            else if (degrees.Contains(ov.Name, StringComparer.Ordinal))
+                result[ov.Name] = _evaluator.EvalParameter(ov.Expression, parentScope, ov.Unit ?? "deg", $"{inst.InstanceName}.{ov.Name}");
             else
                 result[ov.Name] = EvalOverride(inst, ov, parentScope);
         }

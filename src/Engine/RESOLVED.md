@@ -4540,3 +4540,21 @@ routine), the pair measured once (a second I rail and a second amplitude half no
 whatever source sets the fundamental, and every refusal: a DAC off a rail's net, harmonic balance at one, two and three
 tones and its single-point entry, the multi-fundamental envelope with a rail and with a DAC, an Fs that does not divide
 the record or is below the rail's content, and a phase-noise mask on a converted rail.
+
+## Weighted terms reach the single-tone Newton only; a bandpass amplifier's quadrature is a linear companion (2026-11-12)
+
+A device's weighted terms (`NonlinearResult.Terms`, the `H[w]` buckets for w ≥ 2: an SDD's own weights, a 90° hybrid's
+passive-intermod quadrature) are carried by `HbNewton` (single tone) and therefore by the single-fundamental envelope,
+which builds on it. `HbNewton2D`, `HbNewtonNd` and the multi-fundamental envelope take a device's conduction and charge
+only (`PortTermTimes2D/Nd` have W0 and W1), and **drop the rest without a word**. For an ideal 90° hybrid with a PIM level
+that is its whole linear coupling, not a half of it: its admittance is purely imaginary and lives entirely in the H[2]
+bucket, so in a two-tone run its through and coupled ports read −289 dBm against the 27 dBm a single-tone run gives.
+Fixed separately, in its own pull request on main; not here.
+
+The System Amplifier's Rapp and Saleh laws need the input's Hilbert transform at every frequency every analysis solves
+at, multi-tone included. It is therefore not a weighted term of the amplifier but a LINEAR companion,
+`AmplifierQuadratureModel`, which the Elaborator places beside an amplifier with such a law: i_q = G·(v_q + j·sign(ω)·v_in)
+on a net it mints, the amplifier's third port. Every engine stamps the linear network per frequency, so the quadrature
+is exact everywhere; it is zero below 1 kHz, where DC and the envelope's baseband product (stamped at 1 and 2 Hz) are.
+Measured: one tone's AM-AM and AM-PM on the closed forms to 10⁻⁶ dB and 10⁻⁶°, two tones' third-order products on
+the law's third-order term to 10⁻³ dB through `HbNewton2D` (`AmplifierLawHbTests`).

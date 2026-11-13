@@ -261,7 +261,7 @@ public static class ChainSnp
             int i = (int)ChainValue.Or(s.Get("In"), 1) - 1, o = (int)ChainValue.Or(s.Get("Out"), 2) - 1;
             if (i < 0 || o < 0 || i >= m.RowCount || o >= m.RowCount) return null;
             double mag = m[o, i].Magnitude;
-            return mag > 0 ? 20 * Math.Log10(mag) : -300;
+            return mag > 0 ? 20 * Math.Log10(mag) : double.NegativeInfinity;   // passes nothing: no level after it
         }
         catch (Exception) { return null; }
     }

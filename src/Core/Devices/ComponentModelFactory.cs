@@ -2229,16 +2229,34 @@ public static class ComponentModelFactory
             Enum.TryParse<Ip3Reference>(r.AsString(), ignoreCase: true, out var parsed))
             ip3Ref = parsed;
 
+        // Law (an enum NAME, as IP3Ref is): Tanh, the default, is the limiter on IP3; Rapp and Saleh are bandpass laws on
+        // Psat, with their own shape parameters, and leave IP3 unread. A Psat at or above AmplifierLaw.OffDbm is linear,
+        // as an IP3 of 190 dBm is. An unrecognised spelling is refused rather than read as Tanh: a law the user meant to
+        // change and did not would compress somewhere else entirely.
+        var lawKind = AmplifierLawKind.Tanh;
+        if (parameters.TryGetValue("Law", out var lv) && lv.Kind == ValueKind.String
+            && !Enum.TryParse(lv.AsString(), ignoreCase: true, out lawKind))
+            throw new InvalidOperationException(
+                $"Amp: Law = '{lv.AsString()}' is not a law; the laws are Tanh, Rapp and Saleh.");
+        double gain = P("Gain", 20.0), psat = P("Psat", 30.0);
+        AmplifierLaw? law = lawKind == AmplifierLawKind.Tanh || psat >= AmplifierLaw.OffDbm ? null
+            : lawKind == AmplifierLawKind.Rapp ? AmplifierLaw.Rapp(psat, gain, P("P", 2.0))
+            : AmplifierLaw.Saleh(psat, gain, P("PhiSat", 0.0) * 180 / Math.PI, P("PhiMax", 0.0) * 180 / Math.PI);   // radians here
+
+        // A bandpass law switched off by its Psat is a linear amplifier, not the tanh limiter on the line's IP3.
+        double ip3 = lawKind == AmplifierLawKind.Tanh ? P("IP3", 40.0) : 200.0;
+
         return new AmplifierModel(
-            gainDb:   P("Gain",   20.0),
-            ip3Dbm:   P("IP3",    40.0),
+            gainDb:   gain,
+            ip3Dbm:   ip3,
             ip3Ref:   ip3Ref,
             zIn:      ImpedanceParam(parameters, "Zin",  50.0),
             zOut:     ImpedanceParam(parameters, "Zout", 50.0),
             rlInDb:   P("RLin",  200.0),
             rlOutDb:  P("RLout", 200.0),
             s12Db:    P("S12",   200.0),
-            noise:    AmplifierNoiseOf(parameters));
+            noise:    AmplifierNoiseOf(parameters),
+            law:      law);
     }
 
     /// <summary>

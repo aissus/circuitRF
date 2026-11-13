@@ -30872,3 +30872,181 @@ drawn; a port across the cut is drawn as before.
 
 **A single-port field plot naming `Port: 1` found nothing.** Palace writes a single-excitation run's fields with no
 excitation index, so the plot's solution must omit `Port`; the Loop Sensor's plots do.
+
+## The chain's benches with more than one mixer: what one run holds, and the conversions (CH-1, 2026-11-12)
+
+A two-mixer chain's budget was right (`StageInputFrequencies` moves the frequency at every mixer) but Transfer wrote
+benches the analyses refuse, with nothing to say so. Measured on a 2.45 GHz → 350 MHz → 10.7 MHz receiver:
+
+- **HB noise takes one or two tones.** The 1-Tone bench's noise run on (RF, LO1, LO2) is refused ("HB noise supports
+  one and two tones"). Its compression sweep on the same three tones at MaxMixOrder 7 does run (288 products), in 193 s.
+- **The 600-product cap.** The 2-Tone and Levels runs, four tones at 5 + mixers = 7, retain 1,121 products. At 5 they
+  run (341), in 1.5 to 3 minutes by the machine's load, and the intercepts read 2 to 3×10⁻³ dB high (2×10⁻⁴ dB at the converged order on one
+  mixer). The first such run read 0.038 dB, which was not the order: a narrow second IF filter's skirt took 0.08 dB off
+  the output's IM3.
+- **Two envelope fundamentals.** A second LO is a third fundamental (with one carrier group, a tone counts as reached
+  only on a harmonic of the carrier, so no ordinary frequency plan avoids it). And an LO within three of a carrier's
+  bandwidths of it is refused even with one mixer: a 10.7 MHz second IF and a 5 MHz NR carrier.
+- **Coinciding products are not refused by harmonic balance; they are read wrongly.** With blockers exactly on both
+  mixers' images, (1,0,−1,2) and (0,1,−1,0) both sit on 328.6 MHz and the run read that blocker 9.53 dB high; 1 MHz
+  off the image, 0.0025 dB. A coincidence that touches no product the bench reads is milder: blockers at ±10 and
+  ±20 MHz put their differences on 10 MHz and read 0.008 to 0.009 dB under the budget, against 0.002 dB just off.
+- **Envelope coincidences.** An envelope run refuses two products on one frequency at its MaxMixOrder: a superhet at
+  2.4 GHz with its LO at 1.6 GHz has its IF, 800 MHz, on 2·2.4 − 1.6 GHz too.
+- **An LO above the signal** (also with one mixer): the IF's tracked index was the conjugate of the half-space product
+  the lattice keeps, so its rows did not resolve, and the HB noise sideband went through the RF tone, (2, −1), instead of
+  through the LO, (0, −1), reading NF 103 dB.
+
+What `ChainBenches` does now: every analysis is checked before a bench is written (`Emitter.Order`,
+`Emitter.EnvelopeFits`); a bench refused as the whole chain is written per conversion (`ChainBenches.Conversions`),
+each conversion from the stage after one mixer to the next mixer, driven at the budget's level and frequency there and
+from a source at the noise delivered there, (Ts + Te)·Gn; the 1-Tone, Levels and Blockers benches split together; a
+bench no run holds even so is left out and named, in Transfer's notes and as `check`'s `chain.bench.left-out`; and a
+display draws no trace of a bench that is not written. Only a coincidence on a product the bench reads lowers an order
+or refuses a bench (one on products it does not read is run and said), and the envelope check refuses any. Indices are
+written in their half-space form and the noise sideband is −v₁ over the LOs. A single-mixer chain's benches change in
+two cases only: a product after an inverted mixer (an LO above the signal, or a blocker below a low-side LO) is named
+as the lattice keeps it, (1,0,−1) where (−1,0,1) did not resolve; and a bench whose runs needed a lower order, or could
+not be held, gets the order a run takes, or is left out. The shipped benches are unchanged to the byte.
+
+Three things the budget does not have, met building the example, each now in its README and the design note: an
+amplifier between the image filter and the second mixer puts its own noise at the image (the second conversion's NF
+1.4 dB over its budget); an amplifier right after a mixer sees its sum product, and its third-order term mixes it with
+the IF onto the IF's own IM3 (the whole chain's IIP3 0.44 dB under the budget; a roofing filter in front of it, 3×10⁻³
+dB); and a narrow 3rd-order 21.4 MHz filter reflected 14 % at the IM3 frequencies, so the node in front of it read the
+IM3 1.1 dB low. The second is what only a whole-chain run shows, and why the 2-Tone bench stays whole where it fits.
+
+Gates: `tests/Ui.Tests/Chain/ChainBudgetTests.cs` `ADualConversionChain_IsCutIntoItsConversions_EachTheWholeChainsBudgetFromThere`,
+`ATripleConversionChain_IsWrittenAsThreeConversions_AndTheThirdSimulates`,
+`WhatNoRunCanHold_IsNotWritten_AndTransferAndCheckSayWhy`,
+`ACoincidenceOnAProductTheBenchReads_LowersTheOrder_AndOneItDoesNotRead_IsSaid`,
+`AMixerWhoseLoIsAboveTheSignal_SimulatesToItsBudget`, `ABlockerOnALowSideMixersImage_IsReadAtEveryNode`;
+`ChainBudgetWindowTests.TheLevelsNote_SaysWhereAChainOfTwoConversionsHasItsPoints`;
+`tests/Ui.Tests/Examples/ChainBudgetExampleTests.cs` `DualConversion_*` and `TheShippedBenches_AreWhatTransferWritesToday`
+(every shipped bench folder and display is one Transfer writes).
+
+## The chain budget's link and frequency-scalable stages: what reading a value of the frequency took (2026-11-12)
+
+A stage parameter may be an expression in `freq` or a `.csv` table of it, and a link may sit in front of the chain.
+Findings, each now in the code and stated in `docs/design/chain-budget.md` §2.3 and §3:
+
+- **The expression cannot reach the netlist.** An ideal Amp, Mixer or Filter does not bind `freq` (only the few models
+  `FreqDeferral` lets do), and `Emitter.Params` copies a stage's text onto its line verbatim. So the design is resolved
+  first (`ChainDesign.Resolve`), stage by stage at each stage's own input frequency, a mixer's `Flo` before the
+  frequency moves, and the budget, the levels, the diagram and the benches all read the resolved design the result
+  keeps. Numbers are written round-trip: `ChainValue.Format`'s six decimals would turn a 1e-9 into 0.
+- **A budget-only value must not reach it either.** `Pdc` and `GainPerStage` are `ChainParam.BudgetOnly`, skipped by
+  `Params`; the window leaves a blank one out of the stage, so existing chains save unchanged.
+- **A lone `m` is milli.** `ChainValue` (through `Units`) reads "30 m" as 0.03; the link's distance has its own reader
+  (bare, `m` or `km`).
+- **A unit literal is glued.** The expression language lexes `12GHz` as a quantity; `12 GHz` is a number and a name
+  and does not parse. `Flo = freq - 3GHz`.
+- **`W` and `%` were not units to `ChainValue`.** `W` is an identity unit with no scale, so "0.15 W" was refused;
+  `ChainValue` now takes `W`, `%` and `dBi` as it takes `dB`.
+- **A stage count needs a guard.** ⌈G/g⌉ with g a resolved expression can read 4.000000000000001 for 20/5; the count is
+  ⌈G/g − 10⁻⁹⌉.
+- **A mixer straight after an LNA reads 3 dB of image noise.** With no preselector, the isolator in front of the mixer
+  passes the LNA's amplified noise at the image sideband, which the budget (and an SSB noise figure) takes as filtered:
+  2.96 dB at 140 GHz, 2.77 dB at 2.45 GHz. A preselector that follows the carrier brings it to 3×10⁻⁴ dB.
+- **An ideal PA saturates 10·log10(π²/4) = 3.92 dB below its output intercept**, the tanh fundamental's (4/π)·Vsat
+  against an intercept of 2·Vsat; harmonic balance 30 dB past it reads 0.0022 dB short, the describing function's own
+  shortfall. On the TX bench an NR 64-QAM carrier at 8 dB of back-off comes out 0.92 dB below Psat − 8 dB at 6.3 % EVM:
+  the PA's 1 dB compression point is 6 dB below Psat, and the carrier's peaks reach it.
+- **A sweep point is one chain.** A receive-array sweep down to one element removes the Combiner, and the point's copy
+  still carrying the sweep was refused for sizing a combiner it no longer had; each point's copy drops the sweeps.
+- **A saved chain is its file, to the byte.** The link's derived element count was serialized as a stray `Elements`
+  key (now `[JsonIgnore]`), and the default encoder wrote an expression's `+` and `<` as `\u002B` and `\u003C`; the
+  `.cchain` writer takes `UnsafeRelaxedJsonEscaping`, as the `.c3d` writer does. Every shipped chain saves back to its
+  own bytes (`ChainBudgetExampleTests.EveryShippedChain_SavesBackToItsOwnBytes`).
+- **A .cchain that uses any of this is version 2, and only then**, so 1.8.2 refuses it rather than drops the fields on
+  save, and every other chain stays version 1.
+
+Gates: `tests/Ui.Tests/Chain/ChainLinkBudgetTests.cs`, against `testdata/chain/link_reference.json` (an independent
+standard-library calculation, `link_reference.py`), and `tests/Ui.Tests/Examples/ChainBudgetExampleTests.cs`.
+
+## The chain's levels: why they were scaled wrongly, and the level diagram (CH-LV, 2026-11-12)
+
+The window's Levels plots read as squeezed and unreadable. Measured on the superhet at 1300 × 960 and 1800 × 1300
+(UiSnapshot), it came down to four things, each now fixed and stated in `docs/design/chain-budget.md` §2.4:
+
+- **The window's plots were never windowed.** `ChainBudgetViewModel.Refill` copied a plot's traces, titles and labels
+  from its config but not its `Axes`, so every plot the window refills autoscaled to 10 % beyond whatever it held, and
+  a stated window (the Canceller tab's) was dropped too. It now restores the stated axes through
+  `PlotConfigLoader.RestoreAxes`, the call the S-Parameter Viewer's refilled plots use, and the Levels tab states one.
+- **Their pane was a fixed 280 px.** The Data Display scales its text and lines with a plot's smaller side
+  (min(W, H)/200), so a plot half the window wide and 240 px tall had 6 to 7 px tick labels and a legend nobody could
+  read, at every window size: the stage list took all the extra height. The results pane is now a 1.5* row beside the
+  stage list's *, so its plots grow with the window.
+- **A stand-in is not a level.** Three reach a level plot: the −300 a bench writes where a quantity does not exist
+  (`IM3_calc` at the input, `Int_calc` before the canceller) and the +300 of a margin that never compresses; the −300 dB
+  `ChainLevels.GainAt` gives a filter's exact zero (a blocker a mixer puts at 0 Hz in front of a band-pass); and a dB of
+  nothing in a measurement, −3000. The bench's Levels display framed only finite levels but drew its IM3 line up from
+  the −300 at node 0, a line falling out of the window. Its IM3, interference and margin traces are now sliced to the
+  nodes where they exist (a kept range of the node axis), and every level plot, the window's, the bench's and the level
+  diagram, takes one rule (`ChainBudgetDisplay.LevelWindow`): finite levels under ±299, 10 dB beyond, rounded out to 10.
+- **The dB plot's floor was −5 dB**, so a node past compression (a negative margin) fell out of it; it takes the rule too.
+
+Building the diagram:
+- **An unset `Width` is NaN.** A "set it when it changed" guard written `Math.Abs(Width − w) > 0.5` is false against
+  NaN, so the strip's width was never set, it was arranged 0 wide, and nothing drew. The guard is `!(… <= 0.5)`.
+- **An SVG page drops a stroke that carries a path effect.** The first SVG of the diagram (the docs' figure) had no
+  dashed line and no hatch: the sensitivity, the blockers, the link's path, the ceiling and the mixers' dividers were
+  simply absent, while the PNG had them. The Data Display draws its dashed spec lines as segments for this reason; the
+  diagram applies the dash with `GetFillPath` and fills the outline, and hatches with plain lines under a clip.
+- **The strip follows the lineup's `LayoutUpdated`, not the window's**: the docs' figure fixture hosts the window's
+  content without the window, whose event then never fires.
+- **`src/Cli`'s own project has no native Skia**; the application gets it through Avalonia.Skia. So `--level-diagram`
+  runs from the application's executable, the installed `circuitrf`, and from the test host, while
+  `dotnet run --project src/Cli` stops at loading `libSkiaSharp`.
+
+Gate: `tests/Ui.Tests/Chain/ChainLevelDiagramTests.cs`.
+
+After review:
+- **The pane was not the lever.** The 1.5* results row came out about 275 px at the window's opening 1300 × 960, against
+  the old 280, so the plots there were no more readable. The text is now held instead: each Rect plot's tick and label
+  sizes are scaled so its text is drawn at a unit of at least 1.8 (9 px tick numbers), the S-Parameter Viewer's
+  StrokeUnit, and its container takes the size shown, so a plot's Copy is the picture on the screen. A legend entry for a
+  cube the data does not hold (a bench not simulated yet) is no longer drawn, and the window's plots drop their "node"
+  x label, which overlapped the node names at that text size. The panes are fitted to the window's height: the stage
+  list keeps three rows (two in a short window), the results 180 px (120 while the Levels strip is the figure being
+  read), and the Blocks pane with its strip about 45 % of the height, or what the lineup and the strip's least height
+  need: an array's lineup is taller, and at 45 % its strip was cut.
+- **The IM3 set the bottom of every level plot.** Two tones at the input power put their products 100 dB and more under
+  the noise floor: a third to two thirds of the height (63 % on a 30-stage chain) went to one line nobody reads a number
+  from. The bottom is now 20 dB under every level but the IM3; a plot clips the IM3 and says so in its legend, and the
+  diagram marks it with a ▼ at its node. ("IM3 (below the frame)" was the first wording; a docked legend's cell holds
+  about fifteen characters at the held text size, so it read "IM3 (below the fra…": the entry is "IM3 (clipped)".)
+- **A stand-in by size hid real levels and kept fake ones.** The −300 `GainAt` gave a filter's exact zero was added to
+  every gain after it: through a 60 dB IF amplifier the absent blocker came back at −260 dBm, which no "≤ −299" test
+  catches, while a real IM3 at −374 dBm on a 200 km link was dropped as one. The budget's absent level is now −∞ (it
+  absorbs), so nothing finite is a stand-in; only a bench's own results carry one, `ChainBenches.Absent`, matched exactly.
+
+## The chain budget's transmit chains, the amplifier's laws and the IQ modulator (CH-2, 2026-11-12)
+
+- **A parameter that has a value meaning "as before" must say so, or every chain changes.** An Amplifier's new `Law`,
+  `Psat`, `P`, `PhiSat` and `PhiMax` and a Mixer's `Sideband` defaulted in the part's list would have been written onto
+  every amplifier's bench line and into every stage the window saves. `ChainParam.Implied` names that value, and
+  `ChainParam.Unstated` keeps it out of both; every shipped receive chain and bench stays the same to the byte, and a
+  chain is version 3 only when it uses one of them.
+- **The IQ modulator's sideband sign.** A Combiner's path phase is e^(+jφ) and the hybrid's coupled port +90°: with the
+  LO's quadrature path at −90° (the hybrid's convention) the first bench selected the image, 35 dB down, and read the
+  wanted sideband there. The upper sideband takes the LO path at +90°.
+- **A hybrid set off quadrature is not passive.** The LO's quadrature with a phase error was first a second hybrid at
+  90° + φ, which the noise run then left noiseless and warned about on every run. A Combiner path is flat and passive at
+  any phase, so the LO is split by one.
+- **A node in front of a reflection reads the incident wave and the reflected one.** The modulator's image and LO at its
+  output read 5.4 and 2.6 dB off their closed forms, the band filter after it reflecting both; the TX 1-Tone bench puts
+  an isolator after an IQ modulator, and both sit on their closed forms to 10⁻³ and 10⁻² dB.
+- **A filter in its stopband adds almost no noise.** The receive band's noise at first took a passive stage's noise
+  figure as its loss at every frequency, and read 2.3 dB over the run: a reflective filter feeds the driver after it
+  almost no noise where the loss rule put T0. A filter now adds T0·(1 − |S21|² − |S22|²) (Bosma), its loss in band.
+- **Noise under compression is half amplitude.** The TX noise floor reads 0.13 to 0.15 dB under the budget 0.05 dB into
+  the PA's compression: the amplitude half of the noise sees the PA's AM gain there, 0.2245 dB under its small-signal
+  gain, the phase half its CW gain; 0.134 dB expected.
+- **The ACLR estimate is optimistic at a Rapp PA.** An NR carrier's peaks reach past the PA's 1 dB point, where Rapp
+  clips harder than the cubic: the PA alone reads 0.8 dB worse than the estimate. At the example's output it reads 1 dB
+  better, because the band filter after the PA removes 1.43 dB of the regrowth, which the estimate does not see.
+- **Rapp has no third-order term at p ≠ 1.** Its intercept in the cascade is the cubic's at its 1 dB point; two tones at
+  the linear transmitter's operating point read their IM3 under it, and 20 dB down the PA's products fall at 5:1.
+
+Gates: `tests/Ui.Tests/Chain/ChainTransmitTests.cs`, `tests/Ui.Tests/Examples/ChainBudgetExampleTests.cs` (`LinearTx_*`).

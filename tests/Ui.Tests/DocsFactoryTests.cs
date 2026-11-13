@@ -179,6 +179,32 @@ public class DocsFactoryTests
           + "a finding to report, not a PNG to ship. Found: " + string.Join(", ", bitmaps));
     }
 
+    /// <summary>
+    /// Every picture an example's README shows is a file inside its workspace, which is all the application's README view
+    /// and DocGen's ExamplePages read, and it is beside the example's page, where ExamplePages copies it and the page draws
+    /// it from. The copy matched only the README's Markdown form, after the page had made each picture an &lt;img&gt;, so
+    /// it copied nothing.
+    /// </summary>
+    [Fact]
+    public void EveryExampleReadmePicture_IsInItsWorkspace_AndBesideItsPage()
+    {
+        foreach (string dir in Directory.GetDirectories(Path.Combine(RepoRoot(), "examples")))
+        {
+            string readme = Path.Combine(dir, "README.md");
+            string page = Path.Combine(DocsRoot(), "examples", Path.GetFileName(dir).ToLowerInvariant().Replace(' ', '-'));
+            if (!File.Exists(readme) || !File.Exists(Path.Combine(page, "index.html"))) continue;
+            foreach (System.Text.RegularExpressions.Match m in Regex.Matches(File.ReadAllText(readme), @"(?m)^!\[[^\]]*\]\((?<src>[^)\s:]+)\)[ \t]*$"))
+            {
+                string src = Uri.UnescapeDataString(m.Groups["src"].Value);
+                string inWorkspace = Path.GetFullPath(Path.Combine(dir, src));
+                Assert.True(inWorkspace.StartsWith(dir + Path.DirectorySeparatorChar, StringComparison.Ordinal) && File.Exists(inWorkspace),
+                    $"{Path.GetFileName(dir)}/README.md shows '{src}', which is not a file inside the workspace.");
+                Assert.True(File.Exists(Path.Combine(page, src)),
+                    $"'{src}' of {Path.GetFileName(dir)}/README.md is not beside its page in docs/user: regenerate with DocGen.");
+            }
+        }
+    }
+
     // ── §10.3 — the anchor contract ───────────────────────────────────────────
 
     [Fact]

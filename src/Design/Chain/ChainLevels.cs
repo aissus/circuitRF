@@ -11,6 +11,9 @@
 //                                                          moving f_b to |f_b − Flo|)
 //   margin      OP1dB − max(signal, blockers)            (before anything compresses, the whole chain's IP1dB − Pin)
 //   SNR         signal − noise
+//   compression OP1dB                                    (the stages up to the node; none before anything compresses)
+//   sensitivity MDS + SNR_req + G                        (the input the chain needs, carried to the node)
+//   SFDR        (2/3)·(OIP3 − noise)                     (the stages up to the node; none before anything is nonlinear)
 
 using CircuitRF.Core.Matching;
 using CircuitRF.Core.Systems;
@@ -19,8 +22,13 @@ using RfCore.Data;
 namespace CircuitRF.Design.Chain;
 
 /// <summary>One node's levels: the chain's input (node 0) or a stage's output.</summary>
+/// <param name="CompressionDbm">The OP1dB of the stages up to the node, at the node; NaN before anything compresses.</param>
+/// <param name="SensitivityDbm">The chain's sensitivity, MDS + the required SNR, carried to the node by its gain.</param>
+/// <param name="SfdrDb">The spurious-free range at the node, from its noise floor to where the IM3 would reach it; NaN
+/// before anything is nonlinear.</param>
 public sealed record ChainNodeLevel(string Node, double SignalDbm, double NoiseDbm, double NfDb, double Im3Dbm,
-                                    IReadOnlyList<double> BlockerDbm, double InterferenceDbm, double MarginDb, double SnrDb);
+                                    IReadOnlyList<double> BlockerDbm, double InterferenceDbm, double MarginDb, double SnrDb,
+                                    double CompressionDbm, double SensitivityDbm, double SfdrDb);
 
 public static class ChainLevels
 {
@@ -30,6 +38,7 @@ public static class ChainLevels
     public static IReadOnlyList<ChainNodeLevel> Evaluate(ChainDesign d, ChainBudgetResult r)
     {
         if (r.Totals is null) return [];
+        d = r.Design ?? d;
         var nodes = new List<ChainNodeLevel>();
         int nb = d.Blockers.Count;
         var blk = d.Blockers.Select(b => b.LevelDbm).ToArray();
@@ -38,8 +47,9 @@ public static class ChainLevels
         double interference = double.NaN;
         // Where nothing has compressed yet, the margin is the whole chain's, referred to its input.
         double inMargin = double.IsFinite(r.Totals.Ip1dbDbm) ? r.Totals.Ip1dbDbm - (nb > 0 ? Math.Max(d.InputPowerDbm, blk.Max()) : d.InputPowerDbm) : double.NaN;
+        double sens = r.Totals.SensitivityDbm;
         nodes.Add(new ChainNodeLevel("IN", d.InputPowerDbm, inNoise, 0, double.NaN, [.. blk], double.NaN, inMargin,
-                                     d.InputPowerDbm - inNoise));
+                                     d.InputPowerDbm - inNoise, double.NaN, sens, double.NaN));
         for (int i = 0; i < r.Stages.Count; i++)
         {
             var st = d.Stages[i];
@@ -59,38 +69,49 @@ public static class ChainLevels
                 double.IsFinite(row.Oip3Dbm) ? 3 * row.PoutDbm - 2 * row.Oip3Dbm : double.NaN,
                 [.. blk], interference,
                 double.IsFinite(row.Op1dbDbm) ? row.Op1dbDbm - strongest : inMargin,
-                row.PoutDbm - row.NoiseOutDbm));
+                row.PoutDbm - row.NoiseOutDbm,
+                double.IsFinite(row.Op1dbDbm) ? row.Op1dbDbm : double.NaN,
+                sens + row.GainDb,
+                double.IsFinite(row.Oip3Dbm) ? 2.0 / 3.0 * (row.Oip3Dbm - row.NoiseOutDbm) : double.NaN));
         }
         return nodes;
     }
 
     /// <summary>
     /// A stage's gain at a frequency other than the chain's, dB, and the frequency after it. A filter's is its own
-    /// response there (<see cref="FilterNetwork"/>, the model the Filter block simulates with), IL included; a mixer
-    /// moves the frequency to |f − Flo|; an SnP stage's is its file's |S(Out,In)| there, at the file's nearest frequency
-    /// outside its range (as the block clamps it); every other part is flat, so its gain is the budget's signal gain.
+    /// response there (<see cref="FilterNetwork"/>, the model the Filter block simulates with), IL included, and −∞ where
+    /// it passes nothing; a mixer or an IQ modulator moves the frequency to its output's (<see cref="ChainParts.OutputHz"/>);
+    /// an SnP stage's is its file's |S(Out,In)| there, at the file's nearest frequency outside its range (as the block
+    /// clamps it); every other part is flat, so its gain is the budget's signal gain.
     /// </summary>
     /// <param name="baseDirectory">Where an SnP stage's relative <c>File</c> resolves from.</param>
     public static double GainAt(ChainStage s, StageBudget b, ref double fHz, string? baseDirectory = null)
     {
-        double V(string key, double fallback) => ChainValue.Or(s.Get(key), fallback);
         switch (s.Part)
         {
             case ChainParts.Filter:
-                var response = Enum.TryParse<FilterResponse>(s.Get("Response").Trim(), true, out var rsp) ? rsp : FilterResponse.Chebyshev;
-                var form = Enum.TryParse<NetworkForm>(s.Get("Form").Trim(), true, out var fm) ? fm : NetworkForm.Bandpass;
-                var net = FilterNetwork.Create(response, form, (int)Math.Round(V("Order", 3)), V("Fc", 1e9), V("F1", 0.9e9),
-                                               V("F2", 1.1e9), V("Ripple", 0.1), V("Astop", 40), V("IL", 0));
-                double s21 = net.At(2 * Math.PI * fHz).S21.Magnitude;
-                return s21 > 0 ? 20 * Math.Log10(s21) : -300;
-            case ChainParts.Mixer:
-                fHz = Math.Abs(fHz - V("Flo", 0));
+                // An exact zero (a band-pass at 0 Hz) passes nothing: −∞, which absorbs whatever gain follows, where a
+                // finite stand-in would come back up the chain as a level.
+                double s21 = FilterOf(s).At(2 * Math.PI * fHz).S21.Magnitude;
+                return s21 > 0 ? 20 * Math.Log10(s21) : double.NegativeInfinity;
+            case ChainParts.Mixer or ChainParts.IqMod:
+                fHz = ChainParts.OutputHz(s, fHz);
                 return b.GainDb;
             case ChainParts.Snp:
                 return ChainSnp.GainDbAt(s, baseDirectory, fHz, out _) is { } g ? g : b.GainDb;
             default:
                 return b.GainDb;
         }
+    }
+
+    /// <summary>A Filter stage's network, the model the Filter block simulates with.</summary>
+    public static FilterNetwork FilterOf(ChainStage s)
+    {
+        double V(string key, double fallback) => ChainValue.Or(s.Get(key), fallback);
+        var response = Enum.TryParse<FilterResponse>(s.Get("Response").Trim(), true, out var rsp) ? rsp : FilterResponse.Chebyshev;
+        var form = Enum.TryParse<NetworkForm>(s.Get("Form").Trim(), true, out var fm) ? fm : NetworkForm.Bandpass;
+        return FilterNetwork.Create(response, form, (int)Math.Round(V("Order", 3)), V("Fc", 1e9), V("F1", 0.9e9),
+                                    V("F2", 1.1e9), V("Ripple", 0.1), V("Astop", 40), V("IL", 0));
     }
 
     /// <summary>

@@ -6,12 +6,14 @@ using RfCore.Export;
 namespace CircuitRF.Cli;
 
 /// <summary>
-/// <c>circuitrf chain &lt;path.cchain&gt; [-o budget.{npy,mat,txt}] [--to-schematic [dir]] [--name N] [--replace] [--demo]</c> —
+/// <c>circuitrf chain &lt;path.cchain&gt; [-o budget.{npy,mat,txt}] [--level-diagram out.{png,svg}] [--to-schematic [dir]] [--name N]
+/// [--replace] [--demo]</c> —
 /// the RF Chain Budget window, headless.
 ///
 /// <para><b>It owns no arithmetic and no drawing.</b> The budget is <see cref="ChainBudget.Evaluate"/>, the benches
 /// <see cref="ChainBenches.Write"/> and the display <see cref="ChainBudgetDisplay"/>, the three calls the window's own
-/// Transfer to Schematic makes. What is here is argument parsing, refusals and reporting, on <c>Authoring.cs</c>' terms.</para>
+/// Transfer to Schematic makes; the level diagram is <see cref="CircuitRF.Render.Chain.ChainLevelDiagram"/>, the drawing
+/// under the window's blocks. What is here is argument parsing, refusals and reporting, on <c>Authoring.cs</c>' terms.</para>
 ///
 /// <para><b>The budget is a DataSet</b>, as every run's result is: cubes over a <c>stage</c> axis and the chain's totals
 /// as scalars, so <c>--json</c>, <c>-o</c> and the Data Display read it with nothing new.</para>
@@ -20,13 +22,15 @@ internal static class Chain
 {
     public static int Run(string[] args)
     {
-        string? path = null, output = null, into = null, name = null;
+        string? path = null, output = null, into = null, name = null, levels = null;
         bool toSchematic = false, replace = false, demo = false;
         for (int i = 0; i < args.Length; i++)
         {
             switch (args[i])
             {
                 case "-o" or "--output" when i + 1 < args.Length: output = args[++i]; continue;
+                case "--level-diagram" when i + 1 < args.Length && !args[i + 1].StartsWith('-'): levels = args[++i]; continue;
+                case "--level-diagram": return JsonRun.Fail(CliDiagnostics.ChainLevelDiagramNeedsFile());
                 case "--to-schematic":
                     toSchematic = true;
                     if (i + 1 < args.Length && !args[i + 1].StartsWith('-')) into = args[++i];
@@ -42,11 +46,14 @@ internal static class Chain
         if (path is null)
         {
             Console.Error.WriteLine(
-                "Usage: circuitrf chain <path.cchain> [-o budget.{npy,mat,txt}]\n" +
+                "Usage: circuitrf chain <path.cchain> [-o budget.{npy,mat,txt}] [--level-diagram levels.{png,svg}]\n" +
                 "                       [--to-schematic [workspace-dir]] [--name <chain>] [--replace] [--demo]");
             return 1;
         }
         JsonRun.InputPath = path;
+        // Before anything is written: a picture of another kind is refused here, not after the budget's own output.
+        if (levels is not null && !CircuitRF.Render.Chain.ChainLevelDiagram.Writes(levels))
+            return JsonRun.Fail(CliDiagnostics.ChainLevelDiagramKind(levels));
         var kind = DocumentKinds.Classify(path);
         if (kind != DocumentKind.Chain)
             return JsonRun.Fail(CliDiagnostics.ChainNotAChain(path, DocumentKinds.Name(kind)));
@@ -63,8 +70,21 @@ internal static class Chain
             return JsonRun.Fail(CliDiagnostics.ChainRefused(path, budget.Refusals[^1]));
         }
         foreach (var n in budget.Notes) JsonRun.Note(CliDiagnostics.ChainNote(n));
+        if (ChainLink.Power(budget)?.Note is { } dcNote) JsonRun.Note(CliDiagnostics.ChainNote(dcNote));
         Report(budget, design);
         JsonRun.Data = ChainBudget.ToDataSet(budget);
+        // The sweeps, a group each: every point the whole chain budgeted again there.
+        var sweepNotes = new List<string>();
+        ChainBudget.AddSweeps(JsonRun.Data, design, sweepNotes);
+        foreach (var n in sweepNotes) JsonRun.Note(CliDiagnostics.ChainNote(n));
+        foreach (var s in design.Sweeps)
+        {
+            var rate = JsonRun.Data[s.Of + ".Rate_Gbps"].RealValues.Where(double.IsFinite).DefaultIfEmpty(double.NaN).ToArray();
+            string unit = s.Of == ChainSweep.Frequency ? " GHz" : "";
+            double scale = s.Of == ChainSweep.Frequency ? 1e9 : 1;
+            Console.WriteLine($"  sweep {s.Of}: {s.From / scale:0.###} to {s.To / scale:0.###}{unit}, {s.Values().Length} points, "
+                            + $"rate {D(rate.Min())} to {D(rate.Max())} Gb/s (group '{s.Of}' of the DataSet)");
+        }
 
         if (output is not null)
         {
@@ -72,6 +92,19 @@ internal static class Chain
             DataSetExporter.Export(JsonRun.Data, output, format, new ExportOptions(Format: format));
             Console.WriteLine($"Wrote {output}");
             JsonRun.AddOutput(JsonRun.KindOf(output), output);
+        }
+
+        if (levels is not null)
+        {
+            try
+            {
+                CircuitRF.Render.Chain.ChainLevelDiagram.Write(levels, CircuitRF.Render.Chain.ChainLevelDiagram.For(design, budget)!,
+                                                               $"{Path.GetFileNameWithoutExtension(path)}: levels at each node");
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            { return JsonRun.Fail(CliDiagnostics.ChainLevelDiagramWriteFailed(levels, ex.Message)); }
+            Console.WriteLine($"Wrote {levels}");
+            JsonRun.AddOutput(JsonRun.KindOf(levels), levels);
         }
 
         if (!toSchematic) return 0;
@@ -102,6 +135,7 @@ internal static class Chain
 
     private static void Report(ChainBudgetResult r, ChainDesign d)
     {
+        d = r.Design ?? d;   // the chain as budgeted: a link's input power, a fractional bandwidth
         var t = r.Totals!;
         Console.WriteLine($"Chain budget: {r.Stages.Count} stage(s), {d.FrequencyHz / 1e6:0.###} MHz in, {t.OutputFrequencyHz / 1e6:0.###} MHz out, "
                         + $"{d.BandwidthHz / 1e6:0.###} MHz bandwidth, {D(d.InputPowerDbm)} dBm in, source {d.TemperatureK:0.#} K");
@@ -111,8 +145,32 @@ internal static class Chain
                             + $"{D(s.Ip1dbDbm),8} {D(s.Op1dbDbm),8} {D(s.PoutDbm),8} {D(s.SnrDb),8} {D(s.NoiseSharePct),7}");
         Console.WriteLine($"  gain {D(t.GainDb)} dB, NF {D(t.NfDb)} dB (Te {t.TeK:0.#} K), IIP3 {D(t.Iip3Dbm)} dBm, OIP3 {D(t.Oip3Dbm)} dBm, "
                         + $"IP1dB {D(t.Ip1dbDbm)} dBm, OP1dB {D(t.Op1dbDbm)} dBm");
+        if (ChainTransmit.Read(r) is { } x)
+        {
+            // A transmit chain is read at its output: no sensitivity or range at its input, which is its drive.
+            Console.WriteLine($"  transmit: Pout {D(x.PoutDbm)} dBm, CW {D(x.PoutCwDbm)} dBm ({D(x.CompressionDb)} dB compressed), "
+                            + $"back-off {D(x.BackoffP1dbDb)} dB from OP1dB and {D(x.BackoffPsatDb)} dB from Psat {D(x.PsatDbm)} dBm");
+            Console.WriteLine($"  ACLR estimate {D(x.AclrDbc)} dBc from OIP3 {D(x.Oip3Dbm)} dBm"
+                            + (x.CubicEquivalent ? " (a Rapp stage's intercept the cubic's at its 1 dB point)" : "")
+                            + $", output noise {D(x.NoisePsdDbmHz)} dBm/Hz"
+                            + (double.IsFinite(x.RxNoiseDbm) ? $", {D(x.RxNoiseDbm)} dBm ({D(x.RxNoisePsdDbmHz)} dBm/Hz) in the receive band at {x.RxFrequencyHz / 1e6:0.###} MHz" : "")
+                            + (double.IsFinite(x.ImageDbc) ? $", image {D(x.ImageDbc)} dBc" : "")
+                            + (double.IsFinite(x.LoLeakDbc) ? $", LO {D(x.LoLeakDbc)} dBc" : ""));
+            if (ChainLink.Power(r) is { TotalW: > 0 } tp) Console.WriteLine($"  DC power {ChainLink.Watts(tp.TotalW)}");
+            return;
+        }
         Console.WriteLine($"  thermal floor {D(t.ThermalFloorDbm)} dBm, output noise {D(t.NoiseOutDbm)} dBm, MDS {D(t.MdsDbm)} dBm, "
                         + $"sensitivity {D(t.SensitivityDbm)} dBm at {D(d.RequiredSnrDb)} dB SNR");
         Console.WriteLine($"  SNR {D(t.SnrDb)} dB, SFDR {D(t.SfdrDb)} dB" + (t.ArrayGainDb > 0 ? $", array gain {D(t.ArrayGainDb)} dB" : ""));
+        if (ChainCapacity.Read(r) is { } o)
+            Console.WriteLine($"  NF of the array {D(o.NfArrayDb)} dB, "
+                            + $"margin {D(o.MarginDb)} dB, rate {ChainCapacity.Rate(o.RateBps)}"
+                            + (o.Streams > 1 ? $" over {o.Streams} streams" : "") + $", ceiling {D(o.CeilingDbm)} dBm");
+        if (r.Design is { Link: { } link } rd && link.Budget(rd.FrequencyHz) is var l)
+            Console.WriteLine($"  link: {D(l.PoutDbm)} dBm from each of {l.Mtx} PAs, EIRP {D(l.EirpDbm)} dBm, free space {D(l.LfsDb)} dB "
+                            + $"and {D(l.AtmDb)} dB more over the path, {D(l.PrxDbm)} dBm at each element, {D(rd.InputPowerDbm)} dBm in");
+        if (ChainLink.Power(r) is { TotalW: > 0 } p)
+            Console.WriteLine($"  DC power: transmit {ChainLink.Watts(p.TxW)}, receive {ChainLink.Watts(p.RxW)} ({p.Mrx} element(s)), "
+                            + $"total {ChainLink.Watts(p.TotalW)}, {D(p.EnergyPerBitJ * 1e12)} pJ/bit");
     }
 }

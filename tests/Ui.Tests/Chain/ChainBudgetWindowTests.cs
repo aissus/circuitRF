@@ -9,6 +9,7 @@
 //    - the levels plots name their nodes (IN and the stages) on the x axis rather than numbering them;
 //    - every plot the window shows has a container in its host, which is what a plot's Copy renders;
 //    - every edit undoes, back to the clean document; a typed value is one step; Save moves the clean point;
+//    - a transmit chain's receive band (RxOffset, RxBandwidth) is shown on a transmit chain only, its value kept;
 //    - a value the budget refuses never reaches the views: a typed one is flagged and put back on leaving the box, a
 //      pick is undone at once — except the S-parameter data part, which needs a file before it can evaluate: it is kept,
 //      its File box flagged and a file asked for, and a file picked is written relative to the chain's workspace.
@@ -169,6 +170,19 @@ public sealed class ChainBudgetWindowTests
         Assert.False(vm.UndoCommand.CanExecute(null));
     }
 
+    /// <summary>The Levels tab of a chain whose Levels bench Transfer writes per conversion says where its simulated points
+    /// are, rather than waiting for a whole-chain bench that is never written; a single conversion's waits for its own.</summary>
+    [Fact]
+    public void TheLevelsNote_SaysWhereAChainOfTwoConversionsHasItsPoints()
+    {
+        string dir = Path.Combine(Path.GetTempPath(), "crf-chain-note-" + Guid.NewGuid().ToString("N")[..8]);
+        var dual = new ChainBudgetViewModel(ChainBudgetTests.DualConversion()) { FilePath = Path.Combine(dir, "Dual.cchain") };
+        Assert.Contains("written once per conversion", dual.LevelsNote);
+        var one = new ChainBudgetViewModel(ChainBudgetTests.Superhet()) { FilePath = Path.Combine(dir, "Rx.cchain") };
+        Assert.DoesNotContain("per conversion", one.LevelsNote);
+        Assert.Contains("Rx Levels not simulated yet", one.LevelsNote);
+    }
+
     [Fact]
     public async System.Threading.Tasks.Task Save_IsTheCleanPoint_ThatUndoAndRedoCross()
     {
@@ -225,6 +239,25 @@ public sealed class ChainBudgetWindowTests
         vm.CommitEdits();
         Assert.Equal(freq, vm.Frequency);
         Assert.False(vm.FrequencyInvalid);
+    }
+
+    [Fact]
+    public void TheReceiveBand_IsShownOnATransmitChainOnly_AndKeepsItsValue()
+    {
+        var vm = new ChainBudgetViewModel(Chain(("PA", ChainParts.Amp, [])));
+        bool Shown(string name) => vm.TransmitInputs.Single(p => p.Name == name).Shown;
+        Assert.True(Shown("Direction"));
+        Assert.False(Shown("RxOffset"));
+        Assert.False(Shown("RxBandwidth"));
+
+        vm.TransmitInputs.Single(p => p.Name == "Direction").Value = ChainDesign.Transmit;
+        Assert.True(Shown("RxOffset"));
+        Assert.True(Shown("RxBandwidth"));
+
+        // Undo rebuilds the rows: they are hidden again, and the value is still there.
+        vm.UndoCommand.Execute(null);
+        Assert.False(Shown("RxBandwidth"));
+        Assert.Equal("20", vm.TransmitInputs.Single(p => p.Name == "RxBandwidth").Value);
     }
 
     [Fact]

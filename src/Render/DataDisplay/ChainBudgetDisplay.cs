@@ -10,6 +10,7 @@
 //  column is a measurement the bench's MEAS block computes (ChainBenches), so nothing here computes a number.
 // ================================================================
 
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -28,27 +29,38 @@ public static class ChainBudgetDisplay
     {
         var json = new JsonSerializerOptions(DataDisplayJson.Options) { WriteIndented = true };
         var paths = new List<string>();
-        foreach (var b in ChainBenches.BenchesFor(design))
+        // A bench of one of the chain's conversions is displayed against that conversion's own budget, and a display
+        // reads only the benches that are written.
+        var benches = ChainBenches.Build(design, budget, chain);
+        var written = benches.Select(b => b.CellName).ToHashSet();
+        foreach (var b in benches)
         {
-            string path = Path.Combine(dir, ChainBenches.CellName(chain, b) + ".cdd");
-            AtomicFile.WriteAllText(path, JsonSerializer.Serialize(Build(chain, b, design, budget), json));
+            string path = Path.Combine(dir, b.CellName + ".cdd");
+            AtomicFile.WriteAllText(path, JsonSerializer.Serialize(Build(b.Chain, b.Kind, b.Design, b.Budget, written), json));
             paths.Add(path);
         }
         return paths;
     }
 
-    public static DataDisplayConfig Build(string chain, ChainBench bench, ChainDesign design, ChainBudgetResult budget)
+    /// <param name="written">The cells the transfer writes, which a display may read beside its own; null: every bench of
+    /// the chain.</param>
+    public static DataDisplayConfig Build(string chain, ChainBench bench, ChainDesign design, ChainBudgetResult budget,
+                                          IReadOnlySet<string>? written = null)
     {
+        design = budget.Design ?? design;
         string src = ChainBenches.CellName(chain, bench) + ".npy";
         switch (bench)
         {
             case ChainBench.Steering: return Display(chain, bench, src, Steering(src));
             case ChainBench.Combiners: return Display(chain, bench, src, Combiners(src, design));
-            case ChainBench.Levels: return Display(chain, bench, src, Levels(chain, design, budget, blockersOnly: false));
-            case ChainBench.Blockers: return Display(chain, bench, src, Levels(chain, design, budget, blockersOnly: true));
+            case ChainBench.Levels: return Display(chain, bench, src, Levels(chain, design, budget, blockersOnly: false, written));
+            case ChainBench.Blockers: return Display(chain, bench, src, Levels(chain, design, budget, blockersOnly: true, written));
             case ChainBench.Canceller: return Display(chain, bench, src, Canceller(src));
             case ChainBench.Demo: return Display(chain, bench, src, Demo(src, ChainBenches.DemoPowers(budget.Totals!)));
+            case ChainBench.Transmitter: return Display(chain, bench, src, Transmitter(src));
+            case ChainBench.Pa: return Display(chain, bench, src, Pa(src, design));
         }
+        if (design.IsTransmit) return Display(chain, bench, src, Transmit(src, bench, design));
         double bocc = ChainBenches.Carrier(design.BandwidthHz).OccupiedHz / 1e6;
         var (rows, perStage) = bench switch
         {
@@ -162,10 +174,16 @@ public static class ChainBudgetDisplay
 
     // ── the levels, the canceller and the demo ────────────────────────────────
 
-    private static TraceConfig Over(string src, string cube, string axis, string label, int color, bool simulated) => new()
+    /// <param name="nodes">The nodes the trace is drawn over, [From, To); null: every one. A bench writes ±300 where a
+    /// quantity does not exist (an IM3 before anything is nonlinear, the interference before the canceller, the margin of a
+    /// chain that never compresses), and a line drawn to it falls out of the window.</param>
+    private static TraceConfig Over(string src, string cube, string axis, string label, int color, bool simulated,
+                                    (int From, int To)? nodes = null) => new()
     {
         SourcePath = src, CubeName = cube, Label = label,
-        CubeSlice = [new AxisSliceConfig { AxisName = axis, Role = AxisRole.KeepAsX }],
+        CubeSlice = [nodes is { } n
+            ? new AxisSliceConfig { AxisName = axis, Role = AxisRole.KeepAsX, RangeStart = n.From, RangeEndExclusive = n.To }
+            : new AxisSliceConfig { AxisName = axis, Role = AxisRole.KeepAsX }],
         Properties = simulated
             ? new TracePropertiesConfig { LineEnabled = false, MarkerEnabled = true, MarkerType = MarkerType.Circle, MarkerSize = 1.8,
                                           LineColorIndex = color, MarkerColorIndex = color }
@@ -173,6 +191,62 @@ public static class ChainBudgetDisplay
     };
 
     private static int C(int i) => TraceProperties.LineColorOrder[i % TraceProperties.LineColorOrder.Length];
+
+    /// <summary>
+    /// The window of a plot of levels, dBm: its top 10 dB over the highest level it draws, its bottom 20 dB under the
+    /// lowest of <paramref name="framed"/>, each rounded out to 10 dB. <paramref name="topOnly"/> (the IM3, and in the level
+    /// diagram the compression limit, the SFDR's top, the EIRP and the ceiling) reaches the top but never sets the bottom:
+    /// an IM3 far under the noise floor took a third to two thirds of the height, so a plot clips it and says so in its
+    /// legend (<see cref="Clipped"/>), and the level diagram marks it on its bottom edge. Only finite levels count: the
+    /// budget's absent level is NaN or −∞, never a number. The bench's Levels display, the window's Levels tab and the
+    /// level diagram all take this rule.
+    /// </summary>
+    public static (double Lo, double Hi) LevelWindow(IEnumerable<double> framed, IEnumerable<double>? topOnly = null)
+    {
+        var f = framed.Where(double.IsFinite).ToList();
+        var all = f.Concat((topOnly ?? []).Where(double.IsFinite)).ToList();
+        if (all.Count == 0) return (-10, 10);
+        double lo = f.Count > 0 ? f.Min() - 20 : all.Min() - 10;
+        return (Math.Floor(lo / 10) * 10, Math.Ceiling((all.Max() + 10) / 10) * 10);
+    }
+
+    /// <summary>The window of a plot of dB quantities (the NF, the SNR, the margin): every finite one, 10 dB beyond each
+    /// end, rounded out to 10 dB.</summary>
+    public static (double Lo, double Hi) DbWindow(IEnumerable<double> values)
+    {
+        var v = values.Where(double.IsFinite).ToList();
+        if (v.Count == 0) return (-10, 10);
+        return (Math.Floor((v.Min() - 10) / 10) * 10, Math.Ceiling((v.Max() + 10) / 10) * 10);
+    }
+
+    /// <summary>True when some of <paramref name="levels"/> lie under the window's bottom, where the frame clips them.</summary>
+    public static bool Clipped(IEnumerable<double> levels, (double Lo, double Hi) window)
+        => levels.Any(v => double.IsFinite(v) && v < window.Lo);
+
+    /// <summary>The IM3's legend name when the frame clips it: short, so a legend cell holds it whole.</summary>
+    public const string Im3Clipped = "IM3 (clipped)";
+
+    /// <summary>A node axis' window: half a node beyond the input and beyond the output.</summary>
+    public static (double Lo, double Hi) NodeWindow(int nodes) => (-0.5, nodes - 0.5);
+
+    /// <summary>The nodes where <paramref name="pick"/> is a level, [first, last + 1), or (0, −1), the whole axis, where
+    /// that is every node; null where it is none. A cumulative quantity, once it exists, exists to the output.</summary>
+    private static (int From, int To)? Present(IReadOnlyList<ChainNodeLevel> lv, Func<ChainNodeLevel, double> pick)
+    {
+        int first = -1, last = -1;
+        for (int k = 0; k < lv.Count; k++)
+            if (double.IsFinite(pick(lv[k]))) { if (first < 0) first = k; last = k; }
+        return first < 0 ? null : first == 0 && last == lv.Count - 1 ? (0, -1) : (first, last + 1);
+    }
+
+    /// <summary>The dBm levels the Levels plot frames (all but the IM3), and the window they and the IM3 give.</summary>
+    private static IEnumerable<double> Dbm(IReadOnlyList<ChainNodeLevel> lv, bool blockersOnly = false)
+        => lv.SelectMany(n => (blockersOnly ? [] : new[] { n.SignalDbm, n.NoiseDbm, n.InterferenceDbm }).Concat(n.BlockerDbm));
+
+    private static (double Lo, double Hi) DbmWindow(IReadOnlyList<ChainNodeLevel> lv, bool blockersOnly = false)
+        => LevelWindow(Dbm(lv, blockersOnly), blockersOnly ? null : lv.Select(n => n.Im3Dbm));
+
+    private static IEnumerable<double> Db(IReadOnlyList<ChainNodeLevel> lv) => lv.SelectMany(n => new[] { n.NfDb, n.SnrDb, n.MarginDb });
 
     /// <summary>A Rect plot; a stated window fixes both axes (a window given for one axis alone leaves the other at
     /// its default rather than autoscaling it), and none autoscales both.</summary>
@@ -195,38 +269,44 @@ public static class ChainBudgetDisplay
     /// canceller's interference; and in dB the NF, the SNR and the margin to compression. The x axis is the node, 0 the
     /// input and k the output of stage k. <paramref name="blockersOnly"/>: the Blockers bench's own display.
     /// </summary>
-    private static List<PlotContainerConfig> Levels(string chain, ChainDesign d, ChainBudgetResult r, bool blockersOnly)
+    private static List<PlotContainerConfig> Levels(string chain, ChainDesign d, ChainBudgetResult r, bool blockersOnly,
+                                                    IReadOnlySet<string>? written)
     {
+        bool Has(ChainBench b) => written is null || written.Contains(ChainBenches.CellName(chain, b));
         var lv = ChainLevels.Evaluate(d, r);
         string lev = ChainBenches.CellName(chain, ChainBench.Levels) + ".npy";
         string one = ChainBenches.CellName(chain, ChainBench.OneTone) + ".npy";
         string blk = ChainBenches.CellName(chain, ChainBench.Blockers) + ".npy";
         string nodes = string.Join(", ", lv.Select((n, i) => $"{i} {n.Node}"));
+        var window = DbmWindow(lv, blockersOnly);
         var traces = new List<TraceConfig>();
         if (!blockersOnly)
         {
             traces.Add(Over(lev, "Psig_calc", ChainBenches.NodeVar, "signal, budget", C(1), false));
             traces.Add(Over(lev, "Psig_sim", ChainBenches.NodeVar, "signal, simulated", C(1), true));
-            traces.Add(Over(one, "Noise_node_calc", ChainBenches.NodeVar, "noise floor, budget", C(3), false));
-            traces.Add(Over(one, "Noise_node_sim", ChainBenches.NodeVar, "noise floor, simulated NF", C(3), true));
-            traces.Add(Over(lev, "IM3_calc", ChainBenches.NodeVar, "IM3, budget", C(4), false));
-            traces.Add(Over(lev, "IM3_sim", ChainBenches.NodeVar, "IM3, simulated", C(4), true));
+            if (Has(ChainBench.OneTone))
+            {
+                traces.Add(Over(one, "Noise_node_calc", ChainBenches.NodeVar, "noise floor, budget", C(3), false));
+                traces.Add(Over(one, "Noise_node_sim", ChainBenches.NodeVar, "noise floor, simulated NF", C(3), true));
+            }
+            if (Present(lv, n => n.Im3Dbm) is { } im3)
+            {
+                traces.Add(Over(lev, "IM3_calc", ChainBenches.NodeVar, Clipped(lv.Select(n => n.Im3Dbm), window) ? Im3Clipped : "IM3, budget", C(4), false, im3));
+                traces.Add(Over(lev, "IM3_sim", ChainBenches.NodeVar, "IM3, simulated", C(4), true, im3));
+            }
         }
-        for (int k = 0; k < d.Blockers.Count; k++)
+        for (int k = 0; k < (Has(ChainBench.Blockers) ? d.Blockers.Count : 0); k++)
         {
             string name = $"blocker {k + 1} ({d.Blockers[k].OffsetHz / 1e6:0.##} MHz, {d.Blockers[k].LevelDbm:0.#} dBm)";
             traces.Add(Over(blk, $"Blk{k + 1}_calc", ChainBenches.NodeVar, name + ", budget", C(5 + k), false));
             traces.Add(Over(blk, $"Blk{k + 1}_sim", ChainBenches.NodeVar, name + ", simulated", C(5 + k), true));
         }
-        if (!blockersOnly && lv.Any(n => double.IsFinite(n.InterferenceDbm)))
-            traces.Add(Over(lev, "Int_calc", ChainBenches.NodeVar, "interference, budget", C(2), false));
-        var finite = lv.SelectMany(n => (blockersOnly ? [] : new[] { n.SignalDbm, n.NoiseDbm, n.Im3Dbm, n.InterferenceDbm }).Concat(n.BlockerDbm))
-                       .Where(double.IsFinite).ToList();
-        double lo = Math.Floor((finite.Min() - 10) / 10) * 10, hi = Math.Ceiling((finite.Max() + 10) / 10) * 10;
+        if (!blockersOnly && Present(lv, n => n.InterferenceDbm) is { } at)
+            traces.Add(Over(lev, "Int_calc", ChainBenches.NodeVar, "interference, budget", C(2), false, at));
         var plots = new List<PlotContainerConfig>
         {
             Rect(blockersOnly ? "The blockers at each node, dBm" : "Levels at each node, dBm", $"node: {nodes}", "dBm", 0, 0, 760, 420,
-                 traces, (lo, hi), (-0.5, lv.Count - 0.5)),
+                 traces, window, NodeWindow(lv.Count)),
         };
         if (!blockersOnly)
         {
@@ -235,11 +315,11 @@ public static class ChainBudgetDisplay
                 Over(one, "NF_node_calc", ChainBenches.NodeVar, "NF, budget", C(1), false),
                 Over(one, "NF_node_sim", ChainBenches.NodeVar, "NF, simulated", C(1), true),
                 Over(lev, "SNR_calc", ChainBenches.NodeVar, "SNR, budget", C(3), false),
-                Over(lev, "Margin_calc", ChainBenches.NodeVar, "margin to P1dB, budget", C(4), false),
             };
-            double top = Math.Ceiling((lv.Select(n => n.SnrDb).Max() + 10) / 10) * 10;
+            if (Present(lv, n => n.MarginDb) is { } m) db.Add(Over(lev, "Margin_calc", ChainBenches.NodeVar, "margin to P1dB, budget", C(4), false, m));
+            if (!Has(ChainBench.OneTone)) db.RemoveRange(0, 2);
             plots.Add(Rect("NF, SNR and margin to compression at each node, dB", $"node: {nodes}", "dB", 0, 420 + Gap, 760, 340, db,
-                           (-5, top), (-0.5, lv.Count - 0.5)));
+                           DbWindow(Db(lv)), NodeWindow(lv.Count)));
         }
         return plots;
     }
@@ -299,6 +379,133 @@ public static class ChainBudgetDisplay
         return plots;
     }
 
+    /// <summary>The TX bench: the output, the EVM and the adjacent-channel ratios against the back-off from Psat, and a
+    /// table at the link's own back-off.</summary>
+    private static List<PlotContainerConfig> Transmitter(string src)
+    {
+        const string bo = "BO", x = "back-off from Psat, dB";
+        var t = Table("At the link's back-off", src,
+                      [("Pant_at_calc", "At the link's back-off: Pout − Loss budget, dBm"), ("Pant_at_sim", "simulated"), ("Pant_at_err", "difference"),
+                       ("EVM_at", "EVM, %"), ("ACPR_L_at", "ACPR lower, dBc"), ("ACPR_U_at", "ACPR upper, dBc"), ("Psat_err", "saturation − Psat, dB")],
+                      first: 280);
+        t.Top = 2 * (300 + Gap);
+        return
+        [
+            Rect("Output power at the antenna against the back-off", x, "dBm", 0, 0, 560, 300,
+                 [Over(src, "Pant_calc", bo, "budget, Psat − back-off − Loss", C(1), false), Over(src, "Pant_sim", bo, "simulated", C(1), true)]),
+            Rect("Compression the back-off leaves", x, "dB", 560 + Gap, 0, 560, 300, [Over(src, "Comp", bo, "budget − simulated", C(4), true)]),
+            Rect("EVM against the back-off", x, "EVM, %", 0, 300 + Gap, 560, 300, [Over(src, "EVM_sim", bo, "64-QAM, simulated", C(2), true)]),
+            Rect("Adjacent-channel ratio against the back-off", x, "dBc", 560 + Gap, 300 + Gap, 560, 300,
+                 [Over(src, "ACPR_L", bo, "lower", C(3), true), Over(src, "ACPR_U", bo, "upper", C(5), true)]),
+            t,
+        ];
+    }
+
+    /// <summary>
+    /// A transmit chain's benches. 1-Tone: the output against the drive over the budget's CW output, their difference,
+    /// and a table of the operating point, the top of the sweep, the 1 dB point, the noise in band and in the receive band
+    /// and an IQ modulator's image and LO. 2-Tone: the IM3 against the two tones' level over the intercept's 3:1 line.
+    /// Envelope: the ACLR against the drive over the budget's estimate, the output power and EVM, and the spectrum at
+    /// the operating point.
+    /// </summary>
+    private static List<PlotContainerConfig> Transmit(string src, ChainBench bench, ChainDesign d)
+    {
+        (string, string, string) Row(string q, string title) => ($"{q}_calc", $"{q}_sim", title);
+        PlotContainerConfig Rows(string title, double top, params (string Calc, string Sim, string Title)[] rows)
+        {
+            var cols = rows.SelectMany(r => new[] { (r.Calc, $"{r.Title}: budget"), (r.Sim, "simulated") }).ToArray();
+            var t = Table(title, src, cols, first: 280);
+            t.Top = top;
+            return t;
+        }
+        double y = 300 + Gap;
+        switch (bench)
+        {
+            case ChainBench.OneTone:
+            {
+                var list = new List<PlotContainerConfig>
+                {
+                    Rect("Output against the drive", "Pin, dBm", "dBm", 0, 0, 560, 300,
+                         [Over(src, "Plin_calc", "Pin", "linear budget, Pin + G", C(0), false),
+                          Over(src, "Pout_calc", "Pin", "budget, through each stage's compression", C(1), false),
+                          Over(src, "Pout_sim", "Pin", "simulated", C(1), true)]),
+                    Rect("Simulated output − budget", "Pin, dBm", "dB", 560 + Gap, 0, 560, 300, [Over(src, "Pout_err", "Pin", "difference", C(4), true)]),
+                    Rows("Output", y, Row("Pout_op", "at the operating point, dBm"), Row("Ptop", "at the sweep's top, dBm"),
+                         Row("IP1dB", "input P1dB, dBm"), Row("OP1dB", "output P1dB, dBm")),
+                };
+                var noise = new List<(string, string, string)> { Row("Noise", "noise 1 MHz off the carrier, dBm/Hz") };
+                if (d.RxBandOffsetHz is not null) noise.Add(Row("RxNoise", "noise in the receive band, dBm/Hz"));
+                list.Add(Rows("Noise", y + H + Gap, [.. noise]));
+                if (d.Stages.Any(s => s.Part == ChainParts.IqMod))
+                    list.Add(Rows("IQ modulator", y + 2 * (H + Gap), Row("ImageIq", "image at its output, dBc"), Row("LoIq", "LO at its output, dBc"),
+                                  Row("Image", "image at the output, dBc"), Row("LoLeak", "LO at the output, dBc")));
+                return list;
+            }
+            case ChainBench.TwoTone:
+                return
+                [
+                    Rect("IM3 against the two tones' level", "each tone at the input, dBm", "dBc", 0, 0, 560, 300,
+                         [Over(src, "IM3_calc", "P2t", "budget, 2·(P − OIP3)", C(1), false), Over(src, "IM3_sim", "P2t", "simulated", C(1), true)]),
+                    Rect("Intercept the IM3 extrapolates to", "each tone at the input, dBm", "dBm", 560 + Gap, 0, 560, 300,
+                         [Over(src, "OIP3_sim", "P2t", "simulated, 3:1 from each level", C(3), true)]),
+                    Rows("At the operating point and at the lowest level", y, Row("IM3_op", "IM3 at the operating point, dBc"),
+                         ("OIP3_calc", "OIP3_lo_sim", "OIP3, 20 dB below it, dBm")),
+                ];
+            default:
+                return
+                [
+                    Rect("Adjacent-channel ratio against the drive", "Pin, dBm", "dBc", 0, 0, 560, 300,
+                         [Over(src, "ACLR_calc", "Pin", "estimate, 2·(Pout − OIP3) − 4.77 dB", C(1), false),
+                          Over(src, "ACLR_L_sim", "Pin", "lower, simulated", C(3), true), Over(src, "ACLR_U_sim", "Pin", "upper, simulated", C(5), true)]),
+                    Rect("Output power and EVM against the drive", "Pin, dBm", "dBm, %", 560 + Gap, 0, 560, 300,
+                         [Over(src, "Pout_calc", "Pin", "linear budget, dBm", C(1), false), Over(src, "Pout_sim", "Pin", "simulated, dBm", C(1), true),
+                          Over(src, "EVM_sim", "Pin", "EVM, %", C(2), true)]),
+                    At(Table("At the operating point", src,
+                             [("Pout_op_calc", "output, dBm: budget"), ("Pout_op_sim", "simulated"), ("ACLR_op_calc", "ACLR, the worse side, dBc: estimate"),
+                              ("ACLR_op_sim", "simulated"), ("EVM_op_sim", "EVM, %")], first: 280), y),
+                    new PlotContainerConfig
+                    {
+                        PlotType = PlotType.Rect, Left = 0, Top = y + H + Gap, Width = 620, Height = 360,
+                        CustomTitle = "Output spectrum at the operating point", CustomTitleOn = true,
+                        CustomYLabel = "PSD (dBm/Hz)", CustomYLabelOn = true,
+                        Traces = [new TraceConfig { SourcePath = src, Label = "PSD at the output",
+                                                    Expression = $"ENVT.PSD[{Array.IndexOf(ChainBenches.TxEnvelopeStepsDb, 0.0)}, \"Iout\", :]" }],
+                    },
+                ];
+        }
+    }
+
+    private static PlotContainerConfig At(PlotContainerConfig p, double top) { p.Top = top; return p; }
+
+    /// <summary>The PA bench: its AM-AM and AM-PM against the drive over the law's closed forms, its efficiency when it
+    /// states a DC power, and a table of its 1 dB point, its output at the operating point and at the sweep's top, and
+    /// its ACLR and EVM with the NR carrier.</summary>
+    private static List<PlotContainerConfig> Pa(string src, ChainDesign d)
+    {
+        int pa = ChainBenches.PaStage(d);
+        bool pdc = pa >= 0 && ChainValue.Or(d.Stages[pa].Get("Pdc"), 0) > 0;
+        var t = Table("At the 1 dB point and the operating point", src,
+                      [("IP1dB_calc", "input P1dB, dBm: budget"), ("IP1dB_sim", "simulated"), ("Pout_op_calc", "output at the operating point, dBm: budget"),
+                       ("Pout_op_sim", "simulated"), ("Ptop_calc", "at the sweep's top: budget"), ("Ptop_sim", "simulated"),
+                       ("ACLR_calc", "NR carrier: ACLR estimate, dBc"), ("ACLR_L_sim", "lower, simulated"), ("ACLR_U_sim", "upper"),
+                       ("EVM_sim", "EVM, %")], first: 280);
+        t.Top = 2 * (300 + Gap);
+        var list = new List<PlotContainerConfig>
+        {
+            Rect("AM-AM: the gain against the drive", "Pin, dBm", "dB", 0, 0, 560, 300,
+                 [Over(src, "AMAM_calc", "Pin", "the law's closed form", C(1), false), Over(src, "AMAM_sim", "Pin", "simulated", C(1), true)]),
+            Rect("AM-PM: the phase against the drive", "Pin, dBm", "deg", 560 + Gap, 0, 560, 300,
+                 [Over(src, "AMPM_calc", "Pin", "the law's closed form", C(2), false), Over(src, "AMPM_sim", "Pin", "simulated", C(2), true)]),
+            Rect("Simulated − closed form", "Pin, dBm", "dB, deg", 0, 300 + Gap, 560, 300,
+                 [Over(src, "AMAM_err", "Pin", "AM-AM, dB", C(1), true), Over(src, "AMPM_err", "Pin", "AM-PM, deg", C(2), true)]),
+            t,
+        };
+        if (pdc)
+            list.Add(Rect("Efficiency against the drive", "Pin, dBm", "PAE, %", 560 + Gap, 300 + Gap, 560, 300,
+                          [Over(src, "PAE_calc", "Pin", "budget", C(3), false), Over(src, "PAE_sim", "Pin", "simulated", C(3), true)]));
+        return list;
+    }
+
     /// <summary>A constellation as the signal-quality preset draws it: the received points over the ideal ones, Im
     /// against Re on one scale.</summary>
     private static PlotContainerConfig Constellation(string title, string src, string group, string at, string refAt, double left, double top, double size)
@@ -328,7 +535,8 @@ public static class ChainBudgetDisplay
         {
             Over(src, "Psig_dBm", "node", "signal", C(1), false), Over(src, "Psig_sim", "node", "signal, simulated", C(1), true),
             Over(src, "Noise_dBm", "node", "noise floor", C(3), false), Over(src, "Noise_node_sim", "node", "noise floor, simulated", C(3), true),
-            Over(src, "IM3_dBm", "node", "IM3", C(4), false), Over(src, "IM3_sim", "node", "IM3, simulated", C(4), true),
+            Over(src, "IM3_dBm", "node", Clipped(lv.Select(n => n.Im3Dbm), DbmWindow(lv)) ? Im3Clipped : "IM3", C(4), false),
+            Over(src, "IM3_sim", "node", "IM3, simulated", C(4), true),
         };
         for (int k = 0; k < d.Blockers.Count; k++)
         {
@@ -341,8 +549,10 @@ public static class ChainBudgetDisplay
             Over(src, "NF_dB", "node", "NF", C(1), false), Over(src, "NF_node_sim", "node", "NF, simulated", C(1), true),
             Over(src, "SNR_dB", "node", "SNR", C(3), false), Over(src, "Margin_dB", "node", "margin to P1dB", C(4), false),
         };
-        return [Rect("Levels at each node, dBm", "node", "dBm", 0, 0, 560, 240, t),
-                Rect("NF, SNR and margin, dB", "node", "dB", 0, 0, 480, 240, db)];
+        // Windowed as the bench's display is: every level but an IM3 far under the noise in the frame, and nothing absent.
+        // No x label: the axis names its nodes.
+        return [Rect("Levels at each node, dBm", "", "dBm", 0, 0, 560, 240, t, DbmWindow(lv), NodeWindow(lv.Count)),
+                Rect("NF, SNR and margin, dB", "", "dB", 0, 0, 480, 240, db, DbWindow(Db(lv)), NodeWindow(lv.Count))];
     }
 
     /// <summary>The window's Canceller tab, in closed form: the depth against the phase error for five amplitude errors,
@@ -378,6 +588,49 @@ public static class ChainBudgetDisplay
     private static double Depth(double ampErrDb, double phaseErrDeg, double delayErrS, double bwHz)
         => -10 * System.Math.Log10(System.Math.Max(CancellerSpec.Residual(ampErrDb, phaseErrDeg, delayErrS, bwHz), 1e-12));
 
+    /// <summary>The window's Link tab: the link's numbers, when the chain has one, and the receiver's readouts, each a
+    /// table of the budget's own scalars.</summary>
+    public static IReadOnlyList<PlotContainerConfig> WindowLink()
+    {
+        const string src = "budget";
+        var rx = Table("Receiver", src,
+            [("MDS_dBm", "Receiver: MDS, dBm"), ("NFarray_dB", "NF of the array, dB"), ("SNRtot_dB", "SNR, dB"),
+             ("Margin_dB", "margin, dB"), ("Rate_Gbps", "rate, Gb/s"), ("Pdctot_W", "DC power, W"), ("Ebit_pJ", "energy, pJ/bit")], first: 190);
+        var tx = Table("Link", src,
+            [("Pout_PA_dBm", "Link: PA out, dBm"), ("EIRP_dBm", "EIRP, dBm"), ("Lfs_dB", "free space, dB"), ("Atm_dB", "more on the path, dB"),
+             ("Prx_dBm", "received, dBm"), ("Ceiling_dBm", "ceiling, dBm"), ("Pin_dBm", "chain input, dBm")], first: 190);
+        return [tx, rx];
+    }
+
+    /// <summary>
+    /// A sweep's tab (<see cref="ChainBudget.Sweep"/>): the link's levels at each element and the noise there, the SNR and
+    /// margin, the rate, and the DC power, each over the sweep's own axis — the carrier, or an array's size.
+    /// </summary>
+    public static IReadOnlyList<PlotContainerConfig> WindowSweep(string of)
+    {
+        const string src = "budget";
+        var (axis, x) = of switch
+        {
+            ChainSweep.Frequency => ("freq", "carrier frequency, GHz"),
+            ChainSweep.TxElements => ("Mtx", "transmit elements, Mtx"),
+            _ => ("Mrx", "receive elements, Mrx"),
+        };
+        List<PlotContainerConfig> plots =
+        [
+            Rect("Link levels", x, "dBm", 0, 0, 300, 240,
+                 [Over(src, "EIRP_dBm", axis, "EIRP", C(1), false), Over(src, "Prx_dBm", axis, "received", C(2), false),
+                  Over(src, "Pin_dBm", axis, "chain input", C(3), false), Over(src, "Ceiling_dBm", axis, "ceiling", C(4), false),
+                  Over(src, "MDS_dBm", axis, "noise (MDS)", C(5), false)]),
+            Rect("SNR and margin", x, "dB", 0, 0, 300, 240,
+                 [Over(src, "SNR_dB", axis, "SNR", C(1), false), Over(src, "Margin_dB", axis, "margin", C(2), false)]),
+            Rect("Rate", x, "Gb/s", 0, 0, 300, 240, [Over(src, "Rate_Gbps", axis, "Shannon rate", C(1), false)]),
+            Rect("DC power", x, "W", 0, 0, 300, 240, [Over(src, "Pdc_W", axis, "transmit and receive", C(1), false)]),
+        ];
+        // An array's sizes are spread in ratio: a log axis puts them evenly.
+        if (of != ChainSweep.Frequency) foreach (var p in plots) p.Axes = new AxesConfig { XScale = AxisScale.Log };
+        return plots;
+    }
+
     /// <summary>A table a combiner variant, in the bench's order.</summary>
     private static List<PlotContainerConfig> Combiners(string src, ChainDesign design)
     {
@@ -408,7 +661,7 @@ public static class ChainBudgetDisplay
         [
             ("G_dB", "G, dB"), ("NF_dB", "NF, dB"), ("IIP3_dBm", "IIP3, dBm"), ("OIP3_dBm", "OIP3, dBm"),
             ("IP1dB_dBm", "IP1dB, dBm"), ("OP1dB_dBm", "OP1dB, dBm"), ("Pout_dBm", "Pout, dBm"), ("SNR_dB", "SNR, dB"),
-            ("NFpct", "share of F − 1, %"),
+            ("NFpct", "F−1 share, %"), ("NFallow_dB", "NF left, dB"), ("IP1dBpct", "P1dB share, %"),
         ];
         return new PlotContainerConfig
         {

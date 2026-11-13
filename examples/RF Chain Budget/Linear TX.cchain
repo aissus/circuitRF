@@ -1,0 +1,82 @@
+{
+  "FormatVersion": 3,
+  "Direction": "Transmit",
+  "FrequencyHz": 200000000,
+  "BandwidthHz": 100000000,
+  "InputPowerDbm": -14,
+  "TemperatureK": 290,
+  "RequiredSnrDb": 10,
+  "Stages": [
+    {
+      "Name": "IQ",
+      "Part": "IQMod",
+      "Parameters": {
+        "ConvGain": "-6",
+        "NF": "12",
+        "NFType": "ssb",
+        "IIP3": "15",
+        "Plo": "7",
+        "Flo": "3.3 GHz",
+        "Sideband": "Upper",
+        "GainImb": "0.2",
+        "PhaseImb": "1.5",
+        "IsoLO_IF": "50"
+      }
+    },
+    {
+      "Name": "BPF1",
+      "Part": "Filter",
+      "Parameters": {
+        "Response": "Butterworth",
+        "Form": "Bandpass",
+        "Order": "5",
+        "Fc": "1 GHz",
+        "F1": "3.4 GHz",
+        "F2": "3.6 GHz",
+        "Ripple": "0.1",
+        "Astop": "40",
+        "IL": "1.5"
+      }
+    },
+    {
+      "Name": "DRV",
+      "Part": "Amp",
+      "Parameters": {
+        "Gain": "20",
+        "NF": "4",
+        "IP3": "32",
+        "IP3Ref": "Output"
+      }
+    },
+    {
+      "Name": "PA",
+      "Part": "Amp",
+      "Parameters": {
+        "Gain": "30",
+        "NF": "6",
+        "IP3": "40",
+        "IP3Ref": "Output",
+        "Law": "Rapp",
+        "Psat": "37",
+        "Pdc": "10"
+      }
+    },
+    {
+      "Name": "BPF2",
+      "Part": "Filter",
+      "Parameters": {
+        "Response": "Chebyshev",
+        "Form": "Bandpass",
+        "Order": "5",
+        "Fc": "1 GHz",
+        "F1": "3.4 GHz",
+        "F2": "3.6 GHz",
+        "Ripple": "0.1",
+        "Astop": "40",
+        "IL": "0.6"
+      }
+    }
+  ],
+  "RxBandOffsetHz": 200000000,
+  "RxBandHz": 20000000
+}
