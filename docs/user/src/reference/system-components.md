@@ -241,17 +241,12 @@ drive gets close to the limiter's own scale — the product falls slightly **bel
 extrapolation, by 0.06 dB at 30 dB below the equivalent intercept and 0.6 dB at 20 dB below it —
 which is exactly how an intercept has to be read off a bench measurement too.
 
-<div class="callout warn">
-<span class="label">Known gap: a 90&deg; hybrid with PIM on, in a <em>multi-tone</em> run</span>
-<p>The quadrature hybrid is the one PIM-capable block whose S-matrix is genuinely complex, and it
-needs a frequency-domain factor that only the <b>single-tone</b> harmonic-balance solver honours
-today. In a two-tone run — which is the analysis PIM exists for — that factor is dropped and the
-block degenerates to four open circuits. The failure is loud rather than plausible: essentially
-nothing reaches the through port and the source node reads about 6 dB high.</p>
-<p><b>Every real-S block is unaffected and fully correct in multi-tone runs</b> — the attenuator, the
-circulator, the in-phase coupler and the 180&deg; hybrid. For a quadrature hybrid, put the PIM on an
-attenuator beside it instead, exactly as you would for a filter.</p>
-</div>
+**A 90&deg; hybrid with PIM on works in every analysis.** It is the one PIM-capable block whose
+S-matrix is genuinely complex, and half of it rides in a frequency-domain factor. Single- and
+multi-tone harmonic balance and both envelope modes carry that factor at every harmonic and mixing
+product, so its product comes out at the level you typed, split and in quadrature like the signal.
+With PIM on, the block passes nothing at DC (an ideal 90&deg; hybrid's admittance is all quadrature, and
+quadrature has no DC part), so give any DC path through it, such as a mixer's DC return, a return of its own.
 
 ## Polar transmitters {#polar}
 
@@ -280,11 +275,11 @@ at every sample and `cos θ·v − sin θ·v_q` the carrier turned by `θ`, so e
 and **makes no harmonics**: `MaxHarm=1` is enough unless something else in the circuit needs more. It is the same
 frequency-domain weight, `j·sign(ω)`, that a block with a complex S uses for its [passive intermod](#pim).
 
-That weight is carried by **single-tone harmonic balance and a single envelope**. Two-tone and multi-tone harmonic
-balance and the multi-fundamental envelope (`Envelope=lattice`, or carriers far enough apart to get their own
-fundamentals) refuse these blocks by name for as long as their solvers drop weighted terms of this kind, rather than
-run them without it. An S-parameter run sees each block
-linearised at no drive.
+That weight is carried by **every harmonic-balance solver and both envelope modes**: single-tone, two-tone and
+multi-tone harmonic balance, a single envelope and the multi-fundamental one (`Envelope=lattice`, or carriers far
+enough apart to get their own fundamentals). On two or more tones each block reads the amplitude and phase of the
+tones' combined carrier, so a limiter or a detector makes the mixing products that envelope implies, and a Phase
+Modulator at a steady phase turns every tone alike. An S-parameter run sees each block linearised at no drive.
 
 ### Baseband beside the carrier
 

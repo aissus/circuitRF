@@ -18,13 +18,6 @@ public static class CarrierBlockDiagnostics
         "{type}: {parameter} must be a positive impedance (got {ohms} ohms).",
         ("type", type), ("parameter", parameter), ("ohms", G6(ohms)));
 
-    /// <summary>A carrier block in an analysis whose device pass does not carry the quadrature bucket.</summary>
-    public static Diagnostic QuadratureNotCarried(string type, string instance, string analysis) => Diagnostic.Create(
-        "carrier.quadrature-not-carried", DiagnosticSeverity.Error,
-        "{type} '{instance}' reads its carrier's quadrature, a weighted (w ≥ 2) term that {analysis} drops from its device " +
-        "pass: run it in single-tone harmonic balance or a single envelope (Envelope=single).",
-        ("type", type), ("instance", instance), ("analysis", analysis));
-
     /// <summary>A Polar word that is neither half.</summary>
     public static Diagnostic PolarWord(string source, string word) => Diagnostic.Create(
         "modsource.polar.word", DiagnosticSeverity.Error,

@@ -12,7 +12,7 @@ namespace CircuitRF.Engine.Tests.HarmonicBalance;
 
 /// <summary>
 /// The polar-transmitter blocks in single-tone harmonic balance: each law, written out here from the netlist line, against
-/// a solve that carries the quadrature node. A 50 Ω P1Tone into a 50 Ω input puts <c>a = √(2·50·P)</c> across it, at the
+/// a solve that carries the quadrature node; then on two and three tones, against the single-tone solve. A 50 Ω P1Tone into a 50 Ω input puts <c>a = √(2·50·P)</c> across it, at the
 /// phase the solve reports at the input node; every output is read across a 50 Ω load, where the law itself appears.
 /// The laws make no harmonics, so the harmonics are gated at the solve's floor. A control input is driven as the polar
 /// source drives it, from 50 Ω: a Vdc of twice the wanted voltage behind 50 Ω into the block's matched 50 Ω.
@@ -22,12 +22,12 @@ public class CarrierBlockHbTests(ITestOutputHelper output)
     private static string N(double x) => x.ToString("R", CultureInfo.InvariantCulture);
     private static double Amp(double dbm) => Math.Sqrt(2 * 50 * 1e-3 * Math.Pow(10, dbm / 10));
 
-    private static DataSet Run(string cnl)
+    private static DataSet Run(string cnl, AnalysisSettings? settings = null)
     {
         var (lib, tb) = new CnlReader().Read(cnl);
         var nl = new Elaborator(lib).Elaborate(tb);
         var hba = tb.Analyses.OfType<HarmonicBalanceAnalysis>().First();
-        var ds = (DataSet)new HbEngine(nl, tb).Run(HbEngine.Resolve(hba, nl.ResolvedGlobals));
+        var ds = (DataSet)new HbEngine(nl, tb, settings ?? new AnalysisSettings()).Run(HbEngine.Resolve(hba, nl.ResolvedGlobals));
         Assert.True(ds["Converged"].RealValues[0] > 0.5, "HB did not converge");
         return ds;
     }
@@ -165,37 +165,76 @@ public class CarrierBlockHbTests(ITestOutputHelper output)
         Assert.Equal(0.0, V(ds, "a", 1).Magnitude, 12);
     }
 
-    /// <summary>N-tone harmonic balance drops weighted terms as the two-tone solver does, and refuses the block by name.</summary>
-    [Fact]
-    public void ThreeToneHarmonicBalance_RefusesACarrierBlockByName()
+    /// <summary>
+    /// Each block on two tones, 100 MHz at −10 dBm and 110 MHz at −20 dBm (unequal, so the two-tone envelope has no
+    /// null), against single-tone harmonic balance at 10 MHz, where every mixing product is a harmonic: the spectra
+    /// compare frequency by frequency (<see cref="MultiToneWeightedTermsTests.Spectrum"/>), complex, so a lost or turned
+    /// quadrature fails. The quadrature node's w = 2 term is carried by both two-tone paths.
+    /// <para>The Phase Modulator at a DC phase is linear in its RF input, so each tone comes out turned by
+    /// <c>Kp·V(PH)</c> as a single tone does, on either path. The other three are laws of the two tones' envelope, whose
+    /// products run to every order: the FFT path keeps a box of them and the lattice a diamond, so the lattice misses
+    /// more of what the reference keeps on the same frequencies — truncation, which shrinks with the order. Measured at
+    /// order 9: 1.2e-15 at worst on the FFT path and for the Phase Modulator on both, 1.4e-5 to 2.2e-5 for the other three
+    /// on the lattice (at their weakest product, the upper IM3 or the second beat). A review's drive of the same blocks
+    /// read up to 4.3e-8 on the FFT path and 1.8e-3 to 4.4e-3 on the lattice; the bounds hold either.</para>
+    /// </summary>
+    [Theory]
+    [InlineData("PhaseMod", false)]
+    [InlineData("PhaseMod", true)]
+    [InlineData("Limiter", false)]
+    [InlineData("Limiter", true)]
+    [InlineData("SupplyAmp", false)]
+    [InlineData("SupplyAmp", true)]
+    [InlineData("EnvDetector", false)]
+    [InlineData("EnvDetector", true)]
+    public void TwoToneHarmonicBalance_IsTheSingleToneAnswer(string block, bool onLattice)
     {
-        var (lib, tb) = new CnlReader().Read("""
-            PnTone:S1 a 0 Freq[1]=1.0 GHz Pavl[1]=-10 Phase[1]=0 Freq[2]=1.01 GHz Pavl[2]=-10 Phase[2]=0 Freq[3]=1.023 GHz Pavl[3]=-10 Phase[3]=0 Z=50
-            EnvDetector:ED7 a 0 b 0 Kd=1
-            R:RL b 0 R=50
-            analysis HB1 type=hb NumFreqs=3 Tone[1]=1.0e9 Tone[2]=1.01e9 Tone[3]=1.023e9 MaxHarm=2 MaxMixOrder=3
-            """);
-        var nl = new Elaborator(lib).Elaborate(tb);
-        var hba = tb.Analyses.OfType<HarmonicBalanceAnalysis>().First();
-        var ex = Assert.ThrowsAny<InvalidOperationException>(() => new HbEngine(nl, tb).Run(HbEngine.Resolve(hba, nl.ResolvedGlobals)));
-        Assert.Contains("ED7", ex.Message);
-        Assert.Contains("multi-tone", ex.Message);
+        var (lines, freqs) = TwoToneBlocks[block];
+        var settings = new AnalysisSettings { HbTwoToneOnLattice = onLattice };
+        double worst = AgreesWithSingleTone(lines, [(100, -10, 20), (110, -20, -35)], freqs, 9, settings);
+        output.WriteLine($"{block} on the {(onLattice ? "lattice" : "FFT path")}: worst relative error {worst:E2}");
+        Assert.True(worst <= (onLattice && block != "PhaseMod" ? 1e-2 : 1e-6), $"{block}: {worst:E2}");
     }
 
-    /// <summary>Two-tone harmonic balance drops the quadrature bucket, so it refuses the block by name.</summary>
+    /// <summary>The Phase Modulator on three tones (the lattice, <c>MaxMixOrder=3</c>): each tone turned as a single tone is.</summary>
     [Fact]
-    public void TwoToneHarmonicBalance_RefusesACarrierBlockByName()
+    public void ThreeToneHarmonicBalance_TurnsEachToneAsSingleToneDoes()
     {
-        var (lib, tb) = new CnlReader().Read("""
-            PnTone:Ps n1 0 Freq[1]=3.49 GHz Pavl[1]=-10 Phase[1]=0 Freq[2]=3.51 GHz Pavl[2]=-10 Phase[2]=0 Z=50
-            Limiter:LIM7 n1 0 n2 0 Pout=0
-            R:RL n2 0 R=50
-            analysis HB1 type=hb NumFreqs=2 Tone[1]=3.49e9 Tone[2]=3.51e9 MaxMixOrder=5 MaxHarm=3
-            """);
-        var nl = new Elaborator(lib).Elaborate(tb);
-        var hba = tb.Analyses.OfType<HarmonicBalanceAnalysis>().First();
-        var ex = Assert.ThrowsAny<InvalidOperationException>(() => new HbEngine(nl, tb).Run(HbEngine.Resolve(hba, nl.ResolvedGlobals)));
-        Assert.Contains("LIM7", ex.Message);
-        Assert.Contains("quadrature", ex.Message);
+        double worst = AgreesWithSingleTone(TwoToneBlocks["PhaseMod"].Lines, [(100, -10, 20), (110, -20, -35), (140, -15, 60)],
+                                            [100, 110, 140], 3, new AnalysisSettings());
+        output.WriteLine($"PhaseMod on three tones: worst relative error {worst:E2}");   // measured 5.3e-16
+        Assert.True(worst <= 1e-9, $"{worst:E2}");
+    }
+
+    /// <summary>Each block's lines between <c>n1</c> and <c>n2</c>, and the frequencies (MHz) its output is compared at:
+    /// the carriers and the third-order products for an RF output, DC and the first two beats for the detector's.</summary>
+    private static readonly Dictionary<string, (string Lines, double[] Freqs)> TwoToneBlocks = new()
+    {
+        ["PhaseMod"]    = ("Vdc:VP phs 0 Vdc=1.4\nR:RP phs ph R=50\nPhaseMod:B n1 0 n2 0 ph 0 Kp=1.5 Gain=3", [100, 110]),
+        ["Limiter"]     = ("Limiter:B n1 0 n2 0 Pout=0 Knee=-10", [100, 110, 90, 120]),
+        ["SupplyAmp"]   = ("Vdc:VS ss 0 Vdc=2\nR:RS ss s R=50\nSupplyAmp:B n1 0 n2 0 s 0 Ks=4 Vsat=1.5 AMPM=-8 Knee=-10", [100, 110, 90, 120]),
+        ["EnvDetector"] = ("EnvDetector:B n1 0 n2 0 Kd=2", [0, 10, 20]),
+    };
+
+    /// <summary>The worst relative error of the multi-tone run's output against the single-tone one's, over <paramref name="freqs"/>.</summary>
+    private double AgreesWithSingleTone(string lines, (double Mhz, double Dbm, double Deg)[] tones, double[] freqs, int order, AnalysisSettings settings)
+    {
+        string circuit = "PnTone:S n1 0 "
+                       + string.Join(" ", tones.Select((t, i) => $"Freq[{i + 1}]={N(t.Mhz)} MHz Pavl[{i + 1}]={N(t.Dbm)} Phase[{i + 1}]={N(t.Deg)}"))
+                       + $" Z=50\n{lines}\nR:RL n2 0 R=50";
+        var want = MultiToneWeightedTermsTests.Spectrum(Run($"{circuit}\nanalysis HB1 type=hb Tone=10e6 MaxHarm=40 Tol=1e-12"), "V", "n2");
+        var got  = MultiToneWeightedTermsTests.Spectrum(Run(
+            $"{circuit}\nanalysis HB1 type=hb NumFreqs={tones.Length} "
+          + string.Join(" ", tones.Select((t, i) => $"Tone[{i + 1}]={N(t.Mhz * 1e6)}"))
+          + $" MaxMixOrder={order} MaxHarm={order} Tol=1e-12", settings), "V", "n2");
+        double worst = 0;
+        foreach (double f in freqs)
+        {
+            var (g, w) = (got[(long)(f * 1e6)], want[(long)(f * 1e6)]);
+            double err = (g - w).Magnitude / w.Magnitude;
+            output.WriteLine($"  {f,4} MHz: {g.Magnitude:E6} V ∠{g.Phase * 180 / Math.PI:F4}°, single-tone {w.Magnitude:E6} V ∠{w.Phase * 180 / Math.PI:F4}°, rel {err:E2}");
+            worst = Math.Max(worst, err);
+        }
+        return worst;
     }
 }

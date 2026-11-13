@@ -692,6 +692,8 @@ carriers the <strong>IM2 / IM3 / IM5</strong> products. For a pulsed-CW source i
 each charge (Gear-2, backward Euler on the first step). The linear network is factored once per
 harmonic for the whole run, and each step costs one back-substitution per harmonic plus a small
 Newton solve at the nonlinear devices, reusing its factored Jacobian while it keeps converging fast.
+A device's frequency-weighted terms (a 90° hybrid's PIM, an SDD's <code>H[w]</code>) enter each step at the
+harmonic's or mixing product's carrier frequency, as in harmonic balance.
 Each Newton update is damped by a line search, so a device driven hard at a signal peak, or one with
 trap or thermal states, does not throw the solve off. A step that still does not converge is retaken
 as up to 16 shorter steps, and the Messages pane says how many were.</p>
@@ -776,8 +778,7 @@ once, through its amplitude half, so Pin, gain, ACLR and EVM at the output are a
 stands for; beside an RF source of the same signal (envelope tracking) the RF source is the one measured. The phase
 half plays the phase unwrapped over the record, continuous, so a filter or a delay on the phase path acts on the
 phase rather than on 2π wraps; it still turns by about π across a null of the envelope. Polar halves need a single
-envelope, and the multi-fundamental envelope refuses them by name; it refuses those blocks too, for as long as its
-solver drops the weighted term they read their carrier's quadrature through.</p>
+envelope, and the multi-fundamental envelope refuses them by name; the blocks themselves run in either.</p>
 <p><strong>A digital stream and its DAC.</strong> A MOD_Source with <code>Baseband=i</code> or <code>Baseband=q</code> drives the baseband with one rail of
 its signal, <code>|Vs|·Re x</code> or <code>|Vs|·Im x</code>; the I and Q rails of one signal are measured once, through the I rail. A
 <a href="components.html#dac">DAC</a> on a rail's net converts it, and the run does that before the first step: the record is
