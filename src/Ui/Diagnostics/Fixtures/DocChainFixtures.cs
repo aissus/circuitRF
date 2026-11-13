@@ -22,6 +22,9 @@ public static class DocChainFixtures
     /// <summary>The example's 26 GHz link, on its Frequency sweep tab.</summary>
     public static FigureScene Link() => Window("26 GHz Link", "Frequency sweep");
 
+    /// <summary>The example's wideband receiver on its Response tab: one design across its band.</summary>
+    public static FigureScene Response() => Window("Wideband", "Response");
+
     /// <summary>The 26 GHz link with the Blocks view's Levels strip on: the link's front, an array and a conversion.</summary>
     public static FigureScene Levels() => Window("26 GHz Link", levels: true);
 

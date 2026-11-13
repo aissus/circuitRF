@@ -14,6 +14,8 @@ flowchart LR
     calc --> readouts["ChainCapacity, ChainLink<br/>noise, SNR, rate, DC power,<br/>NF allowance, ceiling"] --> ds
     calc --> txr["ChainTransmit<br/>a transmitter's output: Pout, CW,<br/>back-offs, ACLR, noise, spurs"] --> ds
     io --> sweep["ChainBudget.Sweep<br/>the whole chain at every point"] --> ds
+    io --> rsp["ChainBudget.Response<br/>one design across a band,<br/>its LOs and filters fixed"] --> ds
+    fid["ChainImage, ChainMismatch<br/>each mixer's image band;<br/>the two-ports cascaded"] --> calc
     parts["ChainParts<br/>each part's budget;<br/>System-block defaults from<br/>ComponentTypeRegistry"] --> calc
     calc --> ds["ChainBudget.ToDataSet<br/>per-stage cubes over a stage axis"]
     ds --> verb["circuitrf chain / MCP run analysis=chain<br/>-o budget.npy"]
@@ -149,8 +151,8 @@ of undoing the pick, flags its File box and asks for a file (`ChainFileWanted`).
 
 Measured on a matched three-stage chain (an LNA with noise data, a passive 3-port read 1 → 3, a gain block with NF and
 IIP3 stated): 1-Tone gain and NF 4×10⁻¹⁵ dB from the budget, 2-Tone IIP3 1.6×10⁻⁴ dB
-(`ChainBudgetTests.AnSnpStage_SimulatesToItsBudget`). The budget, like every stage's, ignores mismatch between stages:
-a file whose S11 or S22 is not small reads differently in the simulation, which is the bench's point.
+(`ChainBudgetTests.AnSnpStage_SimulatesToItsBudget`). The budget, like every stage's, ignores mismatch between stages
+unless the chain asks for it (§2.6): matched, a file whose S11 or S22 is not small reads differently in the simulation.
 
 ### 2.2 The levels, the canceller and the demo
 
@@ -207,7 +209,9 @@ of 2, since a real uneven tree has unequal paths.
 
 **The sweeps** (`ChainBudget.Sweep`) evaluate the whole design again at every point, from the unresolved design, so the
 expressions and tables move. A point is one chain: its own copy drops the sweeps, or an Mrx of 1 (no combiner left)
-would be refused for sweeping a combiner it no longer has.
+would be refused for sweeping a combiner it no longer has. Every Filter at a point is its own response there
+(`ChainStageContext.Response`), so a band written as numbers rolls off as the carrier leaves it; until §2.6 it was its
+IL at every carrier and a note said so.
 
 ### 2.4 The level diagram
 
@@ -311,6 +315,71 @@ warning on every run of the bench.
 benches' node cube generalised, exact at the points. Every analysis goes through the same pre-write checks as a receive
 chain's (`Order`, `EnvelopeFits`); an IQ modulator's LO is a converter's tone like a mixer's.
 
+### 2.6 The response, the image band and the cascade with mismatch
+
+**Off the carrier, a Filter is its response.** `ChainStageContext.Response` is the one switch: set for a response's point,
+a sweep's point and an image, a Filter's budget is its own network there (`FilterNetwork`, the block's model) between
+50 Ω, G = |S21|² and F = (1 − |S22|²)/|S21|² (Bosma). The prototype is lossless and the IL a flat factor on S21, so that F
+is the IL at every frequency; the gain is where the roll-off shows. At the carrier the switch is off and the Filter is
+its IL, as before: a single budget is unchanged to the byte.
+
+**The response** (`ChainBudget.Response`, `ChainResponse`) is the design budgeted at its carrier, then again at each
+input frequency of the band with every frequency parameter (`ChainScaling.IsFrequency`, a parameter whose unit is a
+frequency: an LO, a filter's band, a canceller's bandwidth) left where the carrier resolved it and every other value of
+the frequency read at the frequency its stage then sees (`ChainScaling.At`). That one rule separates the design from
+the device: `F1 = freq - 4GHz` placed the preselector for the carrier and stays put; `NF = 0.05*f_GHz + 0.6` is the
+LNA's and moves. The input power and the bandwidth are the carrier's; the link is not read again. It is a group of its
+own (`Response`) beside the sweeps', over an axis named `offset` or `freq`, Hz, so the file format, the DataSet, the
+window and the CLI all keep it apart from the carrier sweep.
+
+**The image band** (`ChainImage`). The budget's Friis sum takes each mixer's SSB figure, which holds T0 at the image. The
+excess over that is walked from the source at the image's own frequency through the stages in front of the mixer, every
+stage read there as its block is, and referred to the input by the signal path's noise gain to the mixer: ΔTe =
+(T_im − T0)/Gn. Three choices make the walk agree with the benches rather than with an idealisation:
+
+- *A passive stage with S-parameters delivers T0·(1 − |S21|² − |S22|²)*, not T0·(1 − |S21|²): the System Amplifier's NF is
+  one noise wave into its input and nothing out of it, so a stopband in front of an amplifier feeds it almost nothing.
+  `ChainTransmit`'s receive band found the same (§3).
+- *The mixer's input adds T0·|S22|² of the stage before it*: the isolator the benches place in front of a mixer sends its
+  terminated port's noise back out of its input, and that stage reflects it in. With a filter right before the mixer the
+  two together are T0 + |S21|²·(T − T0), T0 in the stopband, so a preselector that rejects the image adds nothing.
+- *Through an earlier mixer, both inputs that convert to the frequency*, f + Flo and |f − Flo|, each through its own
+  isolator, and the mixer's own noise as its SSB figure less the two sidebands' T0. A converter is read with its
+  carrier's numbers, the one number its block carries for both sidebands.
+
+Each term is a vector over the source and the stages, so a stage's share of F − 1 holds the noise it sends through an
+image, which is what a noise run's shares (`NFc`) hold. The source's own image-band noise is no part's in a run and no
+stage's here; with an image counted the shares sum to less than 100 %, and the 1-Tone bench's per-stage NF, which a run
+builds from its shares, is compared with the budget's same sum (`ChainBenches`, `nfAt`) rather than with the chain cut
+at the stage, which then differs from it.
+
+**The threshold.** Counting every image exactly moves every number of every chain with a mixer by 10⁻⁶ to 10⁻⁴ dB, and
+the benches carry the budget's numbers round-trip, so every shipped bench would change in its last digits. An image is
+counted when it moves the NF by `ChainImage.ThresholdDb` = 0.001 dB or more: below the window's precision and every
+tolerance a bench is read to, above what the shipped preselectors let through (`ChainFidelityTests`, which prints them:
+the 26 GHz link's 4.36×10⁻⁴ dB, the dual conversion's second image 5.96×10⁻⁵ dB, the superhet's 8.66×10⁻⁶ dB). Every
+shipped chain and bench is the same to the byte.
+
+**The cascade with mismatch** (`ChainMismatch`). Each stage a two-port at its own input frequency: S at 50 Ω and its
+chain correlation matrix C_A (RfCore's `NoiseMetrics`: `ChainCorrelation` from noise parameters, Bosma's
+Cs = kT0·(I − S·Sᴴ) through `AdmittanceCorrelation` and `ChainFromAdmittance`). The cascade is A = Π A_k and
+C_A = Σ (Π_(j<k) A_j)·C_k·(Π_(j<k) A_j)ᴴ (Hillbrand & Russer), F = 1 + (C11·|Ys|² + 2·Re(Ys·C12) + C22)/(4kT0·Re Ys) at
+Ys = 1/50 Ω, G_T = |S21|² of the cascade; term k is stage k's share. ABCD comes from S by the textbook table, which needs
+S21 ≠ 0; a stage with none there refuses the chain. A stage with no S data is its budget's matched two-port: passive and
+reciprocal for an attenuator, a switch, a coupler's through arm and a splitter (Bosma); an isolator with no reverse path;
+every other stage unilateral with one input noise wave (Fmin = F, Zopt = 50 Ω, Rn = (F − 1)·50/4, the Amplifier's own
+NF model). So a chain of ideal stages cascades to the Friis budget, to 10⁻⁶ dB on the superhet (the filters' tiny
+S11 at a carrier off their geometric centre is the rest). Two things the benches place go into the cascade too: the
+isolator in front of each mixer (S = [[0, 0], [1, 0]], kT0 out of its input), and the matched 0 dB amplifier after an
+SnP stage with a stated NF or intercept, which stops what the next stage sends back. Without the latter the S-parameter
+noise bench read 1.6×10⁻⁴ dB off: the attenuator after the second file sent its own noise backward into that file's S22.
+
+**What with mismatch does not reach.** The intercept and compression sums take each stage's own figure with the gain to
+its nonlinearity between 50 Ω, which is the input of every block (matched) and the amplifier after an SnP file; the
+per-element view of an array's combiner is a unilateral two-port of its noise gain, its coherent gain the array's; an
+image whose mixer has a converter before it is walked between 50 Ω. A level at a node between two reflecting stages is
+the chain up to it into 50 Ω, and the Levels bench reads that node's voltage, which holds the reflected wave as well.
+
 ## 3. The benches, and what was found building them
 
 **The mixer's image termination.** A mixer's SSB noise figure is stated with its image at T0. In a chain a filter in
@@ -365,7 +434,8 @@ Combiner.
 mixer, read its HB noise figure 2.96 dB above the budget at 140 GHz and 2.77 dB at 2.45 GHz: the isolator in front of
 the mixer passes the LNA's amplified noise at the image sideband, which the budget (and an SSB figure) assumes filtered.
 A preselector between them (`F1 = freq - 4GHz`, `F2 = freq + 4GHz`, following the carrier) brings it to 3×10⁻⁴ dB. The
-26 GHz example has one for the same reason.
+26 GHz example has one for the same reason. The budget now counts the image (§2.6): the superhet's LNA straight into its
+mixer reads its harmonic-balance NF 2.8×10⁻⁵ dB from the budget, 2.44 dB of it the image's.
 
 **A single-tone harmonic-balance index is a harmonic, not a mix index.** `HB1.V("out", 1)`, not `"(1)"`: a lattice of one
 tone has a harmonic axis, and the measurement written for a mix index evaluates to nothing.
@@ -523,6 +593,20 @@ regrowth. The hand calculation is `testdata/chain/tx_reference.py`, its numbers 
 `ChainBudgetExampleTests.LinearTx_TheBudget_IsTheIndependentReference` holds the budget to at 10⁻⁶ dB
 (`ChainBudgetExampleTests.LinearTx_*`, `ChainTransmitTests`, `AmplifierLawHbTests`).
 
+**The response, the image band and the cascade with mismatch.** `testdata/chain/fidelity_reference.py` (standard library
+only) works out a superhet whose RF filter passes the image, its response across ±60 MHz with the LO fixed (each
+Butterworth filter's |S21|² = L/(1 + Ω^2n) at the point, Bosma's F for its noise, Friis with the image term) and its NF
+at the carrier, and two amplifier files whose ports reflect, cascaded by Friis on available gains with each stage's noise
+factor at the source it really sees (F = F1 + (F2(Γ = S22a) − 1)/G_A1, G_T = |S21a·S21b/(1 − S22a·S11b)|²): another
+route than the chain correlation matrices the budget takes. The budget agrees with its 65 numbers to 10⁻⁹ dB
+(`ChainFidelityTests.TheResponseTheImageAndTheMismatch_AreTheIndependentReference`). Against the benches: the superhet
+with an image-passing RF filter, harmonic-balance noise, NF 3.7×10⁻⁵ dB, every stage's from the run's shares within
+6×10⁻⁵ dB; its LNA straight into its mixer 2.8×10⁻⁵ dB, 2.44 dB of the NF the image's; two reflecting amplifier files, a
+Chebyshev filter and an attenuator with mismatch, the S-parameter noise bench 10⁻¹⁴ dB in gain and 7×10⁻¹⁶ dB in NF, where
+matched the budget reads 1.27 dB off in gain. The wideband example, the image and the mismatch both in it, reads its
+1-Tone bench's NF to 1.9×10⁻⁵ dB and gain to −1.1×10⁻⁴ dB (every stage's to 3×10⁻⁵ dB), its 2-Tone IIP3 to 2.2×10⁻⁴ dB,
+its Levels from the LNA on to 7×10⁻⁴ dB and its envelope SNR to −0.14 dB.
+
 ## 5. References
 
 Friis 1944 (doi:10.1109/JRPROC.1944.232049); Pozar, *Microwave Engineering*, 4th ed., §10.1 and §10.3; Razavi,
@@ -534,6 +618,12 @@ Proc. 2nd European Conference on Satellite Communications, 1991; A. A. M. Saleh,
 frequency-dependent nonlinear models of TWT amplifiers", IEEE Trans. Communications 29(11), 1981; L. Isserlis, "On a
 formula for the product-moment coefficient of any order of a normal frequency distribution in any number of
 variables", Biometrika 12, 1918; I. S. Reed, "On a moment theorem for complex Gaussian processes", IRE Trans.
-Information Theory 8(3), 1962. The
+Information Theory 8(3), 1962. The response, the image band and the cascade with mismatch: H. Hillbrand and P. H. Russer,
+"An efficient method for computer aided noise analysis of linear amplifier networks", IEEE Trans. Circuits and Systems
+23(4), 1976 (doi:10.1109/TCS.1976.1084200), the chain correlation matrices and their cascade; H. Bosma, "On the theory of
+linear noisy systems", Philips Research Reports Supplements 10, 1967, a passive network's noise from its S; Pozar,
+*Microwave Engineering*, 4th ed., §8.3–8.4 (a Butterworth response and the bandpass transformation), §10.2 (the
+cascade's noise figure on available gains) and §12.1, §12.3 (a two-port's power gains, and its noise figure from its
+noise parameters); Razavi, *RF Microelectronics*, 2nd ed., ch. 6 (a mixer's noise figure, its image band). The
 feature list of RxCalc (https://github.com/arhiv6/rxcalc, GPL-3) is the inspiration; only its
 README was read, and no code is taken from it.

@@ -800,6 +800,13 @@ public static class FigureCatalog
           + "the frequency, on its Frequency sweep tab — the levels at each receive element, the SNR and margin, the rate "
           + "over two streams and the DC power from 20 to 40 GHz, every point the whole chain budgeted again there."),
 
+        // Wider than the window's default, so its four plots' axes read.
+        new("chain-budget-response", DocChainFixtures.Response, 1700, 960,
+            WindowFrame.Titled("RF Chain Budget — Wideband.cchain"),
+            "The example's wideband receiver, its two measured modules cascaded with mismatch, on its Response tab: the "
+          + "gain and NF, the output signal and noise, the intercepts and the compression points over ±30 MHz of the "
+          + "carrier with the LO fixed, the IF filter rolling off at both ends and the NF rising there."),
+
         // Wider than the window's default, so the whole lineup and the lines' names at its output are in it.
         new("chain-level-diagram", DocChainFixtures.Levels, 1560, 960,
             WindowFrame.Titled("RF Chain Budget — 26 GHz Link.cchain"),

@@ -31021,6 +31021,35 @@ After review:
   catches, while a real IM3 at −374 dBm on a 200 km link was dropped as one. The budget's absent level is now −∞ (it
   absorbs), so nothing finite is a stand-in; only a bench's own results carry one, `ChainBenches.Absent`, matched exactly.
 
+## The chain budget off its carrier and between real ports: response, image noise, mismatch (CH-5a, 2026-11-13)
+
+- **A noise run's shares leave the source's image-band noise to no part.** The first image-noise budget put the source's
+  share of an image on the mixer, and the harmonic-balance bench's per-stage NF, built from the run's own shares, read
+  1.8 dB under it from the mixer on while the total agreed to 4×10⁻⁵ dB. The budget now leaves that share to no stage,
+  as the run does; with an image counted the shares sum to less than 100 %, and the bench's per-stage comparison is the
+  budget's same sum of shares rather than the chain cut at the stage.
+- **The 0 dB amplifier a bench places after an SnP file isolates as well as adds.** The first cascade with mismatch put
+  an SnP stage with a stated intercept and no extra noise straight into the stage after it, and the S-parameter noise
+  bench read 1.6×10⁻⁴ dB off: the attenuator after the file sent its own noise backward into the file's S22, which the
+  bench's unilateral amplifier stops. The cascade takes that amplifier whenever the bench places it (`SnpStageRead.NeedsAmp`),
+  noiseless or not, and reads the bench to 7×10⁻¹⁶ dB.
+- **An image's noise is the bench's only with the bench's isolator in it.** A passive stage delivers
+  T0·(1 − |S21|² − |S22|²) into what follows (the System Amplifier's NF is a wave into its input and nothing out), and the
+  isolator in front of each mixer sends T0 out of its input for the stage before it to reflect: T0·|S22|² more. Together,
+  a filter right before a mixer gives T0 + |S21|²·(T − T0), so a rejecting preselector adds nothing, and an LNA straight
+  into a mixer reads its harmonic-balance NF 2.8×10⁻⁵ dB from the budget.
+- **Counting every image exactly would change every shipped bench.** The benches carry the budget's numbers round-trip,
+  and the shipped preselectors let 10⁻⁶ to 4.4×10⁻⁴ dB through. An image is counted from 0.001 dB.
+- **The link reference had no preselector.** Its mixer's image now counted, the 22 GHz case's NF read 2.8 dB over the
+  reference; the reference design takes the example's own carrier-following preselector, which keeps it under the
+  threshold at all five cases.
+- **A Levels bench node between two reflecting files reads the reflected wave too**: the wideband example's node between
+  its preselector and its LNA reads 2.44 dB over the budget's forward level, its input 0.29 dB under; every node from the
+  LNA's output on, 7×10⁻⁴ dB.
+
+Gates: `tests/Ui.Tests/Chain/ChainFidelityTests.cs`, `tests/Ui.Tests/Examples/ChainBudgetExampleTests.cs` (`Wideband_*`),
+`testdata/chain/fidelity_reference.py`.
+
 ## The chain budget's transmit chains, the amplifier's laws and the IQ modulator (CH-2, 2026-11-12)
 
 - **A parameter that has a value meaning "as before" must say so, or every chain changes.** An Amplifier's new `Law`,

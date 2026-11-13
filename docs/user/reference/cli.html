@@ -2341,7 +2341,10 @@ loss, the power at each receive element and the input the budget took; and a cha
 transmit, receive and total power and the energy per bit. The header's input is the one budgeted, the link's when
 there is one. Each <a href="chain-budget.html#sweeps">sweep</a> the <code>.cchain</code> asks for is a line of its range and its rate, and a
 group of the DataSet named after it (<code>Frequency.SNR_dB</code>, <code>TxElements.Rate_Gbps</code>, <code>RxElements.Pdc_W</code>), each cube over the
-sweep's own axis.</p>
+sweep's own axis. A chain's <a href="chain-budget.html#response">response</a>, the one design across a band with its LOs fixed, is
+a line of its span of gain and NF and the group <code>Response</code> (<code>Response.NF_dB</code>, over <code>offset</code> or <code>freq</code>, Hz). A chain taken
+<a href="chain-budget.html#mismatch">with mismatch</a> says so on the header's line; a mixer's <a href="chain-budget.html#image">image</a> the
+budget counts is a note, and the scalar <code>NFimage_dB</code>.</p>
 <p>A <a href="chain-budget.html#transmit">transmit chain</a> reports its output instead of a receiver's sensitivity: the output power
 and its CW compression, the back-off from OP1dB and from Psat, the ACLR, the noise floor and a receive band's noise,
 and an IQ modulator's image and LO; the DataSet carries them as scalars (<code>PoutCW_dBm</code>, <code>BackoffPsat_dB</code>, <code>ACLR_dBc</code>,

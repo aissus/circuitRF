@@ -294,11 +294,23 @@ before or Rapp's and Saleh's bandpass laws, in the budget and the simulation ali
 node, with the back-off, the noise floor and the ACLR estimate in its key. The example is a 3.5 GHz linear transmitter
 for a 100 MHz NR carrier.
 
+**The budget off its carrier and between real ports (2026-11).** A chain may ask for its in-band response: the one
+design across a band of input frequencies, every LO and filter band where the carrier put them, each stage read at the
+frequency it then sees (a Filter its own response, a file its data, a mixer moving the IF, a value of the frequency read
+there), in a tab and a DataSet group of its own, apart from the carrier sweep. A carrier sweep now takes each Filter's
+response too. Each mixer's image band is walked through the stages before it and counted when it moves the NF by
+0.001 dB or more, so a chain whose filters reject its images budgets as before. And the cascade may be taken with
+mismatch: every stage a two-port, S and its noise correlation matrix (RfCore's `NoiseMetrics`), cascaded exactly, a stage
+with no S data its budget's matched two-port. The example is a 2.45 GHz wideband receiver of two measured modules whose
+preselector passes the image; its harmonic-balance noise bench reads the budget's NF, image and mismatch both in it, to
+2×10⁻⁵ dB.
+
 **Deferred:**
 
-- **Image noise from earlier stages.** The budget takes each mixer's image as filtered of the stages before it, and the
-  benches terminate the image at T0 with an isolator. A chain whose filter passes the image would need the budget to
-  carry each stage's gain at the image frequency. A blocker at the image's offset shows a chain's rejection of it.
+- **With mismatch, what is still matched.** The intercepts and the compression point sum each stage's own with the gain
+  to its nonlinearity between 50 Ω; an array's combiner is one element's unilateral two-port; an image behind an
+  earlier converter is walked between 50 Ω. The Levels bench reads a node's voltage, which between two reflecting stages
+  holds the reflected wave; the budget's level there is the chain up to it into 50 Ω.
 - **A multi-conversion chain end to end.** Its 1-Tone, Levels, Blockers, Envelope and Demo benches are per conversion
   (a harmonic-balance noise run takes two tones, an envelope run two fundamentals); the window's Levels tab shows its
   budget alone, and its 2-Tone bench, whole at MaxMixOrder 5 under the 600-product cap, reads 3×10⁻³ dB high.
@@ -308,8 +320,6 @@ for a 100 MHz NR carrier.
 - **Rapp's IM3 at the operating point.** The budget gives a Rapp stage the cubic's intercept at its 1 dB point, which is
   pessimistic away from compression for p ≥ 2 (4 dB on the linear transmitter's two tones); the law's own IM3 at a
   drive needs its two-tone describing function, an integral.
-- **A filter's roll-off in a frequency sweep.** The sweep exists, and every expression and table moves with it, but a
-  Filter stage is still its passband IL at every point; a carrier outside its passband is noted, not attenuated.
 - **The PA's compression in the link budget.** The budget takes Pout = Psat − Backoff; the TX bench measures how far an
   NR carrier comes out below it (0.92 dB at 8 dB on the example), and that is not fed back.
 - **Optimising array sizes or the carrier.** The sweeps show the trade; choosing a point is the user's.

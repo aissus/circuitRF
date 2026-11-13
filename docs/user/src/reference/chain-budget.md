@@ -4,7 +4,7 @@ slug: reference/chain-budget.html
 doc-kind: Reference Guide
 breadcrumb: Docs > Reference > RF Chain Budget
 lede: A receive or transmit chain stage by stage, each stage a System block with its own parameters - gain, noise figure, intercepts, compression, sensitivity and dynamic range in closed form, an N-way array included, or a transmitter's output power, back-off, ACLR and noise floor - and one action that writes the chain as test benches whose simulations put a number beside every one of them.
-keywords: chain budget, link budget, cascade, EIRP, free-space path loss, atmospheric attenuation, Shannon capacity, data rate, fractional bandwidth, energy per bit, DC power, PAE, back-off, frequency-scalable, frequency sweep, stage count, NF allowance, n258, receiver, Friis, noise figure, cascaded IP3, IIP3, OIP3, P1dB, sensitivity, MDS, noise floor, SFDR, SNR, phased array, array gain, array factor, beam steering, taper, combiner, combining tree, active combiner, Wilkinson, phase shifter, limiter, splitter, superhet, dual conversion, second IF, image rejection, levels, blocker, IM3, canceller, cancellation depth, EVM, constellation, demodulation, transmit chain, transmitter, up-conversion, sideband, IQ modulator, LO feedthrough, power amplifier, PA, Psat, ACLR, ACPR, AM-AM, AM-PM, Rapp, Saleh, bandpass nonlinearity, receive band, .cchain
+keywords: chain budget, link budget, cascade, EIRP, free-space path loss, atmospheric attenuation, Shannon capacity, data rate, fractional bandwidth, energy per bit, DC power, PAE, back-off, frequency-scalable, frequency sweep, stage count, NF allowance, n258, receiver, Friis, noise figure, cascaded IP3, IIP3, OIP3, P1dB, sensitivity, MDS, noise floor, SFDR, SNR, phased array, array gain, array factor, beam steering, taper, combiner, combining tree, active combiner, Wilkinson, phase shifter, limiter, splitter, superhet, dual conversion, second IF, image rejection, image noise, mismatch, noise correlation, in-band response, filter roll-off, levels, blocker, IM3, canceller, cancellation depth, EVM, constellation, demodulation, transmit chain, transmitter, up-conversion, sideband, IQ modulator, LO feedthrough, power amplifier, PA, Psat, ACLR, ACPR, AM-AM, AM-PM, Rapp, Saleh, bandpass nonlinearity, receive band, .cchain
 ---
 
 <nav class="toc">
@@ -16,6 +16,8 @@ keywords: chain budget, link budget, cascade, EIRP, free-space path loss, atmosp
 <li><a href="#stages">The stages, and the parts a stage can be</a></li>
 <li><a href="#scaling">Values that follow the frequency</a></li>
 <li><a href="#cascade">What the cascade computes</a></li>
+<li><a href="#image">The image band</a></li>
+<li><a href="#mismatch">With mismatch</a></li>
 <li><a href="#transmit">Transmit chains</a></li>
 <li><a href="#laws">The amplifier's laws</a></li>
 <li><a href="#iqmod">The IQ modulator</a></li>
@@ -24,6 +26,7 @@ keywords: chain budget, link budget, cascade, EIRP, free-space path loss, atmosp
 <li><a href="#link">A link in front of the chain</a></li>
 <li><a href="#readouts">SNR, rate, DC power and the NF allowance</a></li>
 <li><a href="#sweeps">Sweeps</a></li>
+<li><a href="#response">The in-band response</a></li>
 <li><a href="#transfer">Transfer to Schematic</a></li>
 <li><a href="#conversions">More than one conversion</a></li>
 <li><a href="#steering">Steering the beam in simulation</a></li>
@@ -56,8 +59,8 @@ two differences that matter here:
 - **Tools ▸ RF Chain Budget** opens a new chain: an LNA, a filter and a second amplifier.
 - A `.cchain` in the workspace tree opens on a double-click.
 - **File ▸ New ▸ Examples ▸ RF Chain Budget** has a 2.45 GHz superhet, a four-element steered array, a front end
-  with a canceller, a dual-conversion receiver, a 26 GHz link and a 3.5 GHz linear transmitter, each already
-  transferred.
+  with a canceller, a dual-conversion receiver, a 26 GHz link, a 3.5 GHz linear transmitter and a wideband receiver of
+  measured modules whose preselector passes its image, each already transferred.
 
 {{ui: chain-budget}}
 
@@ -88,8 +91,8 @@ The window has three parts, and every edit recomputes all of them at once:
 - **The cascade, the levels and the canceller**, [Data Display](data-display.html) tabs: the cascade table, one
   row per stage; the [levels at every node](#levels), the budget's lines with the transferred benches' simulated
   points once they have run; the [Link](#link) tab, with the link's and the receiver's inputs and numbers; a tab for
-  each [sweep](#sweeps) the chain asks for; and, for a chain with a canceller, [its depth](#canceller) against its
-  errors. The chain's totals are below them.
+  each [sweep](#sweeps) the chain asks for; the chain's [response](#response) across a band, when it asks for one; and,
+  for a chain with a canceller, [its depth](#canceller) against its errors. The chain's totals are below them.
 
 Drag the gap between two of the three parts to give one more height.
 
@@ -111,6 +114,7 @@ as a tree combiner whose N is not a power of 2, is not made, and the reason is s
 | Input power | The signal at the input. In an array, at **each element**. |
 | Source temperature | The noise temperature of what drives the input, an antenna's for instance. 290 K is T0. |
 | Required SNR | What the demodulator needs: sensitivity is the MDS plus this. |
+| with mismatch | Cascade every stage's two-port S-parameters and noise, so the gain and the NF are those between real ports. Off: every stage matched. See [With mismatch](#mismatch). |
 | Blockers | Carriers at the input besides the signal: an offset from the frequency (MHz when bare) and a level, dBm, each pair separated by `;` (`150 MHz, -40; 20 MHz, -50`). See [Levels](#levels). |
 | Direction | `Receive`, the default, or `Transmit`: a chain driven at its input and read at its output. See [Transmit chains](#transmit). |
 | RxOffset, RxBandwidth | A transmit chain's receive band, where its output noise is read: its centre's offset from the carrier at the output and its width, MHz. Blank offset: none. Shown only when Direction is `Transmit`; a receive chain keeps the values. |
@@ -185,6 +189,10 @@ The budget does not extrapolate. It refuses the chain, naming the stage, when:
 A blocker that reaches the stage outside the file's frequencies is carried at the file's nearest frequency, as the block
 holds it in a simulation, and the Notes say so.
 
+The budget reads the stage as though its neighbours were 50 Ω, which they are not when two files that reflect sit side
+by side, or a file next to a filter's skirt. **with mismatch** cascades the file's own S and noise with its neighbours'
+instead: see [With mismatch](#mismatch).
+
 ## Values that follow the frequency {#scaling}
 
 A stage parameter that is a number may also be written as a value of the frequency, so a stage scales as the carrier
@@ -239,11 +247,61 @@ the same form: when two stages compress at similar levels the cascade compresses
 [agreement](#agreement)).
 
 **A mixer's noise figure is its single-sideband one**, and an SSB figure is stated with the image sideband terminated at
-T0. The budget also takes the image as filtered of every earlier stage's noise, which is what a preselector is for. That
-holds when the image filter is right in front of the mixer: a stage between them, an amplifier say, puts its own noise
-at the image, which the budget does not have. **To see how much of an image a chain rejects**, give it a blocker at the
-image's offset: the [levels](#levels) carry it through each filter's own response and each mixer, and its level at the
-output, against the signal's, is the chain's rejection of that image.
+T0. What really reaches the mixer at its image is what the stages before it pass and add there, and the budget counts
+it: [the image band](#image). **To see how much of an image's signal a chain rejects**, give it a blocker at the image's
+offset: the [levels](#levels) carry it through each filter's own response and each mixer, and its level at the output,
+against the signal's, is the chain's rejection of that image.
+
+## The image band {#image}
+
+A mixer converts both of the inputs that land on its output: the signal, and its image on the other side of the LO,
+f_im = \|f_IF − `Flo`\| (an up-converter's f_IF + `Flo`). Its SSB noise figure takes T0 at the image. The budget walks
+the stages in front of the mixer at the image's own frequency and takes what they really deliver there:
+
+| | |
+|---|---|
+| T_im | the noise temperature delivered into the mixer at f_im, from the source on: each stage there as its block is (a Filter its own response, an S-parameter data stage its file, a value of the frequency read there; an LO and a filter's band where the carrier put them), passing g·T of what arrives and adding its own noise, g·T0·(F − 1), or for a passive network with S-parameters T0·(1 − \|S21\|² − \|S22\|²), what it delivers into a match (Bosma's theorem: in a stopband, where it reflects, almost none); and T0·\|S22\|² of the stage right before the mixer, the noise of the isolator the benches place there, which that stage reflects back in |
+| ΔTe | (T_im − T0) / G, G the gain from the input to the mixer: the image's share of Te. The System Mixer converts both sidebands with its `ConvGain`, so the excess converts as the signal does |
+
+A filter right in front of the mixer gives T_im = T0 + \|S21(f_im)\|²·(T − T0): T0, and nothing added, where it rejects
+the image, and the noise of every stage before it where it passes it. An LNA straight into a mixer costs about 3 dB.
+Through an earlier mixer the walk takes both inputs that convert to the image, so a second conversion's image reaches
+back to the RF bands that land on it.
+
+**An image is counted when it moves the NF by 0.001 dB or more**, so a chain whose filters reject its images budgets
+exactly as before. Every chain the examples ship keeps its images under that: the 26 GHz link's preselector lets
+4.4×10⁻⁴ dB through, the dual-conversion receiver's second image 6×10⁻⁵ dB, the superhet's 9×10⁻⁶ dB. A counted image is
+said in the Notes with what it adds (`MIX: its image at 2.31 GHz adds 2.21 dB to the NF`), the [level
+diagram](#level-diagram)'s key gives it, and the DataSet has it as `NFimage_dB`. The NF, as the IEEE defines it, takes
+the source at T0 in the image band too; the noise floor, the MDS and the SNR take it at the source temperature.
+
+The cascade table's **F−1 share** puts the noise each stage sends through an image on that stage, as a noise run's
+shares do. The source's own noise in the image band is no stage's, in the budget as in a run, so with an image counted
+the shares sum to less than 100 %: the rest is the source's, through the image.
+
+## With mismatch {#mismatch}
+
+Tick **with mismatch** beside the system inputs (`"Mismatch": true` in the file) and the cascade is no longer the
+product of each stage's gain between matched ports. Every stage is a two-port, its S-parameters at 50 Ω and its noise as
+its chain correlation matrix, and the chain is their exact cascade (Hillbrand and Russer's), so the gain and the NF are
+those between real 50 Ω ports, every reflection between neighbours in them. A row of the cascade is the chain up to
+that stage, terminated in 50 Ω.
+
+| Stage | Its two-port |
+|---|---|
+| Filter | its own network, the model the Filter block simulates with, and a passive network's noise |
+| S-parameter data | the file between `In` and `Out` at 50 Ω, the other ports terminated; its noise from its noise data, or a passive network's; a stated `NF` or `IIP3` the matched 0 dB Amplifier after it that the benches place |
+| Attenuator, Switch, Coupler, Splitter | its budget's: matched, reciprocal, a passive network's noise |
+| Isolator (`Circulator`) | matched, no reverse path, its terminated port's noise coming out of its input |
+| Mixer | as every other stage, behind the isolator the benches place in front of it |
+| every other stage | **its budget's matched two-port**: no reflection and no reverse path, its gain the budget's (a Combiner's noise gain, its coherent gain the array's), its noise one wave of T0·(F − 1) into its input, the Amplifier's own model of an NF |
+
+A stage with no S-parameters of its own is its budget's matched two-port, so a chain of them gives the matched budget
+exactly. What moves is where a Filter or a file reflects, and what its neighbours do with that: a preselector's S22 is
+the source an LNA's noise parameters see, and the two together set the gain. A mixer's image is the exact cascade too,
+when no converter comes before it. The intercepts and the compression point keep their sums, each stage's with the gain
+to where its nonlinearity is: the input of every block, which is matched, and for a file the amplifier after it. Off,
+the default, every stage is matched and nothing moves.
 
 ## Transmit chains {#transmit}
 
@@ -518,13 +576,40 @@ The **Sweeps** row of the Link tab takes up to three sweeps, each one line, as t
 Each point is the whole chain budgeted again there, every expression and table read at that point's carrier. Each sweep
 has its own tab: the link levels (EIRP, the received power at each element, the chain's input, the ceiling and the
 noise, the MDS), the SNR and margin, the rate and the DC power, over its own axis, a log one for an array's sizes. A point the budget refuses (a table read
-outside its range) is left out, and one note gives how many and why; a carrier where a Filter's passband no longer holds
-the stage's frequency is noted, since the budget takes its loss there and not its roll-off.
+outside its range) is left out, and one note gives how many and why. A Filter is its own response at each carrier, so a
+band written as numbers rolls off as the carrier leaves it, and one written as a value of the frequency
+(`F1 = freq - 1.5GHz`) follows it.
 
 {{ui: chain-budget-link}}
 
 A sweep is not a bench: transfer the chain at a point (set the frequency, or `Elements`, or `N`) and its benches check
 that point. `circuitrf chain -o` writes each sweep as a group of the DataSet, named after it (`Frequency.SNR_dB`).
+
+## The in-band response {#response}
+
+A carrier [sweep](#sweeps) designs the chain again at every point: its LOs and its filters move with the carrier. The
+**Response** row of the Link tab asks the other question, how **this** design answers across a band: `-30 MHz, 30 MHz,
+61` (from, to, points, MHz when bare), offsets from the carrier, or with **Of** set to `Frequency`, input frequencies.
+Every LO, every filter's band and every other frequency parameter stays where the carrier put it, and the signal moves
+through them. At each point each stage is read at the frequency it then sees:
+
+| Stage | At a point |
+|---|---|
+| Filter | its own response: \|S21\|², and from Bosma a noise figure (1 − \|S22\|²)/\|S21\|²; its roll-off |
+| S-parameter data | its file there |
+| Mixer | the frequency moved by its fixed LO: the IF moves with the input |
+| a value of the frequency | read there; a table refuses the point outside its rows |
+| a frequency parameter: `Flo`, a filter's `F1`, `F2` and `Fc`, a canceller's `Bint` | the carrier's |
+
+The input power and the bandwidth stay the carrier's. Each point counts its own [images](#image) and, with
+[mismatch](#mismatch), its own reflections. The **Response** tab plots the gain and NF, the output signal and its noise in
+the bandwidth, the intercepts and the compression points, against the offset in MHz or the input frequency in GHz. At
+the carrier the response is the budget, but for a filter's passband ripple, which the budget's IL leaves out.
+
+{{ui: chain-budget-response}}
+
+`circuitrf chain -o` writes it as the group `Response` of the DataSet (`Response.NF_dB`, over `offset` or `freq`, in Hz),
+and the report gives its span. Like a sweep, it is not a bench.
 
 ## Transfer to Schematic {#transfer}
 
@@ -553,7 +638,8 @@ The chain's parts are placed as written. Three things are the bench's and not th
 - an **isolator in front of each mixer** (a Circulator whose third port is terminated at the ambient). It terminates the
   mixer's image at T0, the termination its SSB noise figure is stated against. A filter in front of a mixer reflects the
   image instead, and the mixer's noise then differs: in the superhet example the harmonic-balance noise figure reads
-  0.28 dB higher without the isolator. Delete it to see what your own image termination does;
+  0.28 dB higher without the isolator. The budget counts what reaches the image behind it ([the image band](#image)).
+  Delete it to see what your own image termination does;
 - in an array, the **arriving wave's path**: a TLIN of (k − 1)·`Steer` in front of element k (on the Steering and
   Combiners benches, the splitter's own path phases instead).
 
@@ -930,6 +1016,16 @@ no circuit: EIRP, the path and every readout agree with an independent calculati
 to 10⁻⁹ at five points. Its TX bench reads the output at 10 dB of overdrive 0.44 dB under `Psat`, and at the 8 dB
 back-off 0.92 dB under the budget's `Psat − Backoff − Loss`, at 6.3 % EVM and −30.3 dBc ACPR.
 
+The wideband receiver, its budget taken with mismatch and counting its image, reads its 1-Tone bench's NF to
+1.9×10⁻⁵ dB and its gain to −1.1×10⁻⁴ dB, every stage's NF from the run's shares to 3×10⁻⁵ dB; its 2-Tone bench's IIP3 to
+2.2×10⁻⁴ dB; its envelope SNR 0.14 dB under, one record's statistics; and its Levels bench every node from the LNA's output
+on to 7×10⁻⁴ dB. Its input and the node between its two modules read 0.29 dB under and 2.44 dB over: a node's voltage
+holds the wave the next file reflects as well as the one going forward, and the budget's level is the forward one into
+50 Ω. Matched, the same budget is 0.76 dB under the run's gain and 0.53 dB over its NF, and without its image 2.21 dB under
+its NF. An S-parameter noise bench of two reflecting amplifier files, a filter and a pad reads the budget with mismatch to
+10⁻¹⁴ dB in gain and NF, and an independent standard-library calculation (`testdata/chain/fidelity_reference.py`, Friis on
+available gains) the same to 10⁻⁹ dB.
+
 The array's Steering bench puts its pattern on the closed-form array factor to 3×10⁻⁹ dB within 3 dB of each peak and
 to 10⁻⁶ dB down to −60 dB, and its gain, NF and array gain at each peak on the budget to 10⁻¹⁴ dB. The Combiners bench
 reads each variant's gain and NF to 10⁻¹⁴ dB; each variant's intercepts and compression point, transferred on its own,
@@ -964,7 +1060,7 @@ as the part's netlist line carries them.
 
 | Key | Meaning |
 |---|---|
-| `FormatVersion` | 1; 2 for a chain that uses a value of the frequency, a budget-only parameter, a `Levels` combiner, a link, a sweep or a readout input; 3 for a transmit chain, an IQ modulator, an Amplifier's `Law`, `Psat`, `P`, `PhiSat` or `PhiMax`, or a converter's `Sideband`. A file from a newer circuitRF is refused, not read in part. |
+| `FormatVersion` | 1; 2 for a chain that uses a value of the frequency, a budget-only parameter, a `Levels` combiner, a link, a sweep or a readout input; 3 for a transmit chain, an IQ modulator, an Amplifier's `Law`, `Psat`, `P`, `PhiSat` or `PhiMax`, or a converter's `Sideband`; 4 for a response or the cascade with mismatch. A file from a newer circuitRF is refused, not read in part. |
 | `Direction` | Optional: `"Transmit"` for a [transmit chain](#transmit). Absent: a receive chain. |
 | `RxBandOffsetHz`, `RxBandHz` | Optional: a transmit chain's receive band, its centre's offset from the carrier at the output and its width. |
 | `FrequencyHz`, `BandwidthHz`, `InputPowerDbm`, `TemperatureK`, `RequiredSnrDb` | The [system inputs](#inputs). Absent: 2.45 GHz, 1 MHz, −70 dBm, 290 K, 10 dB. |
@@ -976,6 +1072,8 @@ as the part's netlist line carries them.
 | `FractionalBandwidth`, `Streams`, `NfAllowanceDb`, `RxBackoffDb` | Optional: the [readouts' inputs](#readouts). Absent: the stated bandwidth, 1, 1 dB, 10 dB. |
 | `Link` | Optional: `{"Tx": {"Psat": "…", …}, "Path": {"Distance": "200 m", …}}`, the [link](#link)'s inputs by name, as a stage's parameters are. |
 | `Sweeps` | Optional: `[{"Of": "Frequency", "From": 20e9, "To": 40e9, "Points": 41}, …]`, `Of` one of `Frequency`, `TxElements`, `RxElements`. See [Sweeps](#sweeps). |
+| `Response` | Optional: `{"From": -30e6, "To": 30e6, "Points": 61, "Offset": true}`, Hz, offsets from `FrequencyHz` (`"Offset": false`: input frequencies). See [The in-band response](#response). |
+| `Mismatch` | Optional: `true` to cascade every stage's two-port with mismatch. See [With mismatch](#mismatch). |
 
 A chain has at most one Combiner. An `SnP` stage's `File` is a path; a relative one resolves from the workspace the
 `.cchain` belongs to, or its own folder when it belongs to none, and so does a [table](#scaling)'s.
@@ -986,12 +1084,14 @@ A chain has at most one Combiner. An `SnP` stage's `File` is a path; a relative 
 circuitrf chain Superhet.cchain                      the cascade, as the window shows it
 circuitrf chain Superhet.cchain -o budget.npy        the budget as a DataSet: per-stage cubes over a stage axis
 circuitrf chain "26 GHz Link.cchain" -o link.npy     the link's numbers as scalars, each sweep a group of its own
+circuitrf chain Wideband.cchain -o wideband.npy      the budget with mismatch, and its response as the group Response
 circuitrf chain Superhet.cchain --level-diagram levels.svg   the level diagram, as a .svg or a .png
 circuitrf chain Superhet.cchain --to-schematic       the benches and their displays, beside the .cchain
 circuitrf hb "Superhet 2-Tone/schematic/Superhet 2-Tone.csch"
 ```
 
-A transmit chain's report reads its output in place of a receiver's sensitivity: the output power and its CW
+A chain with mismatch says so on its first line, and one with a response gives its span of gain and NF on a line of its
+own. A transmit chain's report reads its output in place of a receiver's sensitivity: the output power and its CW
 compression, the back-off from OP1dB and from Psat, the ACLR, the noise floor and the receive band's noise, and an IQ
 modulator's image and LO.
 
