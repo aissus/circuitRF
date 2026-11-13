@@ -74,7 +74,7 @@ flowchart LR
   and, with an Amp after it, the active combiner; its thermal noise comes from its S like every passive block's.
 
 The benches are run by the analyses that already exist, and every check is a measurement row. The one addition below
-the Design layer is the System Amplifier's bandpass laws (§2.4), which a transmit chain's PA needs and which every
+the Design layer is the System Amplifier's bandpass laws (§2.5), which a transmit chain's PA needs and which every
 schematic can use.
 
 ### 1.1 How it lines up with `docs/design/plugins.md`
@@ -225,6 +225,11 @@ it with each node on a gap between two blocks; `circuitrf chain --level-diagram`
 nodes evenly spaced. `ChainLevelDiagram.NodesBetween` is the one rule for where a node stands under a lineup — the
 window applies it to the blocks as laid out, the Copy's picture to the blocks as it draws them.
 
+**A transmit chain's** (§2.5) is the same figure read toward the output: the signal named Pout; the Psat referred to
+each node (`ChainTransmit.PsatAtNodes`, the recursion the readout's Psat ends in) dashed over the P1dB and held in the
+window's top; and a key of the back-off from both, the noise floor in dBm/Hz and the ACLR estimate, the readouts'
+own (`ChainTransmit.Read`). The sensitivity and the SFDR are left out; a receiver's plan carries none of it.
+
 **Not a Data Display plot**, because a level plan shades between its lines, writes its values at the nodes and, under
 the blocks, puts its nodes where the gaps are, which a linear axis cannot. It takes the same window rule
 (`ChainBudgetDisplay.LevelWindow`); the diagram's window also holds the P1dB, the sensitivity and the EIRP.
@@ -254,7 +259,7 @@ exist (a kept range of the node axis). The dB plot reaches 10 dB beyond its NF, 
 or a budget-only parameter), so a 1.8.2 reader refuses such a chain rather than dropping the fields on save, and a
 plain chain stays readable there.
 
-### 2.4 Transmit chains, the amplifier's laws and the IQ modulator
+### 2.5 Transmit chains, the amplifier's laws and the IQ modulator
 
 **A direction, not a second budget.** `ChainDesign.Direction` is Receive or Transmit; the cascade is the same function
 and every row the same numbers. A transmit chain's readouts (`ChainTransmit`) are read from the result at the output:

@@ -290,7 +290,9 @@ CW compression through every stage's own law, its back-off from OP1dB and Psat, 
 receive band. A Mixer up-converts to its sum sideband when asked; an IQ modulator is composed of two Mixers, a 90°
 Hybrid and two Combiners, with its gain and phase imbalance and LO feedthrough; the System Amplifier has a `Law`, Tanh as
 before or Rapp's and Saleh's bandpass laws, in the budget and the simulation alike. A transmit chain transfers to its own
-1-Tone, 2-Tone, Envelope and PA benches. The example is a 3.5 GHz linear transmitter for a 100 MHz NR carrier.
+1-Tone, 2-Tone, Envelope and PA benches, and its level diagram draws its output power, the P1dB and the Psat at every
+node, with the back-off, the noise floor and the ACLR estimate in its key. The example is a 3.5 GHz linear transmitter
+for a 100 MHz NR carrier.
 
 **Deferred:**
 
@@ -300,9 +302,9 @@ before or Rapp's and Saleh's bandpass laws, in the budget and the simulation ali
 - **A multi-conversion chain end to end.** Its 1-Tone, Levels, Blockers, Envelope and Demo benches are per conversion
   (a harmonic-balance noise run takes two tones, an envelope run two fundamentals); the window's Levels tab shows its
   budget alone, and its 2-Tone bench, whole at MaxMixOrder 5 under the 600-product cap, reads 3×10⁻³ dB high.
-- **A transmit chain's levels, and a transmit array.** A transmit chain's quantities are not on the level diagram
-  yet, and a transmit chain is one element: a splitter into elements and each element's PA is not a bench. The link's
-  transmitter is still closed form, one PA and a loss per element.
+- **A transmit array.** A transmit chain is one element: a splitter into elements and each element's PA is not a
+  bench. The link's transmitter is still closed form, one PA and a loss per element. The window's Levels tab plots a transmit
+  chain's levels as a receiver's; its level diagram has the transmitter's.
 - **Rapp's IM3 at the operating point.** The budget gives a Rapp stage the cubic's intercept at its 1 dB point, which is
   pessimistic away from compression for p ≥ 2 (4 dB on the linear transmitter's two tones); the law's own IM3 at a
   drive needs its two-tone describing function, an integral.

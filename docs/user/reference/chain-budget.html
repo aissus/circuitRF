@@ -4683,6 +4683,11 @@ The figure is framed as the Levels tab is, and its window also holds the P1dB, t
 IM3 under it is a ▼ on the bottom edge at its node, and its name at the output keeps its value. Over the plot, the
 frequency of each run of nodes, a dashed line at each mixer; in an array, the nodes that carry one element's levels are
 marked <strong>each of N elements</strong>: the branch the blocks draw once, &quot;× N&quot;, up to the combiner.</p>
+<p>A <a href="#transmit">transmit chain</a>'s diagram is read toward its output. The signal is <strong>Pout</strong>, the output power at every
+node, and over the P1dB, dashed, is the <strong>Psat</strong> referred to each node: the ceiling the stages up to it give,
+P_k = min(P_(k−1) + g_k, Psat_k), the chain's Psat at the output. The shading under the P1dB is the back-off. The key
+gives the <strong>back-off</strong> at the output from both, the <strong>noise floor</strong> in dBm/Hz, and the <strong>ACLR</strong> estimated from the
+OIP3 (an estimate, as <a href="#transmit">the relation</a> says). There is no sensitivity and no SFDR, which are a receiver's.</p>
 <p>With a <a href="#link">link</a>, its front stands left of the input: the EIRP, the path down to the power each element receives,
 the path's loss (and the receive antenna's gain) written on it, and the receiver's <strong>ceiling</strong>, IP1dB less
 <code>RxBackoffDb</code>, marked at the input. When the power arriving is above the ceiling it is drawn hollow, held down to it.</p>

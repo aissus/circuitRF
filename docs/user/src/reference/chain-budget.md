@@ -737,6 +737,12 @@ IM3 under it is a ▼ on the bottom edge at its node, and its name at the output
 frequency of each run of nodes, a dashed line at each mixer; in an array, the nodes that carry one element's levels are
 marked **each of N elements**: the branch the blocks draw once, "× N", up to the combiner.
 
+A [transmit chain](#transmit)'s diagram is read toward its output. The signal is **Pout**, the output power at every
+node, and over the P1dB, dashed, is the **Psat** referred to each node: the ceiling the stages up to it give,
+P_k = min(P_(k−1) + g_k, Psat_k), the chain's Psat at the output. The shading under the P1dB is the back-off. The key
+gives the **back-off** at the output from both, the **noise floor** in dBm/Hz, and the **ACLR** estimated from the
+OIP3 (an estimate, as [the relation](#transmit) says). There is no sensitivity and no SFDR, which are a receiver's.
+
 With a [link](#link), its front stands left of the input: the EIRP, the path down to the power each element receives,
 the path's loss (and the receive antenna's gain) written on it, and the receiver's **ceiling**, IP1dB less
 `RxBackoffDb`, marked at the input. When the power arriving is above the ceiling it is drawn hollow, held down to it.

@@ -278,6 +278,12 @@ clear the 100 MHz carrier's adjacent channels; the band filters then take both d
 | Noise | −117.84 dBm/Hz at the output; −83.49 dBm in the receive band |
 | Image, LO | rejected 35.17 dB at the modulator, −167.82 dBc at the output; −23.22 dBc at the modulator, −90.27 dBc at the output |
 
+Its [level diagram](#the-level-diagram) is read toward the output: the output power at every node, the P1dB and, dashed
+over it, the Psat each node's stages allow, with the back-off from both, the noise floor and the ACLR estimate in its
+key. The PA takes the output from −1.4 to 28.6 dBm and sets both limits:
+
+![The linear transmitter's level diagram: the output power from −14 dBm at the input to 28.0 dBm at the output, the P1dB and the Psat above it from the IQ modulator on, 6.0 and 8.4 dB over the output, the noise floor and the IM3 below, and the 200 MHz IF before the modulator](pictures/level-diagram-linear-tx.png)
+
 **The PA's intercept is the cubic's at its 1 dB point.** Rapp's law at `P` = 2 has no third-order term: its IM3 rises
 5 dB per dB. The budget gives it the intercept a cubic compressing where it does would have, 15.47 dBm in, and the ACLR
 estimate follows from that. The benches show what the law does instead: the 2-Tone bench's IM3 at the operating point
