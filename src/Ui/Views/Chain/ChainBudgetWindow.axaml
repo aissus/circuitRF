@@ -537,12 +537,16 @@
                         </Grid>
                     </TabItem>
                     <TabItem Header="Canceller" FontSize="13" IsVisible="{Binding HasCanceller}">
-                        <Grid ColumnDefinitions="*,4,*">
+                        <!-- The depth against its settings, and the residual through the stages after it. -->
+                        <Grid ColumnDefinitions="*,4,*,4,*">
                             <ddc:PlotControl Grid.Column="0" Name="DepthPhasePlotControl" ClipToBounds="True"
                                              Plot="{Binding DepthPhasePlot}" Library="{Binding PlotHost.Library}"
                                              CanDeletePlot="False" CanEditPlotProperties="False" CanAddMarkers="False"/>
                             <ddc:PlotControl Grid.Column="2" Name="DepthBandPlotControl" ClipToBounds="True"
                                              Plot="{Binding DepthBandPlot}" Library="{Binding PlotHost.Library}"
+                                             CanDeletePlot="False" CanEditPlotProperties="False" CanAddMarkers="False"/>
+                            <ddc:PlotControl Grid.Column="4" Name="CancellerNodesPlotControl" ClipToBounds="True"
+                                             Plot="{Binding CancellerNodesPlot}" Library="{Binding PlotHost.Library}"
                                              CanDeletePlot="False" CanEditPlotProperties="False" CanAddMarkers="False"/>
                         </Grid>
                     </TabItem>

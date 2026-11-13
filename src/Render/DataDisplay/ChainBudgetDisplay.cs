@@ -556,8 +556,12 @@ public static class ChainBudgetDisplay
     }
 
     /// <summary>The window's Canceller tab, in closed form: the depth against the phase error for five amplitude errors,
-    /// and against the bandwidth for four delay mismatches, the stage's own errors marked by its own curve.</summary>
-    public static (RfCore.Data.DataSet Data, IReadOnlyList<PlotContainerConfig> Plots) WindowCanceller(CancellerSpec c)
+    /// and against the bandwidth for four delay mismatches, the stage's own errors marked by its own curve, each with the
+    /// reference path's compression in it; with an IP3, the depth its own IM3 leaves, which no setting tunes past. And the
+    /// residual through the stages after it (<see cref="ChainCanceller.Levels"/>): the residual, the canceller's own IM3,
+    /// the residual's own IM3 there and its two products with the signal, node by node.</summary>
+    public static (RfCore.Data.DataSet Data, IReadOnlyList<PlotContainerConfig> Plots) WindowCanceller(CancellerSpec c,
+        IReadOnlyList<ChainCancellerNode>? nodes = null)
     {
         var ds = new RfCore.Data.DataSet();
         var ph = Enumerable.Range(0, 81).Select(i => -10 + 0.25 * i).ToArray();
@@ -569,24 +573,57 @@ public static class ChainBudgetDisplay
         double[] amps = [0, 0.1, 0.5, 1, 2];
         for (int k = 0; k < amps.Length; k++)
         {
-            ds.Add($"DepthPh{k}", new RfCore.Data.DataCube([phAxis], [.. ph.Select(p => Depth(amps[k], p, c.DelayErrS, c.BintHz))]) { Unit = "dB" });
+            ds.Add($"DepthPh{k}", new RfCore.Data.DataCube([phAxis], [.. ph.Select(p => Depth(c with { AmpErrDb = amps[k], PhaseErrDeg = p }))]) { Unit = "dB" });
             t1.Add(Over("budget", $"DepthPh{k}", "phase_err", $"amplitude error {amps[k]:0.##} dB", C(1 + k), false));
         }
         var t2 = new List<TraceConfig>();
         double[] delays = [0.1e-9, 0.5e-9, 1e-9, 2e-9];
         for (int k = 0; k < delays.Length; k++)
         {
-            ds.Add($"DepthBw{k}", new RfCore.Data.DataCube([bwAxis], [.. bw.Select(b => Depth(c.AmpErrDb, c.PhaseErrDeg, delays[k], b * 1e6))]) { Unit = "dB" });
+            ds.Add($"DepthBw{k}", new RfCore.Data.DataCube([bwAxis], [.. bw.Select(b => Depth(c with { DelayErrS = delays[k], BintHz = b * 1e6 }))]) { Unit = "dB" });
             t2.Add(Over("budget", $"DepthBw{k}", "bandwidth", $"delay mismatch {delays[k] * 1e9:0.##} ns", C(1 + k), false));
         }
-        return (ds, [Rect($"Depth against the phase error, delay mismatch {c.DelayErrS * 1e9:0.###} ns over {c.BintHz / 1e6:0.##} MHz",
-                          "phase error, deg", "depth, dB", 0, 0, 520, 240, t1, (0, 60), (-10, 10)),
-                     Rect($"Depth against the bandwidth, amplitude error {c.AmpErrDb:0.##} dB and phase error {c.PhaseErrDeg:0.##}°",
-                          "bandwidth, MHz", "depth, dB", 0, 0, 520, 240, t2, (0, 60), (0, 100))]);
+        if (!c.Linear)
+        {
+            // The depth the canceller's own IM3 leaves: the interference at its output over that IM3, at every setting.
+            double floor = c.PintDbm - c.ThroughLossDb - c.Im3Dbm;
+            ds.Add("DepthIm3Ph", new RfCore.Data.DataCube([phAxis], [.. ph.Select(_ => floor)]) { Unit = "dB" });
+            ds.Add("DepthIm3Bw", new RfCore.Data.DataCube([bwAxis], [.. bw.Select(_ => floor)]) { Unit = "dB" });
+            t1.Add(Over("budget", "DepthIm3Ph", "phase_err", "its own IM3", C(7), false));
+            t2.Add(Over("budget", "DepthIm3Bw", "bandwidth", "its own IM3", C(7), false));
+        }
+        var plots = new List<PlotContainerConfig>
+        {
+            Rect($"Depth against the phase error, delay mismatch {c.DelayErrS * 1e9:0.###} ns over {c.BintHz / 1e6:0.##} MHz",
+                 "phase error, deg", "depth, dB", 0, 0, 520, 240, t1, (0, 60), (-10, 10)),
+            Rect($"Depth against the bandwidth, amplitude error {c.AmpErrDb:0.##} dB and phase error {c.PhaseErrDeg:0.##}°",
+                 "bandwidth, MHz", "depth, dB", 0, 0, 520, 240, t2, (0, 60), (0, 100)),
+        };
+        if (nodes is { Count: > 0 })
+        {
+            foreach (var (name, cube) in ChainCanceller.ToDataSet(nodes).CubesIn(RfCore.Data.DataSet.DefaultGroup)) ds.Add(name, cube);
+            var t3 = new List<TraceConfig>();
+            void Add(string cube, Func<ChainCancellerNode, double> pick, string label, int color)
+            {
+                if (nodes.Any(n => double.IsFinite(pick(n)))) t3.Add(Over("budget", cube, "node", label, color, false));
+            }
+            Add("Res_dBm", n => n.ResidualDbm, "residual", C(2));
+            Add("CancIM3_node_dBm", n => n.CancellerIm3Dbm, "its own IM3", C(7));
+            Add("ResIM3_dBm", n => n.ResidualIm3Dbm, "residual's IM3", C(4));
+            Add("IMssr_dBm", n => n.SignalSignalResidualDbm, "2fs - fr", C(1));
+            Add("IMrrs_dBm", n => n.ResidualResidualSignalDbm, "2fr - fs", C(3));
+            // Framed as the Levels tab frames its IM3: the residual and the canceller's own IM3 set the window, and the
+            // residual's products, often far under any noise, reach its top only and are clipped under it.
+            var levels = nodes.SelectMany(n => new[] { n.ResidualDbm, n.CancellerIm3Dbm });
+            var other = nodes.SelectMany(n => new[] { n.ResidualIm3Dbm, n.SignalSignalResidualDbm, n.ResidualResidualSignalDbm });
+            plots.Add(Rect("The residual after the canceller, dBm", "", "dBm", 0, 0, 520, 240, t3, LevelWindow(levels, other),
+                           NodeWindow(nodes.Count)));
+        }
+        return (ds, plots);
     }
 
-    private static double Depth(double ampErrDb, double phaseErrDeg, double delayErrS, double bwHz)
-        => -10 * System.Math.Log10(System.Math.Max(CancellerSpec.Residual(ampErrDb, phaseErrDeg, delayErrS, bwHz), 1e-12));
+    /// <summary>A depth as the tab draws it: a null deeper than 120 dB (or exact) at 120.</summary>
+    private static double Depth(CancellerSpec c) => c.DepthDb is var v && (double.IsNaN(v) || v > 120) ? 120 : v;
 
     /// <summary>The window's Link tab: the link's numbers, when the chain has one, and the receiver's readouts, each a
     /// table of the budget's own scalars.</summary>

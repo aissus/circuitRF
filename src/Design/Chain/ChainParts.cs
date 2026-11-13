@@ -340,11 +340,15 @@ public static class ChainParts
              new("NFref", "", "dB", BlankAllowed: true, Help: "the reference path's noise figure; blank: passive"),
              new("AmpErr", "0.1", "dB", Help: "the cancellation path's amplitude error"),
              new("PhaseErr", "1", "deg", Help: "its phase error"),
-             new("DelayErr", "0", "s", Help: "its delay mismatch against the interference's path")],
+             new("DelayErr", "0", "s", Help: "its delay mismatch against the interference's path"),
+             new("IP3", "", "dBm", BlankAllowed: true, Implied: "",
+                 Help: "the reference path's output intercept, at the coupler's isolated port; its P1dB follows as the " +
+                       "Amplifier's Tanh law's, 9.96 dB under it at the output; blank: linear")],
             "A reference path — amplitude, phase and delay — subtracted from the main path through a directional " +
             "coupler. Its depth is set by the amplitude and phase error and, over the interference's bandwidth, the delay " +
-            "mismatch; on the wanted signal it is the coupler's through loss and the noise the reference path injects.",
-            (s, _) => CancellerSpec.Read(s).Budget()),
+            "mismatch, and with an IP3 by the reference path's own compression; its own IM3 is not cancelled. On the " +
+            "wanted signal it is the coupler's through loss and the noise the reference path injects.",
+            (s, _) => CancellerSpec.Read(s).Budget(s.Name)),
         new(Snp, "S-parameter data (SnP)", true,
             [new("File", "", "", Numeric: false, Help: "a Touchstone file (.s2p, .snp); a relative path is from the workspace", IsFile: true),
              new("In", "1", "", Help: "the file's port the chain enters at"),
@@ -524,16 +528,19 @@ public sealed record CombinerSpec(int N, bool Tree, bool Active, IReadOnlyList<C
 ///   R = 1 + a² − 2a·cos(φ − 2πντ)·sinc(πBτ),      sinc x = sin x / x
 /// </code>
 /// <para>the average over the band of |1 − a·e^(j(φ − 2πfτ))|². Its depth is −10·log10 R: 33.5 dB at 1° and 0.1 dB;
-/// with 1 ns of delay mismatch alone, 40.8 dB over 5 MHz, 28.8 dB over 20 MHz and 22.8 dB over 40 MHz.</para>
+/// with 1 ns of delay mismatch alone, 40.8 dB over 5 MHz, 28.8 dB over 20 MHz and 22.8 dB over 40 MHz. With an IP3 the
+/// reference path compresses, an amplitude error of its own, and adds an IM3 the subtraction leaves (ChainCanceller.cs).</para>
 /// </summary>
-public sealed record CancellerSpec(double CouplingDb, double IlDb, double PintDbm, double BintHz, double PrefDbm,
-                                   double? NfRefDb, double AmpErrDb, double PhaseErrDeg, double DelayErrS)
+public sealed partial record CancellerSpec(double CouplingDb, double IlDb, double PintDbm, double BintHz, double PrefDbm,
+                                           double? NfRefDb, double AmpErrDb, double PhaseErrDeg, double DelayErrS,
+                                           double Ip3Dbm = double.PositiveInfinity)
 {
     public static CancellerSpec Read(ChainStage s) => new(
         ChainValue.Or(s.Get("Coupling"), 10), ChainValue.Or(s.Get("IL"), 0), ChainValue.Or(s.Get("Pint"), -30),
         ChainValue.Or(s.Get("Bint"), 20e6), ChainValue.Or(s.Get("Pref"), 0),
         s.Get("NFref").Trim().Length == 0 ? null : ChainValue.Or(s.Get("NFref"), 0),
-        ChainValue.Or(s.Get("AmpErr"), 0), ChainValue.Or(s.Get("PhaseErr"), 0), ChainValue.Or(s.Get("DelayErr"), 0));
+        ChainValue.Or(s.Get("AmpErr"), 0), ChainValue.Or(s.Get("PhaseErr"), 0), ChainValue.Or(s.Get("DelayErr"), 0),
+        ChainValue.Or(s.Get("IP3"), double.PositiveInfinity));
 
     private double C => Math.Pow(10, -CouplingDb / 10);
 
@@ -543,13 +550,13 @@ public sealed record CancellerSpec(double CouplingDb, double IlDb, double PintDb
     /// <summary>The reference path's gain the subtraction needs, dB.</summary>
     public double RefGainDb => PintDbm + 10 * Math.Log10((1 - C) / C) - PrefDbm;
 
-    public StageBudget Budget()
+    public StageBudget Budget(string name = "")
     {
         double lt = Math.Pow(10, ThroughLossDb / 10);
         double fr = NfRefDb is { } nf ? Math.Pow(10, nf / 10) * Math.Pow(10, RefGainDb / 10) : 1;
         double f = lt + (fr - 1) * C / (1 - C);
         return new StageBudget(-ThroughLossDb, -ThroughLossDb, 10 * Math.Log10(f), double.PositiveInfinity,
-                               double.PositiveInfinity, 1, []);
+                               double.PositiveInfinity, 1, Readout(name));
     }
 
     /// <summary>The fraction of the interference left, for these errors over a band <paramref name="bwHz"/> wide centred
@@ -561,8 +568,8 @@ public sealed record CancellerSpec(double CouplingDb, double IlDb, double PintDb
         return 1 + a * a - 2 * a * Math.Cos(phaseErrDeg * Math.PI / 180 - 2 * Math.PI * offsetHz * delayErrS) * sinc;
     }
 
-    /// <summary>The cancellation depth, dB.</summary>
-    public double DepthDb => -10 * Math.Log10(Residual(AmpErrDb, PhaseErrDeg, DelayErrS, BintHz));
+    /// <summary>The cancellation depth, dB: the reference path's compression is an amplitude error of its own.</summary>
+    public double DepthDb => -10 * Math.Log10(Residual(EffectiveAmpErrDb, PhaseErrDeg, DelayErrS, BintHz));
 
     /// <summary>The residual interference at the canceller's output, dBm.</summary>
     public double ResidualDbm => PintDbm - ThroughLossDb - DepthDb;

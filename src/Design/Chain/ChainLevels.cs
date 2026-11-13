@@ -9,7 +9,7 @@
 //   IM3         3·P − 2·OIP3                              (the two tones' third-order products, each)
 //   blocker     L + Σ gᵢ(f_b)                             (a filter's |S21| at f_b, an SnP file's |S(Out,In)|, a mixer
 //                                                          moving f_b to |f_b − Flo|)
-//   margin      OP1dB − max(signal, blockers)            (before anything compresses, the whole chain's IP1dB − Pin)
+//   margin      OP1dB − max(signal, blockers, residual)  (before anything compresses, the whole chain's IP1dB − Pin)
 //   SNR         signal − noise
 //   compression OP1dB                                    (the stages up to the node; none before anything compresses)
 //   sensitivity MDS + SNR_req + G                        (the input the chain needs, carried to the node)
@@ -64,6 +64,7 @@ public static class ChainLevels
             }
             else if (double.IsFinite(interference)) interference += row.Stage.GainDb;
             double strongest = nb > 0 ? Math.Max(row.PoutDbm, blk.Max()) : row.PoutDbm;
+            if (double.IsFinite(interference)) strongest = Math.Max(strongest, interference);   // a residual, as a blocker
             nodes.Add(new ChainNodeLevel(
                 st.Name, row.PoutDbm, row.NoiseOutDbm, row.NfDb,
                 double.IsFinite(row.Oip3Dbm) ? 3 * row.PoutDbm - 2 * row.Oip3Dbm : double.NaN,

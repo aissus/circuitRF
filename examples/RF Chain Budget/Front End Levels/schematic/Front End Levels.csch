@@ -590,7 +590,7 @@
         },
         {
           "Name": "Int_calc",
-          "Expression": "(-40)*(nodeix - 1)*(nodeix - 2)*(nodeix - 3)*(nodeix - 4)/24 \u002B (-88.0209175593346)*(nodeix - 0)*(nodeix - 2)*(nodeix - 3)*(nodeix - 4)/-6 \u002B (-70.0209175593346)*(nodeix - 0)*(nodeix - 1)*(nodeix - 3)*(nodeix - 4)/4 \u002B (-71.0209175593346)*(nodeix - 0)*(nodeix - 1)*(nodeix - 2)*(nodeix - 4)/-6 \u002B (-57.020917559334606)*(nodeix - 0)*(nodeix - 1)*(nodeix - 2)*(nodeix - 3)/24",
+          "Expression": "(-40)*(nodeix - 1)*(nodeix - 2)*(nodeix - 3)*(nodeix - 4)/24 \u002B (-83.56875402703332)*(nodeix - 0)*(nodeix - 2)*(nodeix - 3)*(nodeix - 4)/-6 \u002B (-65.56875402703332)*(nodeix - 0)*(nodeix - 1)*(nodeix - 3)*(nodeix - 4)/4 \u002B (-66.56875402703332)*(nodeix - 0)*(nodeix - 1)*(nodeix - 2)*(nodeix - 4)/-6 \u002B (-52.56875402703332)*(nodeix - 0)*(nodeix - 1)*(nodeix - 2)*(nodeix - 3)/24",
           "Unit": "",
           "ShowOnSchematic": true,
           "Dimension": "None"

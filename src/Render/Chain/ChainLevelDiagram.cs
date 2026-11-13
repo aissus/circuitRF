@@ -2,13 +2,13 @@
 //  ChainLevelDiagram.cs  —  the RF Chain Budget's level diagram: one figure of the chain's levels node by node
 //
 //  The x axis is the chain's nodes (the input, then each stage's output); at each, in dBm, the signal, the noise floor
-//  and the sensitivity, the IM3, every blocker and a canceller's interference, and the compression limit; between
+//  and the sensitivity, the IM3, every blocker and a canceller's interference and own IM3, and the compression limit; between
 //  them the SNR (noise up to signal), the headroom (signal up to compression) and the SFDR (noise up to where the IM3
 //  would reach it) shaded. With a link, its EIRP stands left of the input, the path's loss on the segment down to the
 //  power each element receives, and the receiver's ceiling marked there. A transmit chain's is its output power node by
 //  node, the P1dB and the Psat referred to each node, the noise floor and the IM3, and its key the back-off from both,
 //  the noise floor in dBm/Hz and the ACLR estimate; no sensitivity and no SFDR, which are a receiver's. Every number is
-//  ChainLevels' and ChainTransmit's (and the link's own): nothing here computes a level.
+//  ChainLevels', ChainTransmit's and ChainCanceller's (and the link's own): nothing here computes a level.
 //
 //  One renderer, three callers: the window's Blocks view draws it in a strip under the blocks with each node on the
 //  gap between two blocks; the CLI's --level-diagram and the docs draw it standalone, the nodes evenly spaced.
@@ -41,7 +41,11 @@ public static class ChainLevelDiagram
     /// and <paramref name="PsatDbm"/> its Psat referred to each node (+∞ before anything saturates); null for a receiver.</summary>
     public sealed record Plan(IReadOnlyList<ChainNodeLevel> Nodes, IReadOnlyList<double> FrequencyHz, int ElementNodes, int ArrayN,
                               IReadOnlyList<string> Blockers, double RequiredSnrDb, Front? Link, double Lo, double Hi,
-                              ChainTxReadout? Tx = null, IReadOnlyList<double>? PsatDbm = null);
+                              ChainTxReadout? Tx = null, IReadOnlyList<double>? PsatDbm = null)
+    {
+        /// <summary>A canceller's own IM3 at each node from its output on (NaN before it); null when it has none.</summary>
+        public IReadOnlyList<double>? CancellerIm3Dbm { get; init; }
+    }
 
     /// <summary>The level plan of a budget; null when it was refused.</summary>
     public static Plan? For(ChainDesign d, ChainBudgetResult r)
@@ -68,10 +72,15 @@ public static class ChainLevelDiagram
             framed = framed.Append(front.PrxDbm);
             topOnly = topOnly.Concat([front.EirpDbm, front.CeilingDbm]);
         }
+        // A canceller's own IM3 reaches the top, as the IM3 does, and never sets the bottom.
+        double[]? cancIm3 = ChainCanceller.Levels(r) is { Count: > 0 } cn && cn.Any(x => double.IsFinite(x.CancellerIm3Dbm))
+            ? [.. cn.Select(x => x.CancellerIm3Dbm)] : null;
+        if (cancIm3 is not null) topOnly = topOnly.Concat(cancIm3);
         var (lo, hi) = ChainBudgetDisplay.LevelWindow(framed, topOnly);
         return new Plan(lv, [d.FrequencyHz, .. r.Stages.Select(s => s.FrequencyHz)], cmb >= 0 ? cmb + 1 : 0,
                         cmb >= 0 ? ChainParts.ReadCombiner(d.Stages[cmb]).N : 1,
-                        [.. d.Blockers.Select((b, k) => $"blocker {k + 1}")], d.RequiredSnrDb, front, lo, hi, tx, psat);
+                        [.. d.Blockers.Select((b, k) => $"blocker {k + 1}")], d.RequiredSnrDb, front, lo, hi, tx, psat)
+               { CancellerIm3Dbm = cancIm3 };
     }
 
     // ── where things go ───────────────────────────────────────────────────────
@@ -320,6 +329,8 @@ public static class ChainLevelDiagram
             series.Add(new(p.Blockers[k], Palette(theme, 5 + k), Of(x => x.BlockerDbm[kk]), 1.4f, true, true, false));
         }
         if (p.Nodes.Any(x => Level(x.InterferenceDbm))) series.Add(new("interference", Palette(theme, 2), Of(x => x.InterferenceDbm), 1.6f, false, true, false));
+        // A canceller's own IM3, dashed in the interference's colour: the floor no setting of it tunes under.
+        if (p.CancellerIm3Dbm is { } cim) series.Add(new("canceller IM3", Palette(theme, 2), [.. cim], 1.2f, true, true, false));
         series.Add(new(p.Tx is null ? "signal" : "Pout", cSignal, signal, 2.6f, false, true, true));
 
         bool roomForValues = slot >= 44;

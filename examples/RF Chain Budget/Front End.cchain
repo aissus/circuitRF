@@ -1,5 +1,5 @@
 {
-  "FormatVersion": 1,
+  "FormatVersion": 4,
   "FrequencyHz": 2450000000,
   "BandwidthHz": 4500000,
   "InputPowerDbm": -60,
@@ -18,7 +18,8 @@
         "NFref": "6",
         "AmpErr": "0.02",
         "PhaseErr": "0.2",
-        "DelayErr": "0.05 ns"
+        "DelayErr": "0.05 ns",
+        "IP3": "-5"
       }
     },
     {

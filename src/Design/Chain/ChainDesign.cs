@@ -253,13 +253,14 @@ public static class ChainValue
 public static class ChainDesignIo
 {
     public const string Extension = ".cchain";
-    public const int CurrentFormatVersion = 3;
+    public const int CurrentFormatVersion = 4;
 
-    /// <summary>A chain is written as version 2 or 3 only when it uses what the version before did not have, so an older
-    /// reader refuses it rather than dropping it on save, and every other chain stays readable there. Version 3: a
-    /// transmit chain, an IQ modulator, an amplifier's law, a converter's sideband.</summary>
+    /// <summary>A chain is written as version 2, 3 or 4 only when it uses what the version before did not have, so an
+    /// older reader refuses it rather than dropping it on save, and every other chain stays readable there. Version 3: a
+    /// transmit chain, an IQ modulator, an amplifier's law, a converter's sideband. Version 4: a canceller's IP3.</summary>
     private static int VersionOf(ChainDesign d) =>
-        d.IsTransmit || d.RxBandOffsetHz is not null
+        d.Stages.Any(s => s.Part == ChainParts.Canceller && s.Parameters.ContainsKey("IP3")) ? 4
+        : d.IsTransmit || d.RxBandOffsetHz is not null
         || d.Stages.Any(s => s.Part == ChainParts.IqMod || s.Parameters.Keys.Any(k => k is "Law" or "Psat" or "P" or "PhiSat" or "PhiMax" or "Sideband")) ? 3
         : d.FractionalBandwidth is not null || d.Streams != 1 || d.Link is not null || d.Sweeps.Count > 0 || d.NfAllowanceDb != 1 || d.RxBackoffDb != 10
         || d.Stages.Any(s => s.Parameters.Any(kv => kv.Key is "Pdc" or "GainPerStage" || ChainScaling.IsScaled(kv.Value)))

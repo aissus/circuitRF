@@ -162,6 +162,11 @@ internal static class Chain
         Console.WriteLine($"  thermal floor {D(t.ThermalFloorDbm)} dBm, output noise {D(t.NoiseOutDbm)} dBm, MDS {D(t.MdsDbm)} dBm, "
                         + $"sensitivity {D(t.SensitivityDbm)} dBm at {D(d.RequiredSnrDb)} dB SNR");
         Console.WriteLine($"  SNR {D(t.SnrDb)} dB, SFDR {D(t.SfdrDb)} dB" + (t.ArrayGainDb > 0 ? $", array gain {D(t.ArrayGainDb)} dB" : ""));
+        if (ChainCanceller.Index(d) is >= 0 and var ci && CancellerSpec.Read(d.Stages[ci]) is var c)
+            Console.WriteLine($"  canceller {d.Stages[ci].Name}: depth {D(c.DepthDb)} dB, residual {D(c.ResidualDbm)} dBm a tone at its output"
+                            + (c.Linear ? "" : $"; its own IM3 {D(c.Im3Dbm)} dBm, {D(Math.Abs(c.ResidualDbm - c.Im3Dbm))} dB "
+                                             + (c.ResidualDbm >= c.Im3Dbm ? "under" : "over") + $" the residual; its compression {D(c.CompressionDb)} dB, "
+                                             + $"taken back at AmpErr {c.AmpErrForNullDb:0.####} dB"));
         if (ChainCapacity.Read(r) is { } o)
             Console.WriteLine($"  NF of the array {D(o.NfArrayDb)} dB, "
                             + $"margin {D(o.MarginDb)} dB, rate {ChainCapacity.Rate(o.RateBps)}"

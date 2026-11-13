@@ -190,6 +190,7 @@ public static class ChainBudget
         ChainCapacity.AddTo(ds, r, stage);
         ChainLink.AddTo(ds, r);
         ChainTransmit.AddTo(ds, r);
+        ChainCanceller.AddTo(ds, r);
         return ds;
     }
 

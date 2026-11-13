@@ -212,11 +212,12 @@ public sealed partial class ChainBudgetViewModel : ObservableObject
 
     // ── the levels and the canceller: Data Display plots over the budget's own data ──
 
-    private CircuitRF.Ui.DataDisplay.ViewModels.PlotContainerViewModel? _levels, _levelsDb, _depthPhase, _depthBand;
+    private CircuitRF.Ui.DataDisplay.ViewModels.PlotContainerViewModel? _levels, _levelsDb, _depthPhase, _depthBand, _cancNodes;
     public CircuitRF.Render.DataDisplay.Plot? LevelsPlot => _levels?.PlotVM.Plot;
     public CircuitRF.Render.DataDisplay.Plot? LevelsDbPlot => _levelsDb?.PlotVM.Plot;
     public CircuitRF.Render.DataDisplay.Plot? DepthPhasePlot => _depthPhase?.PlotVM.Plot;
     public CircuitRF.Render.DataDisplay.Plot? DepthBandPlot => _depthBand?.PlotVM.Plot;
+    public CircuitRF.Render.DataDisplay.Plot? CancellerNodesPlot => _cancNodes?.PlotVM.Plot;
 
     private CircuitRF.Ui.DataDisplay.ViewModels.PlotContainerViewModel? _linkTable, _receiverTable;
 
@@ -355,16 +356,19 @@ public sealed partial class ChainBudgetViewModel : ObservableObject
     }
 
     /// <summary>The canceller's depth in closed form: against the phase error for a few amplitude errors, and against
-    /// the bandwidth for a few delay mismatches.</summary>
-    private void RefillCanceller(ChainDesign d)
+    /// the bandwidth for a few delay mismatches; and its residual through the stages after it.</summary>
+    private void RefillCanceller(ChainDesign d, ChainBudgetResult r)
     {
         var st = d.Stages.FirstOrDefault(x => x.Part == ChainParts.Canceller);
         HasCanceller = st is not null;
         if (st is null) return;
         var c = CancellerSpec.Read(st);
-        var (data, cfg) = CircuitRF.Render.DataDisplay.ChainBudgetDisplay.WindowCanceller(c);
+        var (data, cfg) = CircuitRF.Render.DataDisplay.ChainBudgetDisplay.WindowCanceller(c, ChainCanceller.Levels(r));
         Refill(ref _depthPhase, nameof(DepthPhasePlot), cfg[0], BudgetSource, data);
         Refill(ref _depthBand, nameof(DepthBandPlot), cfg[1], BudgetSource, data);
+        // A canceller with no stage after it has no residual to follow: its third plot stays empty.
+        if (cfg.Count > 2) Refill(ref _cancNodes, nameof(CancellerNodesPlot), cfg[2], BudgetSource, data);
+        else _cancNodes?.PlotVM.Plot.Traces.Clear();
     }
 
     /// <summary>The link's numbers and the receiver's readouts, as tables over the budget's scalars.</summary>
@@ -837,7 +841,7 @@ public sealed partial class ChainBudgetViewModel : ObservableObject
         Blocks(r.Design ?? d, r);
         RefillCascade(r);
         RefillLevels(d, r);
-        RefillCanceller(r.Design ?? d);
+        RefillCanceller(r.Design ?? d, r);
         RefillLink(r);
         var sweepNotes = new List<string>();
         if (r.Totals is not null) RefillSweeps(d, sweepNotes);
