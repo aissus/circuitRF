@@ -23,9 +23,9 @@
         },
         {
           "Name": "Pavg",
-          "Expression": "Pin\u002B25.013711928326835",
+          "Expression": "Pin",
           "Unit": "dBm",
-          "ShowOnSchematic": false,
+          "ShowOnSchematic": true,
           "Dimension": "Power"
         },
         {
@@ -38,13 +38,6 @@
         {
           "Name": "Carrier[1]",
           "Expression": "\u0022NR;BW=5MHz;SCS=15kHz;Mod=64QAM;Off=0;P=0;Seed=1\u0022",
-          "Unit": "",
-          "ShowOnSchematic": false,
-          "Dimension": "None"
-        },
-        {
-          "Name": "Carrier[2]",
-          "Expression": "\u0022CW;BW=1MHz;Off=-12MHz;P=25\u0022",
           "Unit": "",
           "ShowOnSchematic": false,
           "Dimension": "None"
@@ -74,7 +67,7 @@
       "LabelOffsets": [
         [
           285,
-          -361
+          -397
         ]
       ]
     },
@@ -621,28 +614,28 @@
         },
         {
           "Name": "SNR_calc",
-          "Expression": "32.64376367251985",
+          "Expression": "33.53447848763168",
           "Unit": "",
           "ShowOnSchematic": true,
           "Dimension": "None"
         },
         {
           "Name": "EVM_calc",
-          "Expression": "2.3324471733696397",
+          "Expression": "2.105116210798334",
           "Unit": "",
           "ShowOnSchematic": true,
           "Dimension": "None"
         },
         {
           "Name": "Nout_calc",
-          "Expression": "-79.14376367251985",
+          "Expression": "-80.03447848763167",
           "Unit": "",
           "ShowOnSchematic": true,
           "Dimension": "None"
         },
         {
           "Name": "Pout_sim",
-          "Expression": "mean_over(ENV1.ACLR[:, \u0022Iout\u0022, 0, \u0022Pch_dBm\u0022], \u0022rec\u0022)",
+          "Expression": "mean_over(ENV1.Pavg_dBm[:, \u0022Iout\u0022], \u0022rec\u0022)",
           "Unit": "",
           "ShowOnSchematic": true,
           "Dimension": "None"
@@ -706,13 +699,6 @@
         {
           "Name": "PN_calc",
           "Expression": "-39.239803822007616",
-          "Unit": "",
-          "ShowOnSchematic": true,
-          "Dimension": "None"
-        },
-        {
-          "Name": "RM_calc",
-          "Expression": "-39.961968397827334",
           "Unit": "",
           "ShowOnSchematic": true,
           "Dimension": "None"

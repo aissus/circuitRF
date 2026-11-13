@@ -1175,14 +1175,9 @@ public static class ChainBenches
                         break;
                     }
                     var (mhz0, _) = Carrier(d.BandwidthHz);
-                    // With an LO mask, every blocker the envelope's band holds rides with the carrier, a CW of its own at its
-                    // level, so the run has its reciprocal mixing: the NR carrier stays at Pin, the total is more.
-                    var cw = EnvelopeBlockers(mhz0);
-                    double more = 10 * Math.Log10(1 + cw.Sum(b => Math.Pow(10, (b.LevelDbm - d.InputPowerDbm) / 10)));
-                    Line($"MOD_Source:{name}  {net}  0  Fc=Frf  Pavg={(cw.Count == 0 ? "Pin" : $"Pin+{G(more)}")} dBm  Z=50 Ohm  " +
-                         $"Carrier[1]=\"NR;BW={mhz0}MHz;SCS=15kHz;Mod=64QAM;Off=0;P=0;Seed=1\"" +
-                         string.Concat(cw.Select((b, i) => $"  Carrier[{i + 2}]=\"CW;BW=1MHz;Off={F(b.OffsetHz / 1e6)}MHz;P={G(b.LevelDbm - d.InputPowerDbm)}\"")) +
-                         $"  Record=0.0005  Noise=yes  Temp={F(d.TemperatureK - 273.15)}");
+                    Line($"MOD_Source:{name}  {net}  0  Fc=Frf  Pavg=Pin dBm  Z=50 Ohm  " +
+                         $"Carrier[1]=\"NR;BW={mhz0}MHz;SCS=15kHz;Mod=64QAM;Off=0;P=0;Seed=1\"  Record=0.0005  Noise=yes  " +
+                         $"Temp={F(d.TemperatureK - 273.15)}");
                     break;
             }
             // The diagram's Port two grid steps below the row, so its wire rises straight to the row and turns once. Any
@@ -1559,15 +1554,6 @@ public static class ChainBenches
         /// <summary>The Blockers bench, with the dynamic-range checks: the signal rides with the blockers.</summary>
         private bool Desense => bench == ChainBench.Blockers && d.DynamicRange && !d.IsTransmit;
 
-        /// <summary>
-        /// The blockers the Envelope bench carries beside its NR carrier: none unless an LO states its mask, then each
-        /// one close enough to share the carrier's envelope (within three of its channel bandwidths, the envelope run's
-        /// own grouping), whose reciprocal mixing the run then has.
-        /// </summary>
-        private List<ChainBlocker> EnvelopeBlockers(int channelMhz) =>
-            bench != ChainBench.Envelope || d.IsTransmit || !Masked ? []
-            : [.. d.Blockers.Where(b => Math.Abs(b.OffsetHz) <= 3 * channelMhz * 1e6)];
-
         /// <summary>Where the SFDR bench's two tones put each IM3 product on the output's noise floor, per tone at the
         /// input, dBm: (2·IIP3 + MDS)/3, so that the fundamental there stands the SFDR over the floor.</summary>
         private double SfdrCrossingDbm => (2 * Finite(_t.Iip3Dbm, 0) + _t.MdsDbm) / 3;
@@ -1909,20 +1895,17 @@ public static class ChainBenches
                 default:
                 {
                     var (mhz, bocc) = Carrier(d.BandwidthHz);
-                    var cw = EnvelopeBlockers(mhz);
-                    EnvelopeFits([(d.FrequencyHz, mhz * 1e6), .. cw.Select(b => (d.FrequencyHz + b.OffsetHz, 1e6))]);
+                    EnvelopeFits((d.FrequencyHz, mhz * 1e6));
                     double te = _t.TeK, a = _t.ArrayGainDb;
                     double snr = d.InputPowerDbm + a - (10 * Math.Log10(ChainBudget.K * (d.TemperatureK + te) * bocc) + 30);
                     double nout = 10 * Math.Log10(ChainBudget.K * (d.TemperatureK + te) * bocc) + 30 + _t.GainDb - a;
-                    double snrTh = snr, pn = 0, rm = 0;
+                    double snrTh = snr, pn = 0;
                     if (Masked)
                     {
-                        // The LO's phase noise in the carrier's channel, and the reciprocal mixing of the blockers the run
-                        // carries, each a share of the signal at the output; the noise is then all that the run adds.
-                        var at = ChainBlocking.Shares(d, r, ChainLevels.Evaluate(d, r), bocc)[^1];
-                        pn = at.Pn;
-                        rm = cw.Sum(b => at.RmW[d.Blockers.IndexOf(b)]) / Math.Pow(10, (_t.PoutDbm - 30) / 10);
-                        snr = -10 * Math.Log10(Math.Pow(10, -snrTh / 10) + pn + rm);
+                        // The LO's phase noise in the carrier's channel, a share of the signal at the output: the noise is
+                        // then all that the run adds.
+                        pn = ChainBlocking.Shares(d, r, ChainLevels.Evaluate(d, r), bocc)[^1].Pn;
+                        snr = -10 * Math.Log10(Math.Pow(10, -snrTh / 10) + pn);
                         nout = _t.PoutDbm - snr;
                     }
                     _analyses.Add($"analysis ENV1 type=env Stop=0.5e-3 Step=auto Accuracy=draft MaxHarm=1 MaxMixOrder={Math.Max(2, 1 + 2 * mix)} " +
@@ -1933,8 +1916,7 @@ public static class ChainBenches
                     _meas.Add($"SNR_calc = {G(snr)}");
                     _meas.Add($"EVM_calc = {G(100 * Math.Pow(10, -snr / 20))}");
                     _meas.Add($"Nout_calc = {G(nout)}");
-                    // With blockers beside it the carrier's own channel power is the output's.
-                    _meas.Add($"Pout_sim = {Mean(cw.Count > 0 ? $"ENV1.ACLR[{R}\"Iout\", 0, \"Pch_dBm\"]" : $"ENV1.Pavg_dBm[{R}\"Iout\"]")}");
+                    _meas.Add($"Pout_sim = {Mean($"ENV1.Pavg_dBm[{R}\"Iout\"]")}");
                     _meas.Add($"SNR_sim = {Snr($"ENV1.SNR_dB[{R}\"Iout\", 0]")}");
                     _meas.Add($"EVM_sim = {Rms($"ENV1.EVMnoise_pct[{R}\"Iout\", 0]")}");
                     _meas.Add("Nout_sim = Pout_sim - SNR_sim");
@@ -1945,7 +1927,6 @@ public static class ChainBenches
                     if (!Masked) break;
                     _meas.Add($"SNRth_calc = {G(snrTh)}");
                     _meas.Add($"PN_calc = {G(pn > 0 ? 10 * Math.Log10(pn) : Absent)}");
-                    _meas.Add($"RM_calc = {G(rm > 0 ? 10 * Math.Log10(rm) : Absent)}");
                     break;
                 }
             }

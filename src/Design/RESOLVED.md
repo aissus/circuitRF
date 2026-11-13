@@ -31071,6 +31071,16 @@ Gates: `tests/Ui.Tests/Chain/ChainFidelityTests.cs`, `tests/Ui.Tests/Examples/Ch
   a P1Tone with `Num`), and the two tones are a PnTone's, which has none; and every source's tones must be on the run's
   lattice, so a P1Tone beside the PnTone would put its tone on the two-tone run too. The bench reads its IM3 against the
   budget's floor, which the 1-Tone bench checks to 10⁻⁴ dB.
+- **Reciprocal mixing on an envelope bench does not converge with the step.** The Envelope bench first carried each
+  blocker within three channel bandwidths of its NR carrier as a CW of the same MOD_Source. With the superhet's blocker
+  12 MHz below the carrier, four records each, against the closed form: thermal noise alone 34.95, 34.91 and 34.85 dB of
+  SNR at the draft, standard and fine steps against 34.89 dB; the phase noise on the carrier alone 33.54 dB against
+  33.53 dB at draft; the blocker with a clean LO adds nothing (34.85 dB at fine); but the blocker's reciprocal mixing,
+  with a mask negligible close in, reads 2.6 dB under the closed form at draft, 1.2 dB over at standard and 2.8 dB over at
+  fine. A carrier 6 MHz off the envelope's centre also read 0.34 dB of its output power low at draft (a silent CW
+  mirroring the blocker put it back on the centre). The bench was taken back to the mask alone; the budget's reciprocal
+  mixing is checked against the standard-library calculation. Where the engine's phase-noise path loses or gains a
+  tone's skirt that far off its centre is an engine question of its own.
 - **The Blockers bench with the signal in it.** The signal rides as the first tone of the blockers' own run: a second run
   of the signal and one blocker would need its own source, and the other source's tones would then be off its lattice.
   On the superhet that is five tones (the signal, three blockers, the LO), 341 mixing products at MaxMixOrder 4, and the

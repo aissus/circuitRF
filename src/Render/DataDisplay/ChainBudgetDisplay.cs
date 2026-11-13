@@ -93,12 +93,11 @@ public static class ChainBudgetDisplay
             evm.Top = (rows.Length / 2) * (H + Gap);
             plots.Add(evm);
             y = evm.Top + H + Gap;
-            // With an LO mask the budget's SNR is its thermal one and the LO's phase noise and reciprocal mixing beside it;
-            // with records, the spread of their mean.
+            // With an LO mask the budget's SNR is its thermal one and the LO's phase noise beside it; with records, the
+            // spread of their mean.
             var parts = new List<(string, string)>();
             if (Masked(design))
-                parts.AddRange([("SNRth_calc", "SNR thermal, dB: budget"), ("PN_calc", "LO phase noise in the channel, dBc"),
-                                ("RM_calc", "reciprocal mixing, dBc")]);
+                parts.AddRange([("SNRth_calc", "SNR thermal, dB: budget"), ("PN_calc", "LO phase noise in the channel, dBc")]);
             if (design.Records > 1) parts.Add(("SNR_spread", $"SNR spread of {design.Records} records' mean, dB"));
             if (parts.Count > 0)
             {
