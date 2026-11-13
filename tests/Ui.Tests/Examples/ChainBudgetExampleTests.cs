@@ -41,7 +41,7 @@ public sealed class ChainBudgetExampleTests(ITestOutputHelper output) : IDisposa
     public const string Folder = "RF Chain Budget";
     public static string Workspace => Path.Combine(PalaceBackendTests.RepoRoot(), "examples", Folder);
 
-    private static readonly string[] Chains = ["Superhet", "Array", "Front End", "Dual Conversion", "26 GHz Link", "Linear TX"];
+    private static readonly string[] Chains = ["Superhet", "Array", "Front End", "Dual Conversion", "26 GHz Link", "Linear TX", "IF Array"];
 
     /// <summary>The benches Transfer writes for a shipped chain: a dual-conversion chain's mostly once per conversion.</summary>
     private static IReadOnlyList<ChainBenchText> Benches(string root, string chain)
@@ -66,6 +66,7 @@ public sealed class ChainBudgetExampleTests(ITestOutputHelper output) : IDisposa
     [InlineData("Front End")]
     [InlineData("Dual Conversion")]
     [InlineData("Linear TX")]
+    [InlineData("IF Array")]
     public void TheShippedBenches_AreWhatTransferWritesToday(string chain)
     {
         CopyDirectory(Workspace, _ws);
@@ -353,6 +354,48 @@ public sealed class ChainBudgetExampleTests(ITestOutputHelper output) : IDisposa
     }
 
     private static double M0(DataSet ds, string name) => ds[name].RealValues[0];
+
+    // ── the IF array: sub-arrays, an uneven tree, unequal active paths, and its array benches through the mixer ──
+
+    [Fact]
+    [Trait("Category", "Benchmark")]
+    public void IfArray_1Tone_SixElementsThroughTheirMixers_LevelByLevelOnTheBudget()
+    {
+        var ds = Simulate("IF Array 1-Tone");
+        Assert.InRange(M(ds, "G_err"), -5e-4, 5e-4);
+        Assert.InRange(M(ds, "NF_err"), -5e-4, 5e-4);
+        foreach (string s in new[] { "LNA", "RFBPF", "MIX", "PS", "SUB", "SA", "ARR", "IFBPF", "IFA" })
+            Assert.InRange(M(ds, $"NF_{s}_sim") - M(ds, $"NF_{s}_calc"), -5e-4, 5e-4);
+        Assert.InRange(M(ds, "IP1dB_err"), -0.1, 0.1);
+    }
+
+    /// <summary>The IF array's Steering and Combiners benches, harmonic balance through the six mixers on one LO: the
+    /// pattern on the array factor of every element's own amplitude, and the gain, NF and array gain at each peak and of
+    /// each variant on the budget.</summary>
+    [Fact]
+    [Trait("Category", "Benchmark")]
+    public void IfArray_SteeringAndCombiners_ThroughTheMixers_OnTheirBudgets()
+    {
+        var st = Simulate("IF Array Steering");
+        foreach (string a in new[] { "m30", "0", "p30" })
+        {
+            Assert.InRange(M(st, $"G_{a}_err"), -5e-4, 5e-4);
+            Assert.InRange(M(st, $"NF_{a}_err"), -1e-3, 1e-3);
+            Assert.InRange(M(st, $"A_{a}_err"), -1e-3, 1e-3);
+        }
+        var p = st["measurements.Pattern_sim"].RealValues;
+        var e = st["measurements.Pattern_err"].RealValues;
+        double worst = Enumerable.Range(0, p.Length).Where(i => p[i] > -40).Max(i => Math.Abs(e[i]));
+        output.WriteLine($"IF Array Steering: worst |pattern - array factor| above -40 dB = {worst:G3} dB");
+        Assert.InRange(worst, 0, 1e-3);
+        Assert.Equal(7.6496, M(st, "A_calc"), 4);
+        var cmb = Simulate("IF Array Combiners");
+        foreach (var (_, _, code) in ChainBenches.CombinerVariants)
+        {
+            Assert.InRange(M(cmb, $"G_{code}_err"), -5e-4, 5e-4);
+            Assert.InRange(M(cmb, $"NF_{code}_err"), -1e-3, 1e-3);
+        }
+    }
 
     // ── the linear transmitter ───────────────────────────────────────────────
 
