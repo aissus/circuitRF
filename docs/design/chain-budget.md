@@ -311,6 +311,55 @@ warning on every run of the bench.
 benches' node cube generalised, exact at the points. Every analysis goes through the same pre-write checks as a receive
 chain's (`Order`, `EnvelopeFits`); an IQ modulator's LO is a converter's tone like a mixer's.
 
+### 2.6 Digital and polar transmitters: a chain from a stream
+
+**One rule for both: the first stage takes a stream.** `ChainParts.IsFront` names the two parts whose input is a
+stream rather than a carrier, the DAC pair (`DAC`) and the polar transmitter (`PolarTx`). Either is a transmit chain's
+first stage and only that (`ChainDesign.Refusals`), and its chain's benches are the envelope's (`BenchesFor`): a
+stream has no harmonic-balance form, and the System DAC refuses harmonic balance by name. A DAC chain may sit at 0 Hz,
+a zero-IF stream's baseband; every other chain is still refused there.
+
+**The DAC's floor is a temperature, not a readout of its own.** Δ²/12 per rail, referred to the input into 50 Ω, is a
+PSD Δ²/(12·50 Ω·Fs) and so a noise temperature at the DAC's input (`DacSpec.TeK`, its NF from it), which the Friis sum
+carries like any stage's. The textbook SQNR, 6.02·N + 1.76 − BO + 10·log10(Fs/B), is then not a second formula but the
+same number read at the DAC's output, which the hand check confirms to 10⁻⁹ dB. The per-rail convention is the System
+DAC's: each rail delivers the chain's power into a matched load, x_rms = √(2·50 Ω·P) over the pair. A stream has no
+thermal noise of its own, so the examples set the source to 0 K. The hold's droop is the stage's gain at the carrier's
+offset and, across the band, an EVM term (the spread of |H| over the band, (π²/(6·√180))·(B/Fs)² for a centred one,
+which is the DAC pull request's measured sinc-alone floor: 0.27 % at 18.36 MHz in 122.88 MHz).
+
+**The rails are a context, not a part.** `ChainStageContext.Rails` is set from a DAC up to the IQ modulator; the stages
+between are per rail (filters, amplifiers, attenuators only) and keep their own budgets, and the modulator, fed by two
+rails at the chain's power with no hybrid, gains 3.01 dB over one mixer's conversion and keeps the mixer's intercept.
+The context also carries the stage's input power and the chain's bandwidth now, since the DAC's notes (its back-off,
+its SQNR) need both; the budgets are evaluated in order for that.
+
+**The polar terms are first order, on the complex-Gaussian model.** The mismatch's residual after the demodulator's
+delay fit is π·B·dT/√12 over the band (the polar pull request's formula with ⟨ȧ²⟩ = ⟨a²φ̇²⟩ = (πB)²⟨a²⟩/6). Its in-band
+and adjacent shares are not in closed form — the residual is e^(2jφ)·conj(ẋ)·dT/2, which has no first-chaos component and
+spreads over several bandwidths — so they are the model's constants, 0.436 and 0.215, from a Monte Carlo of it
+(±0.0007; `testdata/chain/stream_reference.py` reproduces them in the standard library to 0.01). The same Monte Carlo
+reproduces the System Design PolarTx bench's in-band EVM and ACPR1 at 1, 2 and 4 ns to 0.4 dB. The AM path's bandwidth
+is harder: the envelope's error is in its spectral tail (a Rayleigh envelope has a cusp at every null), and neither its
+total (which the closed-form autocorrelation, (π/4)·₂F₁(−½, −½; 1; ρ²), gives exactly) nor its split between the
+channel and its neighbours has a short closed form. The budget takes the leading-order model — the |ρ|² term, a
+triangle over ±B, spread as the signal — and says it is optimistic once Fam is several times B; it matches the Monte
+Carlo's adjacent channel at Fam = 2B and reads its in-band EVM at about half. The example's 80 MHz path is past that
+point, where the term is small beside the mismatch's.
+
+**What the readouts add, and what they keep.** `ChainTxReadout` gains the EVM floor, the ACLR estimate alone and a DAC's
+image, each NaN or −∞ for a chain without a stream, and `AclrDbc` adds the stream's adjacent-channel share only for such
+a chain: every other chain's readouts, DataSet, CLI line, window line and level-diagram key are as they were, to the
+byte. The share is carried to the output by `ChainTransmit.After`, each later stage's gain at B above the carrier over
+its gain at the carrier, as the IQ modulator's spurs are.
+
+**The bench is one front and the existing rest.** `EmitStream` writes the stream's sources and the first stage's
+blocks, then places every later stage through the same `Stage` every bench uses, and reads it through the transmit
+Envelope bench's own measurements; at each drive the budget is evaluated again, since a DAC's back-off and a polar
+stage's Vsat both move with it. The rails-fed modulator is `IqMod` without its input hybrid: the Q mixer's LO at +90°
+puts I·cos − Q·sin = Re{(I + jQ)·e^(jωt)} on the carrier. The run has one fundamental, the carrier, and the stream at
+k = 0, so it skips the LO check and runs at the standard step: a polar alignment delay is a fraction of one.
+
 ## 3. The benches, and what was found building them
 
 **The mixer's image termination.** A mixer's SSB noise figure is stated with its image at T0. In a chain a filter in

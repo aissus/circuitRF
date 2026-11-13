@@ -294,6 +294,18 @@ before or Rapp's and Saleh's bandpass laws, in the budget and the simulation ali
 node, with the back-off, the noise floor and the ACLR estimate in its key. The example is a 3.5 GHz linear transmitter
 for a 100 MHz NR carrier.
 
+**Digital and polar transmitters (2026-11).** A transmit chain may start from a stream. A DAC stage is two System DACs,
+one per rail: its quantisation floor is a noise temperature the cascade carries, which is the textbook
+6.02·N + 1.76 − back-off + 10·log10(Fs/B) at its output; the hold's droop is its gain at the carrier's offset and an EVM
+term across the band, and its first image is carried to the output at its own frequency; its rails run through their
+own filters into the IQ modulator, which takes them as I and Q (a DAC chain may sit at 0 Hz). A polar transmitter stage
+recombines a polar pair in a Supply-Modulated Amplifier: its output Ks² times its input (with Vsat, the tanh law's
+mean over a Rayleigh envelope), its AM/PM mismatch the first-order π·B·dT/√12 with the model's in-band and adjacent
+shares, its amplitude path's bandwidth a stated leading-order model. A chain from a stream reads an EVM floor and adds
+its share to the ACLR estimate, and transfers to its Envelope bench (MOD_Source rails or a polar pair, the System DACs or
+polar blocks) and its PA's; harmonic balance has no stream. The examples are a digital and a polar transmitter at
+3.5 GHz for a 20 MHz NR carrier.
+
 **Deferred:**
 
 - **Image noise from earlier stages.** The budget takes each mixer's image as filtered of the stages before it, and the
@@ -305,6 +317,12 @@ for a 100 MHz NR carrier.
 - **A transmit array.** A transmit chain is one element: a splitter into elements and each element's PA is not a
   bench. The link's transmitter is still closed form, one PA and a loss per element. The window's Levels tab plots a transmit
   chain's levels as a receiver's; its level diagram has the transmitter's.
+- **A stream's other forms.** A DAC is a chain's first stage and its rails meet one IQ modulator (no second DAC, no
+  digital IF beyond the chain's frequency on the bench, which plays it about the LO); clipping, jitter and a DAC's static
+  non-linearity are not in the budget (a back-off under `PAPR` is noted). The polar stage is a digital polar pair; a Kahn
+  transmitter (an envelope detector and a limiter on an RF input) and the supply amplifier's AM-PM are not stages, and
+  its bandwidth term is the envelope's leading order, optimistic once Fam is several times B. The EVM floor leaves out
+  the PA's own in-band distortion.
 - **Rapp's IM3 at the operating point.** The budget gives a Rapp stage the cubic's intercept at its 1 dB point, which is
   pessimistic away from compression for p ≥ 2 (4 dB on the linear transmitter's two tones); the law's own IM3 at a
   drive needs its two-tone describing function, an integral.

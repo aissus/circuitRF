@@ -120,17 +120,20 @@ what it writes.
 
 ## The stages, and the parts a stage can be {#stages}
 
-A stage has a name (its instance name on the schematic), a part, and that part's parameters. Nine parts are System
+A stage has a name (its instance name on the schematic), a part, and that part's parameters. Ten parts are System
 blocks — the splitter and the array combiner are the library's [Combiner](system-components.html#combiner), an
-active combiner that block with an Amplifier after each — and the library has no phase shifter, limiter, canceller or
-IQ modulator, so four more are **composed** of parts it does have. Transfer places exactly that composition. One more
-is **data**: an [S-parameter data](#snp) stage is a Touchstone file.
+active combiner that block with an Amplifier after each, and the DAC stage is two of the library's
+[DAC](system-components.html#dac), one per rail — and the library has no phase shifter, limiter, canceller, IQ
+modulator or polar transmitter, so five more are **composed** of parts it does have. Transfer places exactly that
+composition. One more is **data**: an [S-parameter data](#snp) stage is a Touchstone file.
 
 | Part | What it is | Budget |
 |---|---|---|
 | Amplifier (`Amp`) | The System Amplifier. Any gain, negative included: a block with a gain, an NF and an intercept is one. `GainPerStage` makes it ⌈`Gain`/`GainPerStage`⌉ amplifier stages, for its [DC power](#readouts). `Law` picks its compression: `Tanh` on `IP3`, or `Rapp` or `Saleh` on `Psat` ([the laws](#laws)). | G = `Gain`, NF = `NF` (blank: noiseless), IIP3 from `IP3` and `IP3Ref`, IP1dB = IIP3 − 8.96 dB; a Rapp or Saleh law's own |
 | Mixer | The System Mixer, down-converting to \|f − `Flo`\|, or with `Sideband` = Upper up-converting to f + `Flo`. `Flo` is the LO the bench drives it with, at `Plo`. | G = `ConvGain`, NF = `NF` single-sideband (a DSB figure + 3.01 dB), IIP3 = `IIP3`, IP1dB = IIP3 − 8.96 dB |
-| IQ modulator (`IQMod`, composed) | Two Mixers fed in quadrature by a 90° Hybrid at the input, their LO split into its quadrature by a Combiner, summed by a second: an image-reject up-converter to `Flo` + f (`Sideband` Upper) or `Flo` − f, with `GainImb`, `PhaseImb` and each mixer's `IsoLO_IF`. See [The IQ modulator](#iqmod). | G = `ConvGain` + 20·log10(\|1 + g·e^(jφ)\|/2), NF a mixer's, IIP3 = `IIP3` + 3.01 dB |
+| IQ modulator (`IQMod`, composed) | Two Mixers fed in quadrature by a 90° Hybrid at the input, their LO split into its quadrature by a Combiner, summed by a second: an image-reject up-converter to `Flo` + f (`Sideband` Upper) or `Flo` − f, with `GainImb`, `PhaseImb` and each mixer's `IsoLO_IF`. After a DAC it takes the two rails as its I and Q, with no hybrid. See [The IQ modulator](#iqmod). | G = `ConvGain` + 20·log10(\|1 + g·e^(jφ)\|/2), NF a mixer's, IIP3 = `IIP3` + 3.01 dB; after a DAC, G + 3.01 dB and IIP3 = `IIP3` |
+| DAC pair (`DAC`) | Two [DACs](system-components.html#dac), one per rail of the digital stream: `Bits` across ±`FS` at its 50 Ω input, held at `Fs` (`Mode` nrz, or rz for `Duty` of the period), with a `Gain`. The first stage of a transmit chain; its rails run through filters, amplifiers and attenuators, one per rail, into an IQ modulator. See [Digital and polar transmitters](#streams). | G = `Gain` + 20·log10\|H(f)\|, the hold's droop at the carrier's offset; NF = 10·log10(1 + T_q/T0), its quantisation floor as a temperature |
+| Polar transmitter (`PolarTx`, composed) | A polar pair recombined in a [Supply-Modulated Amplifier](system-components.html#supplyamp): the amplitude through a Delay of `dT` and a Butterworth lowpass of `Fam` and `Order` into its supply, the phase turning a limited CW carrier in a [Phase Modulator](system-components.html#phasemod), delayed by the lowpass's DC group delay. `Ks` and `Vsat` are the amplifier's. The first stage of a transmit chain. See [Digital and polar transmitters](#streams). | G = 20·log10 `Ks` (with `Vsat`, the tanh law's mean over the envelope); noiseless; its mismatch and bandwidth in the transmit readouts |
 | Attenuator (`Atten`) | A matched pad. | G = −`Loss`, NF = `Loss` |
 | Filter | The synthesised Filter, in its passband. | G = −`IL`, NF = `IL`; a Chebyshev's ripple is not in the budget |
 | Switch | A closed SPST switch. | G = −`IL`, NF = `IL` |
@@ -360,6 +363,81 @@ frequency, so a band filter's rejection of them is in the numbers at the output.
 IF the modulator up-converts — high enough, for a wide carrier, that the LO and the image clear the adjacent channels:
 the linear transmitter's 200 MHz puts them 200 and 400 MHz below a 100 MHz carrier.
 
+## Digital and polar transmitters {#streams}
+
+A transmitter's baseband is a stream of numbers until a converter makes it a voltage. A chain whose first stage is a
+**DAC** or a **polar transmitter** starts from that stream: its input power is the stream's, and its benches drive it
+with one (below). Either is a transmit chain's first stage, and only that.
+
+**A DAC's floor is a noise temperature.** Each rail's quantisation error is Δ²/12, Δ = 2·`FS`/2^`Bits`, white over the
+Nyquist band; referred to the input as a power into 50 Ω it is a noise of PSD Δ²/(12·50 Ω·`Fs`), a temperature
+T_q = PSD/k at the DAC's input, which the cascade adds as it adds any stage's. Against the signal it is the textbook
+relation (W. R. Bennett, "Spectra of quantized signals", Bell System Technical Journal, 1948; B. Widrow and I. Kollár,
+*Quantization Noise*, Cambridge University Press, 2008, for when the uniform, white model holds):
+
+```
+SQNR  = 6.02·Bits + 1.76 − BO              over the Nyquist band, BO = 20·log10(FS / x_rms), x_rms = √(2·50 Ω·P)
+SNR_B = SQNR + 10·log10(Fs / B)            in the bandwidth B: the processing gain
+```
+
+P is each rail's power, the chain's input power; x_rms the RMS envelope of the pair. The two are the same number: the
+output's SNR at the DAC is SNR_B to 10⁻⁹ dB. A stream has no thermal noise of its own, so a DAC chain's source
+temperature is 0 K. `PAPR` (budget only, 10 dB) is the signal's peak over x_rms: a back-off under it clips, which the
+budget does not count and says so.
+
+**The hold.** \|H(f)\| = d·\|sinc(d·f/`Fs`)\|, d = 1 for nrz and `Duty` for rz (A. V. Oppenheim and R. W. Schafer,
+*Discrete-Time Signal Processing*, Prentice Hall, 1989). The stage's gain is `Gain` + 20·log10\|H(f)\| at the carrier's
+offset f: the chain's frequency, which is 0 Hz for a zero-IF stream (a DAC chain may sit at 0 Hz). Across the band the
+droop is EVM, since no equaliser takes it out: the spread of \|H\| over the band against its mean, (π²/(6·√180))·(B/`Fs`)²
+for a centred band in nrz, 0.296 % at 19.08 MHz in 122.88 MHz. The first image of the band's edge f + B/2 lands
+`Fs` − f − B/2 from 0 Hz, at \|H(`Fs` − f − B/2)\| / \|H(f + B/2)\| against the signal there: (f + B/2)/(`Fs` − f − B/2) in nrz.
+
+**The rails.** Between the DAC and the IQ modulator each rail has its own copy of every stage (filters, amplifiers,
+attenuators: nothing else), and the modulator takes them as its I and Q, with no hybrid. Each mixer sees its own rail
+at the chain's power, and I·cos − Q·sin carries both rails' power, so the modulator's gain is 3.01 dB over one mixer's
+conversion and its intercept the mixer's own. It takes the upper sideband: the lower would put the conjugate, I − jQ,
+on the carrier.
+
+**A polar transmitter** recombines the stream's amplitude a = \|x\| and phase φ in a supply-modulated amplifier. Its
+output's amplitude is `Ks`·a, so P·`Ks`²: 20·log10 `Ks` of gain. With `Vsat` the law is `Ks`·`Vsat`·tanh(a/`Vsat`), averaged
+over a Rayleigh envelope (an OFDM carrier's); its saturated output is (`Ks`·`Vsat`)²/(2·50 Ω).
+
+**The mismatch.** The output is a(t − `dT`)·e^(jφ(t)), its error to first order −`dT`·ȧ·e^(jφ). The demodulator's delay fit
+takes out its part along ẋ and leaves
+
+```
+EVM = dT·√(⟨ȧ²⟩·⟨a²φ̇²⟩ / ((⟨ȧ²⟩ + ⟨a²φ̇²⟩)·⟨a²⟩))  =  π·B·dT/√12   over the whole band
+```
+
+— the second form for a complex Gaussian signal with a flat spectrum of width B, whose envelope moves as fast in
+amplitude as in phase, ⟨ȧ²⟩ = ⟨a²φ̇²⟩ = (π·B)²·⟨a²⟩/6. That is the trend F. H. Raab worked out for the Kahn transmitter
+("Intermodulation distortion in Kahn-technique transmitters", IEEE Transactions on Microwave Theory and Techniques,
+1996), distortion set by the delay times the bandwidth. The residual is wider than the signal: 0.436 of its power falls
+in the channel, which the demodulator reads, and 0.215 in each adjacent channel of width B centred B away. Those two
+shares are the model's own constants, from a Monte Carlo of it (±0.0007), so the budget's
+
+```
+EVM_dT  = √0.436 · π·B·dT/√12              1.14 % at 1 ns in 19.08 MHz
+ACLR_dT = 0.215 · (π·B·dT)²/12             −42.0 dBc there
+```
+
+**The bandwidth.** The model: the envelope's AC part to its leading order — the \|ρ\|² term of a Rayleigh envelope's
+autocorrelation, (π/16)·P spread as a triangle over ±B — through the aligned lowpass's error, 1 − H(f)·e^(j2πf·Tg),
+spread as the signal is, so the channel takes 1 − \|f\|/B of it and the adjacent channel 1 − \|f − B\|/B. It leaves out
+the envelope's spectral tail (an OFDM envelope has a cusp at every null), so it is optimistic once `Fam` is several
+times B; at `Fam` = 2B it reads the adjacent channel as the Monte Carlo does and the EVM at about half.
+
+**The readouts.** A chain from a stream adds three to a [transmit chain's](#transmit):
+
+| Readout | Formula |
+|---|---|
+| EVM floor | √(10^(−SNR/10) + Σ e²), %: the output's SNR in the bandwidth, the DAC's floor in it; the DAC's droop, or the polar stage's mismatch and bandwidth terms. Not the PA's own in-band distortion, which by [the relation](#transmit) is 2·10^(ACLR/20) |
+| ACLR | the estimate from the OIP3, plus the stream's own share of the adjacent channel: the DAC's floor held at B over the carrier, or the polar stage's terms, each carried by the stages after it at B above the carrier |
+| DAC image | its first image at the output, carried through the stages after it at its own frequency, dBc |
+
+The DataSet carries them as `EVMfloor_pct`, `ACLRdist_dBc` (the estimate alone) and `DacImage_dBc`, and the level
+diagram's key gives the EVM floor and the ACLR; the DAC's floor is in its noise line.
+
 ## Arrays: N elements into a combiner {#array}
 
 A **Combiner** stage makes the chain an array. Every stage before it is one element's branch, repeated N times; the
@@ -577,6 +655,18 @@ A [transmit chain](#transmit) is driven at its input and read at its output, so 
 | `<chain> Envelope` | a MOD_Source at the input: an NR 64-QAM carrier, noiseless | envelope at the input power and 3 dB either side | the output power beside the linear budget, the ACLR beside the budget's estimate, the EVM, the spectrum |
 | `<chain> PA` | the PA stage alone, from a MOD_Source at its own input and frequency | harmonic balance swept over its drive (a MOD_Source is a CW carrier there), and an envelope run at its input power | AM-AM and AM-PM beside its law's closed forms, its 1 dB point and saturation, its efficiency; the NR carrier's ACLR and EVM through it |
 
+A chain from a [stream](#streams) has its Envelope bench and its PA's only: harmonic balance has no stream, and a DAC
+is refused there by name. Its Envelope bench drives the stream itself, at baseband about the carrier, and places the
+first stage as its System blocks:
+
+| First stage | Placed as |
+|---|---|
+| DAC | two MOD_Sources, `Baseband=i` and `q`, each into its own DAC and its own copy of every stage up to the IQ modulator, whose mixers take the two rails, the LO the carrier |
+| Polar transmitter | a MOD_Source pair, `Polar=amp` and `phase`: the amplitude through a Delay of `dT` and the Butterworth lowpass into a Supply-Modulated Amplifier's supply; a P1Tone at the carrier, limited, turned by the phase half in a Phase Modulator (`Kp` 1 rad/V), delayed by the lowpass's DC group delay (and by \|`dT`\| when the phase is the later) |
+
+It runs at the standard step (a fraction of a step is interpolated) over the drive, and adds the budget's EVM floor to
+the display, with the ACLR beside the estimate that includes the stream's share.
+
 The PA is the chain's last Amplifier with a Rapp or Saleh law, else its last that compresses. An ideal amplifier draws
 its stated `Pdc` at every drive, so its efficiency is the power it adds over that: class A's shape, 50 % at saturation
 for a `Pdc` of twice `Psat`. The NR carrier is the 15 kHz-spacing channel nearest the chain's bandwidth up to 50 MHz, as
@@ -741,7 +831,9 @@ A [transmit chain](#transmit)'s diagram is read toward its output. The signal is
 node, and over the P1dB, dashed, is the **Psat** referred to each node: the ceiling the stages up to it give,
 P_k = min(P_(k−1) + g_k, Psat_k), the chain's Psat at the output. The shading under the P1dB is the back-off. The key
 gives the **back-off** at the output from both, the **noise floor** in dBm/Hz, and the **ACLR** estimated from the
-OIP3 (an estimate, as [the relation](#transmit) says). There is no sensitivity and no SFDR, which are a receiver's.
+OIP3 (an estimate, as [the relation](#transmit) says). There is no sensitivity and no SFDR, which are a receiver's. A
+chain from a [stream](#streams) keys its ACLR with the stream's share and its EVM floor; a DAC's quantisation floor is
+its noise line, from the DAC's node on.
 
 With a [link](#link), its front stands left of the input: the EIRP, the path down to the power each element receives,
 the path's loss (and the receive antenna's gain) written on it, and the receiver's **ceiling**, IP1dB less
@@ -872,6 +964,42 @@ And its benches against it:
 The PA alone, driven by the same NR carrier at its operating point (its own bench), puts out 28.38 dBm with
 −37.73 and −37.86 dBc of ACLR and 2.53 % EVM, at 6.88 % efficiency on its 10 W.
 
+## A digital and a polar transmitter {#stream-tx}
+
+The example's `Digital TX.cchain` and `Polar TX.cchain` start from a [stream](#streams): a 20 MHz NR carrier at 15 kHz
+subcarrier spacing, its 19.08 MHz occupied bandwidth the chain's, the source at 0 K.
+
+The digital one is zero-IF, −10 dBm on each rail: a `DAC` of 6 bits across ±0.32 V, NRZ at 122.88 MHz (10.10 dB below
+full scale); a 5th-order Butterworth low-pass at 49.152 MHz with 0.5 dB of loss, per rail; an `IQMod` at 3.5 GHz, each
+mixer −7 dB and IIP3 25 dBm; a driver of 20 dB (OIP3 38 dBm); a Rapp PA of 22 dB, `Psat` 43 dBm, `P` 2; and the linear
+transmitter's band filter. The polar one is a `PolarTx` of `Ks` 10, an 80 MHz third-order amplitude path and 1 ns of
+mismatch, driven at 0 dBm, then the same band filter. Their budgets, which `testdata/chain/stream_reference.py`
+reproduces from the formulas above to 10⁻⁶:
+
+| Readout | Digital TX | Polar TX |
+|---|---|---|
+| Output | 26.91 dBm; 12.61 dB under OP1dB, 15.49 dB under Psat | 19.40 dBm |
+| SNR in the channel | 35.87 dB: the DAC's SQNR, 27.78 dB, and 8.09 dB of processing gain | |
+| EVM floor | 1.64 %: the floor, 1.61 %, and the droop, 0.30 % | 1.143 %: the mismatch, 1.143 %, and the amplitude path, 0.018 % |
+| ACLR | −36.15 dBc: the DAC's floor, with the intercepts' −51.03 dBc | −41.98 dBc: the mismatch's |
+| DAC image | −21.50 dB at the DAC, −60.58 dBc at the output, 113.34 MHz off | |
+
+And their Envelope benches against it, at the operating point:
+
+| Quantity | Budget | Simulated | Why it differs |
+|---|---|---|---|
+| Digital: output | 26.91 dBm | 26.86 dBm | the NR carrier's peaks, 12.6 dB under the OP1dB |
+| Digital: ACLR | −36.15 dBc | −36.33, −36.46 dBc | the DAC's floor alone is −36.29 dBc; the intercepts' −51.03 is the cubic's at the PA's 1 dB point, pessimistic 15 dB back from Psat, where Rapp's IM3 falls at 5:1 (the PA alone reads −64.4 and −64.1 dBc against −52.7) |
+| Digital: EVM | 1.64 % (floor) | 1.68 % | the record's own floor, 0.37 % in quadrature (the PA alone reads 0.13 %) |
+| Digital: EVM, 3 dB down | 2.29 % | 2.31 % | as above |
+| Digital: EVM, 3 dB up | 1.18 % | 1.77 % | 7.1 dB under full scale, the DAC clips; the budget notes it and does not count it |
+| Polar: output | 19.40 dBm | 19.40 dBm | 6×10⁻⁴ dB |
+| Polar: ACLR | −41.98 dBc | −41.69, −41.70 dBc | the amplitude path's own share, which the leading-order model reads low (below) |
+| Polar: EVM | 1.14 % | 1.22 % | 0.42 % in quadrature: the record's own floor and the 80 MHz path at the 2 ns step, as the System Design PolarTx bench reads at the same point |
+
+The polar mismatch's term carries the bench: its in-band and adjacent shares are its model's, and that model's own Monte
+Carlo reproduces the System Design PolarTx bench at 1, 2 and 4 ns to 1 % in EVM and 0.4 dB in ACPR1.
+
 ## How closely the simulation agrees {#agreement}
 
 Measured on the example's superhet and array, the budget against the simulation of the benches it writes:
@@ -935,6 +1063,10 @@ to 10⁻⁶ dB down to −60 dB, and its gain, NF and array gain at each peak on
 reads each variant's gain and NF to 10⁻¹⁴ dB; each variant's intercepts and compression point, transferred on its own,
 read as the table above does.
 
+The digital and polar transmitters' Envelope benches are tabled with them, in
+[A digital and a polar transmitter](#stream-tx): the output within 0.05 dB, the ACLR within 0.35 dB, and the EVM 0.4 %
+over the budget's floor in quadrature, the bench's own.
+
 The linear transmitter's benches are tabled with it, in [A linear transmitter](#linear-tx): its output over 38 dB of
 drive on the budget's CW output to 5×10⁻⁴ dB, its PA's AM-AM and AM-PM on Rapp's law to 10⁻⁹, its modulator's image and
 LO on their closed forms, its noise 0.13 to 0.15 dB under the budget (0.134 dB expected), its two-tone IM3 4.1 dB under
@@ -964,12 +1096,12 @@ as the part's netlist line carries them.
 
 | Key | Meaning |
 |---|---|
-| `FormatVersion` | 1; 2 for a chain that uses a value of the frequency, a budget-only parameter, a `Levels` combiner, a link, a sweep or a readout input; 3 for a transmit chain, an IQ modulator, an Amplifier's `Law`, `Psat`, `P`, `PhiSat` or `PhiMax`, or a converter's `Sideband`. A file from a newer circuitRF is refused, not read in part. |
+| `FormatVersion` | 1; 2 for a chain that uses a value of the frequency, a budget-only parameter, a `Levels` combiner, a link, a sweep or a readout input; 3 for a transmit chain, an IQ modulator, a DAC, a polar transmitter, an Amplifier's `Law`, `Psat`, `P`, `PhiSat` or `PhiMax`, or a converter's `Sideband`. A file from a newer circuitRF is refused, not read in part. |
 | `Direction` | Optional: `"Transmit"` for a [transmit chain](#transmit). Absent: a receive chain. |
 | `RxBandOffsetHz`, `RxBandHz` | Optional: a transmit chain's receive band, its centre's offset from the carrier at the output and its width. |
 | `FrequencyHz`, `BandwidthHz`, `InputPowerDbm`, `TemperatureK`, `RequiredSnrDb` | The [system inputs](#inputs). Absent: 2.45 GHz, 1 MHz, −70 dBm, 290 K, 10 dB. |
 | `Stages` | In signal order. `Name` follows the instance-name rule (a letter, then letters, digits and `_`). |
-| `Part` | `Amp`, `Mixer`, `IQMod`, `Atten`, `Filter`, `Switch`, `Circulator`, `Coupler`, `PhaseShifter`, `Limiter`, `Canceller`, `Splitter`, `SnP` or `Combiner`. |
+| `Part` | `Amp`, `Mixer`, `IQMod`, `DAC`, `PolarTx`, `Atten`, `Filter`, `Switch`, `Circulator`, `Coupler`, `PhaseShifter`, `Limiter`, `Canceller`, `Splitter`, `SnP` or `Combiner`. |
 | `Parameters` | The part's parameters by their own names. An absent one takes the part's default (a System block's own placement default); one the part does not list is carried onto the schematic unchanged and not read by the budget. |
 | `Blockers` | Optional: `[{"OffsetHz": 150000000, "LevelDbm": -40}, …]`, each an offset from `FrequencyHz` and a level at the input. |
 | `Demo` | Optional: `true` to write the [demo bench](#demo) too. |
@@ -993,7 +1125,8 @@ circuitrf hb "Superhet 2-Tone/schematic/Superhet 2-Tone.csch"
 
 A transmit chain's report reads its output in place of a receiver's sensitivity: the output power and its CW
 compression, the back-off from OP1dB and from Psat, the ACLR, the noise floor and the receive band's noise, and an IQ
-modulator's image and LO.
+modulator's image and LO. A chain from a [stream](#streams) adds a line: its EVM floor, its ACLR with the stream's share,
+and a DAC's image; the line before keeps the estimate from the OIP3 alone.
 
 `--to-schematic [dir]` writes into another folder, `--name` names the benches, `--demo` adds the demo bench, and an
 existing bench is a refusal unless `--replace` is given. `circuitrf check` reads a `.cchain` through the same budget and reports its refusals. Over the MCP
