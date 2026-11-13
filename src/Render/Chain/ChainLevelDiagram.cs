@@ -39,10 +39,13 @@ public static class ChainLevelDiagram
     /// <summary>What the figure draws. <paramref name="ElementNodes"/>: how many nodes, from the input, carry one array
     /// element's levels (up to the combiner's input); 0 with no array. <paramref name="Tx"/>: a transmit chain's readouts,
     /// and <paramref name="PsatDbm"/> its Psat referred to each node (+∞ before anything saturates); null for a receiver.
-    /// <paramref name="Image"/>: what the image bands the budget counts add to the NF, as the key says it; null for none.</summary>
+    /// <paramref name="Image"/>: what the image bands the budget counts add to the NF, as the key says it; null for none.
+    /// <paramref name="Desense"/>: the blocker that desensitises the chain most at its output and by how much, as the key
+    /// says it; null when none does by <see cref="ChainBlocking.NoteDb"/>.</summary>
     public sealed record Plan(IReadOnlyList<ChainNodeLevel> Nodes, IReadOnlyList<double> FrequencyHz, int ElementNodes, int ArrayN,
                               IReadOnlyList<string> Blockers, double RequiredSnrDb, Front? Link, double Lo, double Hi,
-                              ChainTxReadout? Tx = null, IReadOnlyList<double>? PsatDbm = null, string? Image = null);
+                              ChainTxReadout? Tx = null, IReadOnlyList<double>? PsatDbm = null, string? Image = null,
+                              string? Desense = null);
 
     /// <summary>The level plan of a budget; null when it was refused.</summary>
     public static Plan? For(ChainDesign d, ChainBudgetResult r)
@@ -61,7 +64,8 @@ public static class ChainLevelDiagram
         // EIRP and the ceiling reach the top only. A transmitter's: its own levels, and the P1dB, the Psat and the IM3.
         var tx = ChainTransmit.Read(r);
         double[]? psat = tx is null ? null : ChainTransmit.PsatAtNodes(r);
-        var framed = lv.SelectMany(n => new[] { n.SignalDbm, n.NoiseDbm, tx is null ? n.SensitivityDbm : double.NaN, n.InterferenceDbm }.Concat(n.BlockerDbm));
+        var framed = lv.SelectMany(n => new[] { n.SignalDbm, n.NoiseDbm, tx is null ? n.SensitivityDbm : double.NaN, n.InterferenceDbm,
+                                                PhaseNoiseFloor(n), ReciprocalMixing(n) }.Concat(n.BlockerDbm));
         var topOnly = tx is null ? lv.SelectMany(n => new[] { n.Im3Dbm, n.CompressionDbm, n.NoiseDbm + n.SfdrDb })
                                  : lv.SelectMany(n => new[] { n.Im3Dbm, n.CompressionDbm }).Concat(psat!);
         if (front is not null)
@@ -75,9 +79,25 @@ public static class ChainLevelDiagram
         string? image = counted.Count == 0 ? null
             : $"image noise +{r.ImageNfDb.ToString("0.00", CultureInfo.InvariantCulture)} dB of NF ("
               + string.Join(", ", counted.Select(x => $"{x.Name} at {ChainSnp.Hz(x.ImageHz)}")) + ")";
+        // The blocker that takes the most at the output, by reciprocal mixing and compression together.
+        var end = lv[^1];
+        int worst = Enumerable.Range(0, end.DesenseRmDb.Count).DefaultIfEmpty(-1)
+                              .MaxBy(k => k < 0 ? 0 : end.DesenseRmDb[k] + end.DesenseCompDb[k]);
+        string? desense = worst < 0 || end.DesenseRmDb[worst] + end.DesenseCompDb[worst] < ChainBlocking.NoteDb ? null
+            : $"blocker {worst + 1} desensitises {(end.DesenseRmDb[worst] + end.DesenseCompDb[worst]).ToString("0.00", CultureInfo.InvariantCulture)} dB";
         return new Plan(lv, [d.FrequencyHz, .. r.Stages.Select(s => s.FrequencyHz)], cmb >= 0 ? cmb + 1 : 0,
                         cmb >= 0 ? ChainParts.ReadCombiner(d.Stages[cmb]).N : 1,
-                        [.. d.Blockers.Select((b, k) => $"blocker {k + 1}")], d.RequiredSnrDb, front, lo, hi, tx, psat, image);
+                        [.. d.Blockers.Select((b, k) => $"blocker {k + 1}")], d.RequiredSnrDb, front, lo, hi, tx, psat, image, desense);
+    }
+
+    /// <summary>The LOs' phase noise in the channel at a node, dBm: the signal there less what the mask leaves it.</summary>
+    private static double PhaseNoiseFloor(ChainNodeLevel n) => n.SignalDbm + n.PhaseNoiseDbc;
+
+    /// <summary>Every blocker's reciprocal mixing at a node together, dBm; −∞ before a mixer with a mask.</summary>
+    private static double ReciprocalMixing(ChainNodeLevel n)
+    {
+        double w = n.ReciprocalDbm.Where(double.IsFinite).Sum(x => Math.Pow(10, x / 10));
+        return w > 0 ? 10 * Math.Log10(w) : double.NegativeInfinity;
     }
 
     // ── where things go ───────────────────────────────────────────────────────
@@ -316,6 +336,9 @@ public static class ChainLevelDiagram
         var series = new List<Series>();
         if (p.Tx is null) series.Add(new("sensitivity", Palette(theme, 3), Of(x => x.SensitivityDbm), 1.2f, true, false, false));
         series.Add(new("noise floor", cNoise, noise, 2f, false, true, true));
+        // An LO's phase noise and the blockers' reciprocal mixing, in the channel, from the mixer that states its mask on.
+        if (p.Nodes.Any(x => Level(PhaseNoiseFloor(x)))) series.Add(new("LO phase noise", cNoise, Of(PhaseNoiseFloor), 1.4f, true, false, false));
+        if (p.Nodes.Any(x => Level(ReciprocalMixing(x)))) series.Add(new("reciprocal mixing", Palette(theme, 9), Of(ReciprocalMixing), 1.4f, true, false, false));
         // A transmitter's ceiling over its P1dB, dashed in the compression's colour; named at the output, not at each node.
         if (p.PsatDbm is { } ps) series.Add(new("Psat", cComp, [.. ps], 1.4f, true, true, false));
         series.Add(new("P1dB", cComp, comp, 1.6f, false, true, true));
@@ -421,11 +444,13 @@ public static class ChainLevelDiagram
             keys.Add(($"sensitivity: MDS + {D(p.RequiredSnrDb).Replace(".0", "")} dB", Palette(theme, 3)));
         }
         if (p.Image is { } im) keys.Add((im, cNoise));
+        if (p.Desense is { } ds) keys.Add((ds, Palette(theme, 9)));
         float kx = plot.Left, ky = plot.Bottom + f.Font * 2.4f;
         foreach (var (t, col) in keys)
         {
             bool line = t.StartsWith("sens", StringComparison.Ordinal) || t.StartsWith("noise", StringComparison.Ordinal)
-                        || t.StartsWith("ACLR", StringComparison.Ordinal) || t.StartsWith("image", StringComparison.Ordinal),
+                        || t.StartsWith("ACLR", StringComparison.Ordinal) || t.StartsWith("image", StringComparison.Ordinal)
+                        || t.StartsWith("blocker", StringComparison.Ordinal),
                  hatched = t.StartsWith("SFDR", StringComparison.Ordinal);
             using var sw = new SKPaint
             {

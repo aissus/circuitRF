@@ -56,7 +56,8 @@ public static class ChainBudgetDisplay
             case ChainBench.Levels: return Display(chain, bench, src, Levels(chain, design, budget, blockersOnly: false, written));
             case ChainBench.Blockers: return Display(chain, bench, src, Levels(chain, design, budget, blockersOnly: true, written));
             case ChainBench.Canceller: return Display(chain, bench, src, Canceller(src));
-            case ChainBench.Demo: return Display(chain, bench, src, Demo(src, ChainBenches.DemoPowers(budget.Totals!)));
+            case ChainBench.Demo: return Display(chain, bench, src, Demo(src, ChainBenches.DemoPowers(budget.Totals!), design, budget));
+            case ChainBench.Sfdr: return Display(chain, bench, src, Sfdr(src));
             case ChainBench.Transmitter: return Display(chain, bench, src, Transmitter(src));
             case ChainBench.Pa: return Display(chain, bench, src, Pa(src, design));
         }
@@ -92,12 +93,26 @@ public static class ChainBudgetDisplay
             evm.Top = (rows.Length / 2) * (H + Gap);
             plots.Add(evm);
             y = evm.Top + H + Gap;
+            // With an LO mask the budget's SNR is its thermal one and the LO's phase noise and reciprocal mixing beside it;
+            // with records, the spread of their mean.
+            var parts = new List<(string, string)>();
+            if (Masked(design))
+                parts.AddRange([("SNRth_calc", "SNR thermal, dB: budget"), ("PN_calc", "LO phase noise in the channel, dBc"),
+                                ("RM_calc", "reciprocal mixing, dBc")]);
+            if (design.Records > 1) parts.Add(("SNR_spread", $"SNR spread of {design.Records} records' mean, dB"));
+            if (parts.Count > 0)
+            {
+                var t = Table("What the SNR holds", src, [.. parts], first: 220);
+                t.Top = y;
+                plots.Add(t);
+                y += H + Gap;
+            }
             plots.Add(new PlotContainerConfig
             {
                 PlotType = PlotType.Rect, Left = 0, Top = y, Width = 620, Height = 360,
                 CustomTitle = "Output spectrum", CustomTitleOn = true,
                 CustomYLabel = "PSD (dBm/Hz)", CustomYLabelOn = true,
-                Traces = [new TraceConfig { SourcePath = src, Expression = "ENV1.PSD[\"Iout\", :]", Label = "PSD at the output" }],
+                Traces = [new TraceConfig { SourcePath = src, Expression = $"ENV1.PSD[{(design.Records > 1 ? "0, " : "")}\"Iout\", :]", Label = "PSD at the output" }],
             });
         }
 
@@ -226,6 +241,13 @@ public static class ChainBudgetDisplay
     /// <summary>The IM3's legend name when the frame clips it: short, so a legend cell holds it whole.</summary>
     public const string Im3Clipped = "IM3 (clipped)";
 
+    /// <summary>An EVM plot's top, %: the largest EVM it draws with a fifth more, rounded up on a 1-2-5 step.</summary>
+    public static double EvmTop(double max)
+    {
+        double v = Math.Max(max, 1e-3) * 1.2, e = Math.Pow(10, Math.Floor(Math.Log10(v))), m = v / e;
+        return (m <= 1 ? 1 : m <= 2 ? 2 : m <= 5 ? 5 : 10) * e;
+    }
+
     /// <summary>A node axis' window: half a node beyond the input and beyond the output.</summary>
     public static (double Lo, double Hi) NodeWindow(int nodes) => (-0.5, nodes - 0.5);
 
@@ -308,6 +330,11 @@ public static class ChainBudgetDisplay
             Rect(blockersOnly ? "The blockers at each node, dBm" : "Levels at each node, dBm", $"node: {nodes}", "dBm", 0, 0, 760, 420,
                  traces, window, NodeWindow(lv.Count)),
         };
+        // With the dynamic-range checks, the gain the blockers take from the signal at each node, beside the budget's.
+        if (blockersOnly && d.DynamicRange && !d.IsTransmit)
+            plots.Add(Rect("The signal's desensitisation by compression, dB", $"node: {nodes}", "dB", 0, 420 + Gap, 760, 340,
+                           [Over(blk, "Des_calc", ChainBenches.NodeVar, "every blocker, budget", C(4), false),
+                            Over(blk, "Des_sim", ChainBenches.NodeVar, "simulated", C(4), true)]));
         if (!blockersOnly)
         {
             var db = new List<TraceConfig>
@@ -361,9 +388,10 @@ public static class ChainBudgetDisplay
 
     /// <summary>The demo: the 64-QAM carrier's constellation at the middle input power and at the highest, the EVM
     /// against the input power with the budget's from its SNR, its split into noise and distortion, and the SNR.</summary>
-    private static List<PlotContainerConfig> Demo(string src, double[] pins)
+    private static List<PlotContainerConfig> Demo(string src, double[] pins, ChainDesign d, ChainBudgetResult r)
     {
         (double, double) px = (pins[0] - 2, pins[^1] + 2);
+        string rec = d.Records > 1 ? "0, " : "";   // with records, the first's constellation
         var plots = new List<PlotContainerConfig>
         {
             Rect("EVM against the input power", "input power per element, dBm", "EVM, %", 0, 0, 560, 380,
@@ -374,9 +402,44 @@ public static class ChainBudgetDisplay
             Rect("SNR in the carrier's channel", "input power per element, dBm", "dB", 0, 380 + Gap, 560, 320,
                  [Over(src, "SNR_QAM_calc", "Pin", "budget", C(1), false), Over(src, "SNR_QAM_sim", "Pin", "simulated", C(1), true)]),
         };
-        plots.Add(Constellation("64-QAM at the output, mid power", src, "ENVD", "[3, 0, 0, :]", "[3, 0, :]", 560 + Gap, 380 + Gap, 320));
-        plots.Add(Constellation("64-QAM at the output, highest power", src, "ENVD", "[6, 0, 0, :]", "[6, 0, :]", 900 + 2 * Gap, 380 + Gap, 320));
+        // Beside probes at every node the output's is no longer the only branch: named.
+        string o = Masked(d) ? "\"Iout\"" : "0";
+        int mid = ChainBenches.DemoMidPower;
+        plots.Add(Constellation("64-QAM at the output, mid power", src, "ENVD", $"[{rec}{mid}, {o}, 0, :]", $"[{rec}{mid}, 0, :]", 560 + Gap, 380 + Gap, 320));
+        plots.Add(Constellation("64-QAM at the output, highest power", src, "ENVD", $"[{rec}6, {o}, 0, :]", $"[{rec}6, 0, :]", 900 + 2 * Gap, 380 + Gap, 320));
+        if (!Masked(d)) return plots;
+        // The EVM node by node at the middle power, the budget's and the run's: its noise part, and the whole.
+        var lv = ChainLevels.Evaluate(d, r);
+        string nodes = string.Join(", ", lv.Select((n, i) => $"{i} {n.Node}"));
+        plots.Add(Rect($"EVM at each node, at {pins[mid]:0.#} dBm in", $"node: {nodes}", "EVM, %", 0, 2 * (380 + Gap), 760, 340,
+                       [Over(src, "EVMn_node_calc", ChainBenches.NodeVar, "noise part, budget", C(3), false),
+                        Over(src, "EVMn_node_sim", ChainBenches.NodeVar, "noise part, simulated", C(3), true),
+                        Over(src, "EVM_node_calc", ChainBenches.NodeVar, "EVM, budget", C(1), false),
+                        Over(src, "EVM_node_sim", ChainBenches.NodeVar, "EVM, simulated", C(1), true)],
+                       null, NodeWindow(lv.Count)));
         return plots;
+    }
+
+    /// <summary>A mixer of the chain states its LO's phase-noise mask, which its Envelope and Demo benches then play.</summary>
+    private static bool Masked(ChainDesign d) => d.Stages.Any(s => ChainParts.MaskOf(s) is not null);
+
+    /// <summary>The SFDR bench: the fundamental and the IM3 at the output against the two tones' level, the budget's lines
+    /// and the run's points, the noise floor they cross; and a table of where the IM3 meets it and the SFDR.</summary>
+    private static List<PlotContainerConfig> Sfdr(string src)
+    {
+        const string x = "each tone at the input, dBm";
+        var t = Table("Where the IM3 meets the noise floor", src,
+                      [("Pcross_calc", "IM3 on the floor at, dBm: budget"), ("Pcross_sim", "simulated"), ("SFDR_calc", "SFDR, dB: budget"),
+                       ("SFDR_sim", "simulated"), ("SFDR_err", "difference")], first: 260);
+        t.Top = 380 + Gap;
+        return
+        [
+            Rect("The fundamental and the IM3 at the output", x, "dBm", 0, 0, 760, 380,
+                 [Over(src, "P1_calc", "P2t", "fundamental, budget", C(1), false), Over(src, "P1_out", "P2t", "fundamental, simulated", C(1), true),
+                  Over(src, "P3_calc", "P2t", "IM3, budget", C(4), false), Over(src, "P3_out", "P2t", "IM3, simulated", C(4), true),
+                  Over(src, "Nout_line", "P2t", "noise floor in the bandwidth", C(3), false)]),
+            t,
+        ];
     }
 
     /// <summary>The TX bench: the output, the EVM and the adjacent-channel ratios against the back-off from Psat, and a
@@ -551,8 +614,13 @@ public static class ChainBudgetDisplay
         };
         // Windowed as the bench's display is: every level but an IM3 far under the noise in the frame, and nothing absent.
         // No x label: the axis names its nodes.
+        // The EVM node by node at the chain's input power: its SNR, the LOs' phase noise, the blockers' reciprocal mixing
+        // and the cubic's distortion. Its own plot, on a % axis from 0.
+        var evm = new List<TraceConfig> { Over(src, "EVM_pct", "node", "EVM", C(2), false) };
+        double top = lv.Select(n => n.EvmPct).Where(double.IsFinite).DefaultIfEmpty(1).Max();
         return [Rect("Levels at each node, dBm", "", "dBm", 0, 0, 560, 240, t, DbmWindow(lv), NodeWindow(lv.Count)),
-                Rect("NF, SNR and margin, dB", "", "dB", 0, 0, 480, 240, db, DbWindow(Db(lv)), NodeWindow(lv.Count))];
+                Rect("NF, SNR and margin, dB", "", "dB", 0, 0, 480, 240, db, DbWindow(Db(lv)), NodeWindow(lv.Count)),
+                Rect("EVM, %", "", "%", 0, 0, 360, 240, evm, (0, EvmTop(top)), NodeWindow(lv.Count))];
     }
 
     /// <summary>The window's Canceller tab, in closed form: the depth against the phase error for five amplitude errors,

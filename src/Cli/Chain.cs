@@ -7,7 +7,7 @@ namespace CircuitRF.Cli;
 
 /// <summary>
 /// <c>circuitrf chain &lt;path.cchain&gt; [-o budget.{npy,mat,txt}] [--level-diagram out.{png,svg}] [--to-schematic [dir]] [--name N]
-/// [--replace] [--demo]</c> —
+/// [--replace] [--demo] [--dynamic-range] [--records N]</c> —
 /// the RF Chain Budget window, headless.
 ///
 /// <para><b>It owns no arithmetic and no drawing.</b> The budget is <see cref="ChainBudget.Evaluate"/>, the benches
@@ -23,7 +23,8 @@ internal static class Chain
     public static int Run(string[] args)
     {
         string? path = null, output = null, into = null, name = null, levels = null;
-        bool toSchematic = false, replace = false, demo = false;
+        bool toSchematic = false, replace = false, demo = false, range = false;
+        int? records = null;
         for (int i = 0; i < args.Length; i++)
         {
             switch (args[i])
@@ -38,6 +39,9 @@ internal static class Chain
                 case "--name" when i + 1 < args.Length: name = args[++i]; continue;
                 case "--replace": replace = true; continue;
                 case "--demo": demo = true; continue;
+                case "--dynamic-range": range = true; continue;
+                case "--records" when i + 1 < args.Length && int.TryParse(args[i + 1], NumberStyles.Integer, CultureInfo.InvariantCulture, out int n):
+                    records = n; i++; continue;
             }
             if (args[i].StartsWith('-')) return JsonRun.Fail(CliDiagnostics.ChainUnknownOption(args[i]));
             if (path is not null) return JsonRun.Fail(CliDiagnostics.ChainUnknownOption(args[i]));
@@ -47,7 +51,8 @@ internal static class Chain
         {
             Console.Error.WriteLine(
                 "Usage: circuitrf chain <path.cchain> [-o budget.{npy,mat,txt}] [--level-diagram levels.{png,svg}]\n" +
-                "                       [--to-schematic [workspace-dir]] [--name <chain>] [--replace] [--demo]");
+                "                       [--to-schematic [workspace-dir]] [--name <chain>] [--replace] [--demo]\n" +
+                "                       [--dynamic-range] [--records <n>]");
             return 1;
         }
         JsonRun.InputPath = path;
@@ -59,7 +64,13 @@ internal static class Chain
             return JsonRun.Fail(CliDiagnostics.ChainNotAChain(path, DocumentKinds.Name(kind)));
 
         ChainDesign design;
-        try { design = ChainDesignIo.LoadFromFile(path); design.Demo |= demo; }
+        try
+        {
+            design = ChainDesignIo.LoadFromFile(path);
+            design.Demo |= demo;
+            design.DynamicRange |= range;
+            if (records is { } rc) design.Records = rc;
+        }
         catch (Exception ex) when (ex is IOException or InvalidDataException or UnauthorizedAccessException)
         { return JsonRun.Fail(CliDiagnostics.ChainUnreadable(path, ex.Message)); }
 
@@ -172,6 +183,12 @@ internal static class Chain
         Console.WriteLine($"  thermal floor {D(t.ThermalFloorDbm)} dBm, output noise {D(t.NoiseOutDbm)} dBm, MDS {D(t.MdsDbm)} dBm, "
                         + $"sensitivity {D(t.SensitivityDbm)} dBm at {D(d.RequiredSnrDb)} dB SNR");
         Console.WriteLine($"  SNR {D(t.SnrDb)} dB, SFDR {D(t.SfdrDb)} dB" + (t.ArrayGainDb > 0 ? $", array gain {D(t.ArrayGainDb)} dB" : ""));
+        if (ChainBlocking.Read(r) is { } bl && (double.IsFinite(bl.PhaseNoiseDbc) || bl.DesenseRmDb.Count > 0))
+            // The LO's phase noise and the blockers: their SNR, the EVM, and what each blocker takes.
+            Console.WriteLine((double.IsFinite(bl.PhaseNoiseDbc) ? $"  LO phase noise {D(bl.PhaseNoiseDbc)} dBc in the channel (EVM floor {D(bl.EvmFloorPct)} %), " : "  ")
+                            + $"SNR with it and the blockers {D(bl.SnrDb)} dB, EVM {D(bl.EvmPct)} %"
+                            + string.Concat(bl.DesenseRmDb.Select((x, k) => $"; blocker {k + 1} desensitises {D(x)} dB by reciprocal mixing, "
+                                                                            + $"{bl.DesenseCompDb[k].ToString("0.000", CultureInfo.InvariantCulture)} dB by compression")));
         if (ChainCapacity.Read(r) is { } o)
             Console.WriteLine($"  NF of the array {D(o.NfArrayDb)} dB, "
                             + $"margin {D(o.MarginDb)} dB, rate {ChainCapacity.Rate(o.RateBps)}"
