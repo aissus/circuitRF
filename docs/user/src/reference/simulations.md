@@ -552,8 +552,8 @@ Three things make long modulated runs practical:
 **Frequency-dependent blocks.** Resistors, capacitors and inductors enter every step exactly. Other
 blocks are handled as follows.
 
-- **Lines** ([TLIN](components.html#tline), and the microstrip, stripline and coplanar lines) are
-  stepped as a delay: each end sees the wave that left the other end one line delay earlier. A
+- **Lines** ([TLIN](components.html#tline), and the microstrip, stripline and coplanar lines), and the System
+  [Delay](components.html#delay) (a lossless line of `Z0` and delay `T`), are stepped as a delay: each end sees the wave that left the other end one line delay earlier. A
   lossless line is exact at any length, across the signal band and in the baseband envelope (the bias
   path). A lossy line's loss is taken to first order around each harmonic and left out of the baseband
   envelope, where the line stays exact at DC. A line is usually shorter than one step, so the
@@ -579,6 +579,16 @@ blocks are handled as follows.
   order around each harmonic (their value and slope there). In the baseband envelope each strip is
   held at what it is at DC, a short from end to end. A warning names any whose error across the band
   is large enough to move ACPR by about 0.1 dB.
+
+**A baseband beside the carrier.** The envelope at DC (k = 0) is a signal like any other: a supply's current, a
+bias node's droop, or a polar transmitter's amplitude and phase. A [MOD_Source](components.html#modsource) with
+`Polar=amp` or `Polar=phase` drives it with the signal's envelope or phase, and the
+[polar-transmitter blocks](system-components.html#polar) read it and write it; the run measures the pair's signal
+once, through its amplitude half, so Pin, gain, ACLR and EVM at the output are against the signal the pair
+stands for. Polar halves and those blocks need a single envelope: the multi-fundamental envelope refuses them by
+name. The warm-up estimate does not see a polar block's own ports, so a line between two of them can read as a
+memory of seconds and make the run one segment; state `Warmup` (the polar example uses 1 µs) to run it in
+parallel, and the seam error still reports what that costs.
 
 | Setting | Default | Meaning |
 |---|---|---|

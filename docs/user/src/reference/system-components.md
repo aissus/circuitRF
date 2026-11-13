@@ -3,8 +3,8 @@ title: System Components
 slug: reference/system-components.html
 doc-kind: Reference Guide
 breadcrumb: Docs > Reference > System components
-lede: The ideal blocks a system diagram is drawn out of — circulator, coupler, hybrid, combiner, balun, switch, amplifier, attenuator, delay, filter, duplexer and mixer. What each one is for, what "ideal" costs you, and where passive intermodulation comes from.
-keywords: mixer, amplifier, filter, attenuator, delay, combiner, splitter, power divider, Wilkinson, behavioural block, system level, intermod, IP3
+lede: The ideal blocks a system diagram is drawn out of — circulator, coupler, hybrid, combiner, balun, switch, amplifier, attenuator, delay, filter, duplexer and mixer, and the four of a polar transmitter. What each one is for, what "ideal" costs you, and where passive intermodulation comes from.
+keywords: mixer, amplifier, filter, attenuator, delay, combiner, splitter, power divider, Wilkinson, behavioural block, system level, intermod, IP3, polar transmitter, envelope elimination and restoration, EER, envelope detector, limiter, phase modulator, supply-modulated amplifier, AM-AM, AM-PM
 ---
 
 <nav class="toc">
@@ -14,6 +14,7 @@ keywords: mixer, amplifier, filter, attenuator, delay, combiner, splitter, power
 <li><a href="#instead">What to reach for instead, and when</a></li>
 <li><a href="#running">Which analysis answers which question</a></li>
 <li><a href="#pim">Passive intermodulation</a></li>
+<li><a href="#polar">Polar transmitters</a></li>
 <li><a href="#catalogue">The blocks, one by one</a></li>
 </ol>
 </nav>
@@ -251,6 +252,48 @@ circulator, the in-phase coupler and the 180&deg; hybrid. For a quadrature hybri
 attenuator beside it instead, exactly as you would for a filter.</p>
 </div>
 
+## Polar transmitters {#polar}
+
+A polar transmitter carries a signal `x(t) = a(t)·e^(jφ(t))` as its two halves: the **amplitude** `a(t)` at baseband
+sets the supply of a saturated amplifier, and the **phase** `φ(t)` turns a constant-envelope carrier on its way into
+that amplifier. Four blocks and one source mode build one:
+
+| Block | What it does to the carrier |
+|---|---|
+| [Envelope Detector](components.html#envdetector) | RF in, its amplitude out at baseband, through an optional one-pole bandwidth |
+| [Limiter](components.html#limiter) | RF in, a fixed amplitude out at the input's phase |
+| [Phase Modulator](components.html#phasemod) | RF in, out turned by `Kp` radians per volt at its baseband phase input |
+| [Supply-Modulated Amplifier](components.html#supplyamp) | RF in, out at an amplitude its baseband supply sets, with AM-AM and AM-PM against that supply |
+| [MOD_Source](components.html#modsource) with `Polar=amp` / `Polar=phase` | the [Signal Designer](signal-designer.html)'s signal split into its envelope and its phase, as two baseband sources |
+
+The worked example is the **PolarTx** bench of the *System Design* examples: an NR signal recombined at 3.5 GHz,
+studied against the AM/PM path delay mismatch and the AM path's bandwidth.
+
+### How a block reads a carrier's amplitude and phase
+
+Harmonic balance and the envelope evaluate a nonlinear block on samples of one carrier period, and no function
+of the instantaneous voltage `a·cos(ωt + φ)` alone gives `a`, or turns `φ`. Each of the four blocks therefore holds
+one extra internal node at the **quadrature** of its RF input, `a·sin(ωt + φ)`: the input's Hilbert transform,
+which is `−j` times the input at every harmonic and nothing at DC. With the pair, `√(v² + v_q²)` is the amplitude
+at every sample and `cos θ·v − sin θ·v_q` the carrier turned by `θ`, so each law is exact on the sampling grid
+and **makes no harmonics**: `MaxHarm=1` is enough unless something else in the circuit needs more. It is the same
+frequency-domain weight, `j·sign(ω)`, that a block with a complex S uses for its [passive intermod](#pim).
+
+That weight is carried by **single-tone harmonic balance and a single envelope**. Two-tone and multi-tone harmonic
+balance and the multi-fundamental envelope (`Envelope=lattice`, or carriers far enough apart to get their own
+fundamentals) refuse these blocks by name rather than run them without it. An S-parameter run sees each block
+linearised at no drive.
+
+### Baseband beside the carrier
+
+In an envelope run every net carries a slowly varying envelope at every harmonic, **DC included**: the k = 0
+envelope is a baseband signal, stepped with the same accuracy as the carrier's. A polar MOD_Source half drives it,
+the [Envelope Detector](components.html#envdetector) writes to it, and the Phase Modulator and the Supply-Modulated
+Amplifier read it; a System [Filter](#filter) shapes it exactly (its rational fit holds from DC up) and a
+[Delay](#delay) delays it exactly (it is stepped as its delay). Drive a control input from a source with an
+impedance, as the polar halves are: an ideal voltage source straight onto a block's port leaves harmonic balance
+nothing to solve at that node.
+
 ## The blocks, one by one {#catalogue}
 
 One entry each, in the order the palette lists them under **System**. The parameter tables live in
@@ -440,7 +483,8 @@ An ideal matched delay line, stated in time rather than in electrical length:
 `S11 = S22 = 0`, `S21 = S12 = e^(−jωT)`
 
 It has two interchangeable pins, a delay `T` and a reference impedance `Z0`. Its magnitude is 1 at
-every frequency and its group delay is exactly `T`, so it is how a block diagram states a cable run,
+every frequency and its group delay is exactly `T`, in a circuit envelope too, where it is stepped as its delay
+at every harmonic and at baseband, so it is how a block diagram states a cable run,
 a filter's latency or a processing delay without picking a frequency to quote a phase at. At DC it
 is an ideal through. A negative `T` is accepted. It is not causal, but it is the quickest way to
 cancel a known delay elsewhere in a chain.
@@ -492,6 +536,45 @@ follows from its S at its temperature, as every block's here does:
   gives.
 
 Parameters: {{anchor: components#combiner|Components › Combiner}}.
+
+### Envelope Detector (EnvDetector) {#envdetector}
+
+{{symbol: env-detector}}
+
+The carrier's amplitude at baseband, `Kd` volts into a matched load per volt of peak RF amplitude, through
+`1/(1 + jf/BW)` when `BW` is set. The pole sits on a node of its own, so the load does not move it. With no pole it
+is memoryless: the output follows the amplitude sample by sample.
+
+Parameters: {{anchor: components#envdetector|Components › Envelope Detector}}.
+
+### Limiter {#limiter}
+
+{{symbol: limiter}}
+
+The ideal constant-envelope stage: `Pout` into a matched load at the input's phase, `A·a/√(a² + Vk²)` for an input
+amplitude `a`, where `Vk` is the knee `Knee` names. Use it to strip the amplitude off a carrier: what comes out is
+the phase alone.
+
+Parameters: {{anchor: components#limiter|Components › Limiter}}.
+
+### Phase Modulator (PhaseMod) {#phasemod}
+
+{{symbol: phase-mod}}
+
+`S21 = 10^(Gain/20)·e^(j·Kp·V(PH))`: the carrier turned by `Kp` radians per volt at `PH`. A polar phase half into
+its matched `PH` reads one volt per radian, so `Kp = 1` replays the signal's phase.
+
+Parameters: {{anchor: components#phasemod|Components › Phase Modulator}}.
+
+### Supply-Modulated Amplifier (SupplyAmp) {#supplyamp}
+
+{{symbol: supply-amp}}
+
+A saturated stage: the supply at `VS` sets the output amplitude, `Ks·VS` (or `Ks·Vsat·tanh(VS/Vsat)`), and turns
+its phase by `AMPM·VS` degrees, while the RF input sets only the phase. Like the [Amplifier](#amp) it has no DC
+power consumption and no efficiency: it is the law of the envelope, not a supply's current.
+
+Parameters: {{anchor: components#supplyamp|Components › Supply-Modulated Amplifier}}.
 
 ### Directional Coupler {#coupler}
 

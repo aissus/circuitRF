@@ -1,0 +1,9 @@
+<!-- GENERATED FILE - do not edit. Regenerate every component symbol with:
+     dotnet run ––project src/Ui –– ––generate-symbols docs/user/assets/symbols
+     (the flags above are ordinary double hyphens; XML comments cannot contain them.)
+     Source: src/Ui/Diagnostics/SymbolArtworkGenerator.cs -->
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="240" height="186" viewBox="0 0 240 186"><path fill="none" stroke="#9684FA" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M88.82 59.19L88.82 126L155.63 92.59L88.82 59.19Z" /><path fill="none" stroke="#9684FA" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M53.19 92.59L88.82 92.59" /><path fill="none" stroke="#9684FA" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M155.63 92.59L186.81 92.59" /><path fill="none" stroke="#9684FA" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M120 25.78L120 74.78" /><text fill="#9684FA" transform="translate(132.25 44.71)" font-size="6.68" font-family="IBM Plex Sans" x="-4, 0" y="2.51">
+			VS
+	</text><rect fill="none" stroke="#F07846" stroke-width="1" stroke-miterlimit="4" x="50.19" y="89.59" width="6" height="6" /><rect fill="none" stroke="#F07846" stroke-width="1" stroke-miterlimit="4" x="183.81" y="89.59" width="6" height="6" /><rect fill="none" stroke="#F07846" stroke-width="1" stroke-miterlimit="4" x="117" y="22.78" width="6" height="6" /><text fill="#8CAEFF" font-size="15" font-weight="600" font-family="IBM Plex Sans" x="23, 32, 41, 50, 59, 63, 71, 77, 89, 97, 106, 115, 119, 127, 133, 141, 150, 154, 164, 177, 186, 190, 194, 199, 203, 211" y="172.32">
+			Supply-Modulated Amplifier
+	</text></svg>

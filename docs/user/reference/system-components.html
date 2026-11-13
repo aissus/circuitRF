@@ -37,7 +37,7 @@
   </div>
 
   <h1>System Components</h1>
-  <p class="lede">The ideal blocks a system diagram is drawn out of — circulator, coupler, hybrid, combiner, balun, switch, amplifier, attenuator, delay, filter, duplexer and mixer. What each one is for, what &quot;ideal&quot; costs you, and where passive intermodulation comes from.</p>
+  <p class="lede">The ideal blocks a system diagram is drawn out of — circulator, coupler, hybrid, combiner, balun, switch, amplifier, attenuator, delay, filter, duplexer and mixer, and the four of a polar transmitter. What each one is for, what &quot;ideal&quot; costs you, and where passive intermodulation comes from.</p>
 
 <nav class="toc">
 <h2>On this page</h2>
@@ -46,6 +46,7 @@
 <li><a href="#instead">What to reach for instead, and when</a></li>
 <li><a href="#running">Which analysis answers which question</a></li>
 <li><a href="#pim">Passive intermodulation</a></li>
+<li><a href="#polar">Polar transmitters</a></li>
 <li><a href="#catalogue">The blocks, one by one</a></li>
 </ol>
 </nav>
@@ -292,6 +293,62 @@ nothing reaches the through port and the source node reads about 6 dB high.</p>
 circulator, the in-phase coupler and the 180&deg; hybrid. For a quadrature hybrid, put the PIM on an
 attenuator beside it instead, exactly as you would for a filter.</p>
 </div>
+<h2 id="polar">Polar transmitters</h2>
+<p>A polar transmitter carries a signal <code>x(t) = a(t)·e^(jφ(t))</code> as its two halves: the <strong>amplitude</strong> <code>a(t)</code> at baseband
+sets the supply of a saturated amplifier, and the <strong>phase</strong> <code>φ(t)</code> turns a constant-envelope carrier on its way into
+that amplifier. Four blocks and one source mode build one:</p>
+<table>
+<thead>
+<tr>
+<th>Block</th>
+<th>What it does to the carrier</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><a href="components.html#envdetector">Envelope Detector</a></td>
+<td>RF in, its amplitude out at baseband, through an optional one-pole bandwidth</td>
+</tr>
+<tr>
+<td><a href="components.html#limiter">Limiter</a></td>
+<td>RF in, a fixed amplitude out at the input's phase</td>
+</tr>
+<tr>
+<td><a href="components.html#phasemod">Phase Modulator</a></td>
+<td>RF in, out turned by <code>Kp</code> radians per volt at its baseband phase input</td>
+</tr>
+<tr>
+<td><a href="components.html#supplyamp">Supply-Modulated Amplifier</a></td>
+<td>RF in, out at an amplitude its baseband supply sets, with AM-AM and AM-PM against that supply</td>
+</tr>
+<tr>
+<td><a href="components.html#modsource">MOD_Source</a> with <code>Polar=amp</code> / <code>Polar=phase</code></td>
+<td>the <a href="signal-designer.html">Signal Designer</a>'s signal split into its envelope and its phase, as two baseband sources</td>
+</tr>
+</tbody>
+</table>
+<p>The worked example is the <strong>PolarTx</strong> bench of the <em>System Design</em> examples: an NR signal recombined at 3.5 GHz,
+studied against the AM/PM path delay mismatch and the AM path's bandwidth.</p>
+<h3 id="how-a-block-reads-a-carriers-amplitude-and-phase">How a block reads a carrier's amplitude and phase</h3>
+<p>Harmonic balance and the envelope evaluate a nonlinear block on samples of one carrier period, and no function
+of the instantaneous voltage <code>a·cos(ωt + φ)</code> alone gives <code>a</code>, or turns <code>φ</code>. Each of the four blocks therefore holds
+one extra internal node at the <strong>quadrature</strong> of its RF input, <code>a·sin(ωt + φ)</code>: the input's Hilbert transform,
+which is <code>−j</code> times the input at every harmonic and nothing at DC. With the pair, <code>√(v² + v_q²)</code> is the amplitude
+at every sample and <code>cos θ·v − sin θ·v_q</code> the carrier turned by <code>θ</code>, so each law is exact on the sampling grid
+and <strong>makes no harmonics</strong>: <code>MaxHarm=1</code> is enough unless something else in the circuit needs more. It is the same
+frequency-domain weight, <code>j·sign(ω)</code>, that a block with a complex S uses for its <a href="#pim">passive intermod</a>.</p>
+<p>That weight is carried by <strong>single-tone harmonic balance and a single envelope</strong>. Two-tone and multi-tone harmonic
+balance and the multi-fundamental envelope (<code>Envelope=lattice</code>, or carriers far enough apart to get their own
+fundamentals) refuse these blocks by name rather than run them without it. An S-parameter run sees each block
+linearised at no drive.</p>
+<h3 id="baseband-beside-the-carrier">Baseband beside the carrier</h3>
+<p>In an envelope run every net carries a slowly varying envelope at every harmonic, <strong>DC included</strong>: the k = 0
+envelope is a baseband signal, stepped with the same accuracy as the carrier's. A polar MOD_Source half drives it,
+the <a href="components.html#envdetector">Envelope Detector</a> writes to it, and the Phase Modulator and the Supply-Modulated
+Amplifier read it; a System <a href="#filter">Filter</a> shapes it exactly (its rational fit holds from DC up) and a
+<a href="#delay">Delay</a> delays it exactly (it is stepped as its delay). Drive a control input from a source with an
+impedance, as the polar halves are: an ideal voltage source straight onto a block's port leaves harmonic balance
+nothing to solve at that node.</p>
 <h2 id="catalogue">The blocks, one by one</h2>
 <p>One entry each, in the order the palette lists them under <strong>System</strong>. The parameter tables live in
 <a href="components.html">Components</a>, one section per block, and each entry below links to its own.</p>
@@ -575,7 +632,8 @@ which is what a VSWR figure on a datasheet means.</p>
 <p>An ideal matched delay line, stated in time rather than in electrical length:</p>
 <p><code>S11 = S22 = 0</code>, <code>S21 = S12 = e^(−jωT)</code></p>
 <p>It has two interchangeable pins, a delay <code>T</code> and a reference impedance <code>Z0</code>. Its magnitude is 1 at
-every frequency and its group delay is exactly <code>T</code>, so it is how a block diagram states a cable run,
+every frequency and its group delay is exactly <code>T</code>, in a circuit envelope too, where it is stepped as its delay
+at every harmonic and at baseband, so it is how a block diagram states a cable run,
 a filter's latency or a processing delay without picking a frequency to quote a phase at. At DC it
 is an ideal through. A negative <code>T</code> is accepted. It is not causal, but it is the quickest way to
 cancel a known delay elsewhere in a chain.</p>
@@ -667,6 +725,73 @@ through. With losses, a matched passive two-port has NF = −20·log10 |S21|, wh
 gives.</li>
 </ul>
 <p>Parameters: <a href="components.html#combiner">Components › Combiner</a>.</p>
+<h3 id="envdetector">Envelope Detector (EnvDetector)</h3>
+<figure class="symbol"><span class="frame">
+<span class="sym-light"><svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="240" height="186" viewBox="0 0 240 186"><path fill="none" stroke="#2D14C3" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M88.83 102.43L88.83 47.57Q88.83 47.39 88.85 47.2Q88.87 47.02 88.9 46.84Q88.94 46.66 88.99 46.49Q89.05 46.31 89.12 46.14Q89.19 45.97 89.27 45.81Q89.36 45.65 89.46 45.49Q89.56 45.34 89.68 45.2Q89.8 45.06 89.93 44.93Q90.06 44.8 90.2 44.68Q90.34 44.56 90.49 44.46Q90.65 44.36 90.81 44.27Q90.97 44.19 91.14 44.12Q91.31 44.05 91.49 43.99Q91.66 43.94 91.84 43.9Q92.02 43.87 92.2 43.85Q92.39 43.83 92.57 43.83L147.43 43.83Q147.61 43.83 147.79 43.85Q147.98 43.87 148.16 43.9Q148.34 43.94 148.51 43.99Q148.69 44.05 148.86 44.12Q149.03 44.19 149.19 44.27Q149.35 44.36 149.51 44.46Q149.66 44.56 149.8 44.68Q149.94 44.8 150.07 44.93Q150.2 45.06 150.32 45.2Q150.44 45.34 150.54 45.49Q150.64 45.65 150.73 45.81Q150.81 45.97 150.88 46.14Q150.95 46.31 151.01 46.49Q151.06 46.66 151.1 46.84Q151.13 47.02 151.15 47.2Q151.17 47.39 151.17 47.57L151.17 102.43Q151.17 102.61 151.15 102.8Q151.13 102.98 151.1 103.16Q151.06 103.34 151.01 103.51Q150.95 103.69 150.88 103.86Q150.81 104.03 150.73 104.19Q150.64 104.35 150.54 104.51Q150.44 104.66 150.32 104.8Q150.2 104.94 150.07 105.07Q149.94 105.2 149.8 105.32Q149.66 105.44 149.51 105.54Q149.35 105.64 149.19 105.73Q149.03 105.81 148.86 105.88Q148.69 105.95 148.51 106.01Q148.34 106.06 148.16 106.1Q147.98 106.13 147.79 106.15Q147.61 106.17 147.43 106.17L92.57 106.17Q92.39 106.17 92.2 106.15Q92.02 106.13 91.84 106.1Q91.66 106.06 91.49 106.01Q91.31 105.95 91.14 105.88Q90.97 105.81 90.81 105.73Q90.65 105.64 90.49 105.54Q90.34 105.44 90.2 105.32Q90.06 105.2 89.93 105.07Q89.8 104.94 89.68 104.8Q89.56 104.66 89.46 104.51Q89.36 104.35 89.27 104.19Q89.19 104.03 89.12 103.86Q89.05 103.69 88.99 103.51Q88.94 103.34 88.9 103.16Q88.87 102.98 88.85 102.8Q88.83 102.61 88.83 102.43Z" /><text fill="#2D14C3" transform="translate(120 75)" font-size="24.94" font-family="IBM Plex Sans" x="-14.5, -6.5, 6.5" y="9.35">
+			|x|
+	</text><path fill="none" stroke="#2D14C3" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M26.49 75L88.83 75" /><path fill="none" stroke="#2D14C3" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M151.17 75L213.51 75" /><rect fill="none" stroke="#CE4A24" stroke-width="1" stroke-miterlimit="4" x="23.49" y="72" width="6" height="6" /><rect fill="none" stroke="#CE4A24" stroke-width="1" stroke-miterlimit="4" x="210.51" y="72" width="6" height="6" /><text fill="#6A8EF6" font-size="15" font-weight="600" font-family="IBM Plex Sans" x="56.5, 65.5, 74.5, 82.5, 90.5, 94.5, 102.5, 111.5, 119.5, 123.5, 133.5, 141.5, 147.5, 155.5, 163.5, 169.5, 177.5" y="172.32">
+			Envelope Detector
+	</text></svg></span>
+<span class="sym-dark"><svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="240" height="186" viewBox="0 0 240 186"><path fill="none" stroke="#9684FA" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M88.83 102.43L88.83 47.57Q88.83 47.39 88.85 47.2Q88.87 47.02 88.9 46.84Q88.94 46.66 88.99 46.49Q89.05 46.31 89.12 46.14Q89.19 45.97 89.27 45.81Q89.36 45.65 89.46 45.49Q89.56 45.34 89.68 45.2Q89.8 45.06 89.93 44.93Q90.06 44.8 90.2 44.68Q90.34 44.56 90.49 44.46Q90.65 44.36 90.81 44.27Q90.97 44.19 91.14 44.12Q91.31 44.05 91.49 43.99Q91.66 43.94 91.84 43.9Q92.02 43.87 92.2 43.85Q92.39 43.83 92.57 43.83L147.43 43.83Q147.61 43.83 147.79 43.85Q147.98 43.87 148.16 43.9Q148.34 43.94 148.51 43.99Q148.69 44.05 148.86 44.12Q149.03 44.19 149.19 44.27Q149.35 44.36 149.51 44.46Q149.66 44.56 149.8 44.68Q149.94 44.8 150.07 44.93Q150.2 45.06 150.32 45.2Q150.44 45.34 150.54 45.49Q150.64 45.65 150.73 45.81Q150.81 45.97 150.88 46.14Q150.95 46.31 151.01 46.49Q151.06 46.66 151.1 46.84Q151.13 47.02 151.15 47.2Q151.17 47.39 151.17 47.57L151.17 102.43Q151.17 102.61 151.15 102.8Q151.13 102.98 151.1 103.16Q151.06 103.34 151.01 103.51Q150.95 103.69 150.88 103.86Q150.81 104.03 150.73 104.19Q150.64 104.35 150.54 104.51Q150.44 104.66 150.32 104.8Q150.2 104.94 150.07 105.07Q149.94 105.2 149.8 105.32Q149.66 105.44 149.51 105.54Q149.35 105.64 149.19 105.73Q149.03 105.81 148.86 105.88Q148.69 105.95 148.51 106.01Q148.34 106.06 148.16 106.1Q147.98 106.13 147.79 106.15Q147.61 106.17 147.43 106.17L92.57 106.17Q92.39 106.17 92.2 106.15Q92.02 106.13 91.84 106.1Q91.66 106.06 91.49 106.01Q91.31 105.95 91.14 105.88Q90.97 105.81 90.81 105.73Q90.65 105.64 90.49 105.54Q90.34 105.44 90.2 105.32Q90.06 105.2 89.93 105.07Q89.8 104.94 89.68 104.8Q89.56 104.66 89.46 104.51Q89.36 104.35 89.27 104.19Q89.19 104.03 89.12 103.86Q89.05 103.69 88.99 103.51Q88.94 103.34 88.9 103.16Q88.87 102.98 88.85 102.8Q88.83 102.61 88.83 102.43Z" /><text fill="#9684FA" transform="translate(120 75)" font-size="24.94" font-family="IBM Plex Sans" x="-14.5, -6.5, 6.5" y="9.35">
+			|x|
+	</text><path fill="none" stroke="#9684FA" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M26.49 75L88.83 75" /><path fill="none" stroke="#9684FA" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M151.17 75L213.51 75" /><rect fill="none" stroke="#F07846" stroke-width="1" stroke-miterlimit="4" x="23.49" y="72" width="6" height="6" /><rect fill="none" stroke="#F07846" stroke-width="1" stroke-miterlimit="4" x="210.51" y="72" width="6" height="6" /><text fill="#8CAEFF" font-size="15" font-weight="600" font-family="IBM Plex Sans" x="56.5, 65.5, 74.5, 82.5, 90.5, 94.5, 102.5, 111.5, 119.5, 123.5, 133.5, 141.5, 147.5, 155.5, 163.5, 169.5, 177.5" y="172.32">
+			Envelope Detector
+	</text></svg></span>
+</span><figcaption>Envelope Detector</figcaption></figure>
+<p>The carrier's amplitude at baseband, <code>Kd</code> volts into a matched load per volt of peak RF amplitude, through
+<code>1/(1 + jf/BW)</code> when <code>BW</code> is set. The pole sits on a node of its own, so the load does not move it. With no pole it
+is memoryless: the output follows the amplitude sample by sample.</p>
+<p>Parameters: <a href="components.html#envdetector">Components › Envelope Detector</a>.</p>
+<h3 id="limiter">Limiter</h3>
+<figure class="symbol"><span class="frame">
+<span class="sym-light"><svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="240" height="186" viewBox="0 0 240 186"><path fill="none" stroke="#2D14C3" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M88.83 102.43L88.83 47.57Q88.83 47.39 88.85 47.2Q88.87 47.02 88.9 46.84Q88.94 46.66 88.99 46.49Q89.05 46.31 89.12 46.14Q89.19 45.97 89.27 45.81Q89.36 45.65 89.46 45.49Q89.56 45.34 89.68 45.2Q89.8 45.06 89.93 44.93Q90.06 44.8 90.2 44.68Q90.34 44.56 90.49 44.46Q90.65 44.36 90.81 44.27Q90.97 44.19 91.14 44.12Q91.31 44.05 91.49 43.99Q91.66 43.94 91.84 43.9Q92.02 43.87 92.2 43.85Q92.39 43.83 92.57 43.83L147.43 43.83Q147.61 43.83 147.79 43.85Q147.98 43.87 148.16 43.9Q148.34 43.94 148.51 43.99Q148.69 44.05 148.86 44.12Q149.03 44.19 149.19 44.27Q149.35 44.36 149.51 44.46Q149.66 44.56 149.8 44.68Q149.94 44.8 150.07 44.93Q150.2 45.06 150.32 45.2Q150.44 45.34 150.54 45.49Q150.64 45.65 150.73 45.81Q150.81 45.97 150.88 46.14Q150.95 46.31 151.01 46.49Q151.06 46.66 151.1 46.84Q151.13 47.02 151.15 47.2Q151.17 47.39 151.17 47.57L151.17 102.43Q151.17 102.61 151.15 102.8Q151.13 102.98 151.1 103.16Q151.06 103.34 151.01 103.51Q150.95 103.69 150.88 103.86Q150.81 104.03 150.73 104.19Q150.64 104.35 150.54 104.51Q150.44 104.66 150.32 104.8Q150.2 104.94 150.07 105.07Q149.94 105.2 149.8 105.32Q149.66 105.44 149.51 105.54Q149.35 105.64 149.19 105.73Q149.03 105.81 148.86 105.88Q148.69 105.95 148.51 106.01Q148.34 106.06 148.16 106.1Q147.98 106.13 147.79 106.15Q147.61 106.17 147.43 106.17L92.57 106.17Q92.39 106.17 92.2 106.15Q92.02 106.13 91.84 106.1Q91.66 106.06 91.49 106.01Q91.31 105.95 91.14 105.88Q90.97 105.81 90.81 105.73Q90.65 105.64 90.49 105.54Q90.34 105.44 90.2 105.32Q90.06 105.2 89.93 105.07Q89.8 104.94 89.68 104.8Q89.56 104.66 89.46 104.51Q89.36 104.35 89.27 104.19Q89.19 104.03 89.12 103.86Q89.05 103.69 88.99 103.51Q88.94 103.34 88.9 103.16Q88.87 102.98 88.85 102.8Q88.83 102.61 88.83 102.43Z" /><path fill="none" stroke="#2D14C3" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M98.18 89.03L110.65 89.03L129.35 60.97L141.82 60.97" /><path fill="none" stroke="#2D14C3" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M26.49 75L88.83 75" /><path fill="none" stroke="#2D14C3" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M151.17 75L213.51 75" /><rect fill="none" stroke="#CE4A24" stroke-width="1" stroke-miterlimit="4" x="23.49" y="72" width="6" height="6" /><rect fill="none" stroke="#CE4A24" stroke-width="1" stroke-miterlimit="4" x="210.51" y="72" width="6" height="6" /><text fill="#6A8EF6" font-size="15" font-weight="600" font-family="IBM Plex Sans" x="95.5, 103.5, 107.5, 120.5, 124.5, 130.5, 138.5" y="172.32">
+			Limiter
+	</text></svg></span>
+<span class="sym-dark"><svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="240" height="186" viewBox="0 0 240 186"><path fill="none" stroke="#9684FA" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M88.83 102.43L88.83 47.57Q88.83 47.39 88.85 47.2Q88.87 47.02 88.9 46.84Q88.94 46.66 88.99 46.49Q89.05 46.31 89.12 46.14Q89.19 45.97 89.27 45.81Q89.36 45.65 89.46 45.49Q89.56 45.34 89.68 45.2Q89.8 45.06 89.93 44.93Q90.06 44.8 90.2 44.68Q90.34 44.56 90.49 44.46Q90.65 44.36 90.81 44.27Q90.97 44.19 91.14 44.12Q91.31 44.05 91.49 43.99Q91.66 43.94 91.84 43.9Q92.02 43.87 92.2 43.85Q92.39 43.83 92.57 43.83L147.43 43.83Q147.61 43.83 147.79 43.85Q147.98 43.87 148.16 43.9Q148.34 43.94 148.51 43.99Q148.69 44.05 148.86 44.12Q149.03 44.19 149.19 44.27Q149.35 44.36 149.51 44.46Q149.66 44.56 149.8 44.68Q149.94 44.8 150.07 44.93Q150.2 45.06 150.32 45.2Q150.44 45.34 150.54 45.49Q150.64 45.65 150.73 45.81Q150.81 45.97 150.88 46.14Q150.95 46.31 151.01 46.49Q151.06 46.66 151.1 46.84Q151.13 47.02 151.15 47.2Q151.17 47.39 151.17 47.57L151.17 102.43Q151.17 102.61 151.15 102.8Q151.13 102.98 151.1 103.16Q151.06 103.34 151.01 103.51Q150.95 103.69 150.88 103.86Q150.81 104.03 150.73 104.19Q150.64 104.35 150.54 104.51Q150.44 104.66 150.32 104.8Q150.2 104.94 150.07 105.07Q149.94 105.2 149.8 105.32Q149.66 105.44 149.51 105.54Q149.35 105.64 149.19 105.73Q149.03 105.81 148.86 105.88Q148.69 105.95 148.51 106.01Q148.34 106.06 148.16 106.1Q147.98 106.13 147.79 106.15Q147.61 106.17 147.43 106.17L92.57 106.17Q92.39 106.17 92.2 106.15Q92.02 106.13 91.84 106.1Q91.66 106.06 91.49 106.01Q91.31 105.95 91.14 105.88Q90.97 105.81 90.81 105.73Q90.65 105.64 90.49 105.54Q90.34 105.44 90.2 105.32Q90.06 105.2 89.93 105.07Q89.8 104.94 89.68 104.8Q89.56 104.66 89.46 104.51Q89.36 104.35 89.27 104.19Q89.19 104.03 89.12 103.86Q89.05 103.69 88.99 103.51Q88.94 103.34 88.9 103.16Q88.87 102.98 88.85 102.8Q88.83 102.61 88.83 102.43Z" /><path fill="none" stroke="#9684FA" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M98.18 89.03L110.65 89.03L129.35 60.97L141.82 60.97" /><path fill="none" stroke="#9684FA" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M26.49 75L88.83 75" /><path fill="none" stroke="#9684FA" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M151.17 75L213.51 75" /><rect fill="none" stroke="#F07846" stroke-width="1" stroke-miterlimit="4" x="23.49" y="72" width="6" height="6" /><rect fill="none" stroke="#F07846" stroke-width="1" stroke-miterlimit="4" x="210.51" y="72" width="6" height="6" /><text fill="#8CAEFF" font-size="15" font-weight="600" font-family="IBM Plex Sans" x="95.5, 103.5, 107.5, 120.5, 124.5, 130.5, 138.5" y="172.32">
+			Limiter
+	</text></svg></span>
+</span><figcaption>Limiter</figcaption></figure>
+<p>The ideal constant-envelope stage: <code>Pout</code> into a matched load at the input's phase, <code>A·a/√(a² + Vk²)</code> for an input
+amplitude <code>a</code>, where <code>Vk</code> is the knee <code>Knee</code> names. Use it to strip the amplitude off a carrier: what comes out is
+the phase alone.</p>
+<p>Parameters: <a href="components.html#limiter">Components › Limiter</a>.</p>
+<h3 id="phasemod">Phase Modulator (PhaseMod)</h3>
+<figure class="symbol"><span class="frame">
+<span class="sym-light"><svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="240" height="186" viewBox="0 0 240 186"><path fill="none" stroke="#2D14C3" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M95 71L95 27Q95 26.85 95.01 26.71Q95.03 26.56 95.06 26.41Q95.09 26.27 95.13 26.13Q95.17 25.99 95.23 25.85Q95.28 25.72 95.35 25.59Q95.42 25.46 95.51 25.33Q95.59 25.21 95.68 25.1Q95.77 24.98 95.88 24.88Q95.98 24.77 96.1 24.68Q96.21 24.59 96.33 24.51Q96.46 24.42 96.59 24.35Q96.72 24.28 96.85 24.23Q96.99 24.17 97.13 24.13Q97.27 24.09 97.41 24.06Q97.56 24.03 97.71 24.01Q97.85 24 98 24L142 24Q142.15 24 142.29 24.01Q142.44 24.03 142.59 24.06Q142.73 24.09 142.87 24.13Q143.01 24.17 143.15 24.23Q143.28 24.28 143.41 24.35Q143.54 24.42 143.67 24.51Q143.79 24.59 143.9 24.68Q144.02 24.77 144.12 24.88Q144.23 24.98 144.32 25.1Q144.41 25.21 144.49 25.33Q144.58 25.46 144.65 25.59Q144.72 25.72 144.77 25.85Q144.83 25.99 144.87 26.13Q144.91 26.27 144.94 26.41Q144.97 26.56 144.99 26.71Q145 26.85 145 27L145 71Q145 71.15 144.99 71.29Q144.97 71.44 144.94 71.59Q144.91 71.73 144.87 71.87Q144.83 72.01 144.77 72.15Q144.72 72.28 144.65 72.41Q144.58 72.54 144.49 72.67Q144.41 72.79 144.32 72.9Q144.23 73.02 144.12 73.12Q144.02 73.23 143.9 73.32Q143.79 73.41 143.67 73.49Q143.54 73.58 143.41 73.65Q143.28 73.72 143.15 73.77Q143.01 73.83 142.87 73.87Q142.73 73.91 142.59 73.94Q142.44 73.97 142.29 73.99Q142.15 74 142 74L98 74Q97.85 74 97.71 73.99Q97.56 73.97 97.41 73.94Q97.27 73.91 97.13 73.87Q96.99 73.83 96.85 73.77Q96.72 73.72 96.59 73.65Q96.46 73.58 96.33 73.49Q96.21 73.41 96.1 73.32Q95.98 73.23 95.88 73.12Q95.77 73.02 95.68 72.9Q95.59 72.79 95.51 72.67Q95.42 72.54 95.35 72.41Q95.28 72.28 95.23 72.15Q95.17 72.01 95.13 71.87Q95.09 71.73 95.06 71.59Q95.03 71.44 95.01 71.29Q95 71.15 95 71Z" /><text fill="#2D14C3" transform="translate(120 49)" font-size="27.5" font-family="IBM Plex Sans" x="-10" y="10.31">
+			φ
+	</text><path fill="none" stroke="#2D14C3" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M45 49L95 49" /><path fill="none" stroke="#2D14C3" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M145 49L195 49" /><path fill="none" stroke="#2D14C3" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M120 124L120 74" /><text fill="#2D14C3" transform="translate(133.75 102.75)" font-size="7.5" font-family="IBM Plex Sans" x="-5.5, -0.5" y="2.81">
+			PH
+	</text><rect fill="none" stroke="#CE4A24" stroke-width="1" stroke-miterlimit="4" x="42" y="46" width="6" height="6" /><rect fill="none" stroke="#CE4A24" stroke-width="1" stroke-miterlimit="4" x="192" y="46" width="6" height="6" /><rect fill="none" stroke="#CE4A24" stroke-width="1" stroke-miterlimit="4" x="117" y="121" width="6" height="6" /><text fill="#6A8EF6" font-size="15" font-weight="600" font-family="IBM Plex Sans" x="62, 72, 81, 89, 96, 104, 108, 120, 128, 137, 146, 150, 158, 164, 172" y="172.32">
+			Phase Modulator
+	</text></svg></span>
+<span class="sym-dark"><svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="240" height="186" viewBox="0 0 240 186"><path fill="none" stroke="#9684FA" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M95 71L95 27Q95 26.85 95.01 26.71Q95.03 26.56 95.06 26.41Q95.09 26.27 95.13 26.13Q95.17 25.99 95.23 25.85Q95.28 25.72 95.35 25.59Q95.42 25.46 95.51 25.33Q95.59 25.21 95.68 25.1Q95.77 24.98 95.88 24.88Q95.98 24.77 96.1 24.68Q96.21 24.59 96.33 24.51Q96.46 24.42 96.59 24.35Q96.72 24.28 96.85 24.23Q96.99 24.17 97.13 24.13Q97.27 24.09 97.41 24.06Q97.56 24.03 97.71 24.01Q97.85 24 98 24L142 24Q142.15 24 142.29 24.01Q142.44 24.03 142.59 24.06Q142.73 24.09 142.87 24.13Q143.01 24.17 143.15 24.23Q143.28 24.28 143.41 24.35Q143.54 24.42 143.67 24.51Q143.79 24.59 143.9 24.68Q144.02 24.77 144.12 24.88Q144.23 24.98 144.32 25.1Q144.41 25.21 144.49 25.33Q144.58 25.46 144.65 25.59Q144.72 25.72 144.77 25.85Q144.83 25.99 144.87 26.13Q144.91 26.27 144.94 26.41Q144.97 26.56 144.99 26.71Q145 26.85 145 27L145 71Q145 71.15 144.99 71.29Q144.97 71.44 144.94 71.59Q144.91 71.73 144.87 71.87Q144.83 72.01 144.77 72.15Q144.72 72.28 144.65 72.41Q144.58 72.54 144.49 72.67Q144.41 72.79 144.32 72.9Q144.23 73.02 144.12 73.12Q144.02 73.23 143.9 73.32Q143.79 73.41 143.67 73.49Q143.54 73.58 143.41 73.65Q143.28 73.72 143.15 73.77Q143.01 73.83 142.87 73.87Q142.73 73.91 142.59 73.94Q142.44 73.97 142.29 73.99Q142.15 74 142 74L98 74Q97.85 74 97.71 73.99Q97.56 73.97 97.41 73.94Q97.27 73.91 97.13 73.87Q96.99 73.83 96.85 73.77Q96.72 73.72 96.59 73.65Q96.46 73.58 96.33 73.49Q96.21 73.41 96.1 73.32Q95.98 73.23 95.88 73.12Q95.77 73.02 95.68 72.9Q95.59 72.79 95.51 72.67Q95.42 72.54 95.35 72.41Q95.28 72.28 95.23 72.15Q95.17 72.01 95.13 71.87Q95.09 71.73 95.06 71.59Q95.03 71.44 95.01 71.29Q95 71.15 95 71Z" /><text fill="#9684FA" transform="translate(120 49)" font-size="27.5" font-family="IBM Plex Sans" x="-10" y="10.31">
+			φ
+	</text><path fill="none" stroke="#9684FA" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M45 49L95 49" /><path fill="none" stroke="#9684FA" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M145 49L195 49" /><path fill="none" stroke="#9684FA" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M120 124L120 74" /><text fill="#9684FA" transform="translate(133.75 102.75)" font-size="7.5" font-family="IBM Plex Sans" x="-5.5, -0.5" y="2.81">
+			PH
+	</text><rect fill="none" stroke="#F07846" stroke-width="1" stroke-miterlimit="4" x="42" y="46" width="6" height="6" /><rect fill="none" stroke="#F07846" stroke-width="1" stroke-miterlimit="4" x="192" y="46" width="6" height="6" /><rect fill="none" stroke="#F07846" stroke-width="1" stroke-miterlimit="4" x="117" y="121" width="6" height="6" /><text fill="#8CAEFF" font-size="15" font-weight="600" font-family="IBM Plex Sans" x="62, 72, 81, 89, 96, 104, 108, 120, 128, 137, 146, 150, 158, 164, 172" y="172.32">
+			Phase Modulator
+	</text></svg></span>
+</span><figcaption>Phase Modulator</figcaption></figure>
+<p><code>S21 = 10^(Gain/20)·e^(j·Kp·V(PH))</code>: the carrier turned by <code>Kp</code> radians per volt at <code>PH</code>. A polar phase half into
+its matched <code>PH</code> reads one volt per radian, so <code>Kp = 1</code> replays the signal's phase.</p>
+<p>Parameters: <a href="components.html#phasemod">Components › Phase Modulator</a>.</p>
+<h3 id="supplyamp">Supply-Modulated Amplifier (SupplyAmp)</h3>
+<figure class="symbol"><span class="frame">
+<span class="sym-light"><svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="240" height="186" viewBox="0 0 240 186"><path fill="none" stroke="#2D14C3" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M88.82 59.19L88.82 126L155.63 92.59L88.82 59.19Z" /><path fill="none" stroke="#2D14C3" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M53.19 92.59L88.82 92.59" /><path fill="none" stroke="#2D14C3" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M155.63 92.59L186.81 92.59" /><path fill="none" stroke="#2D14C3" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M120 25.78L120 74.78" /><text fill="#2D14C3" transform="translate(132.25 44.71)" font-size="6.68" font-family="IBM Plex Sans" x="-4, 0" y="2.51">
+			VS
+	</text><rect fill="none" stroke="#CE4A24" stroke-width="1" stroke-miterlimit="4" x="50.19" y="89.59" width="6" height="6" /><rect fill="none" stroke="#CE4A24" stroke-width="1" stroke-miterlimit="4" x="183.81" y="89.59" width="6" height="6" /><rect fill="none" stroke="#CE4A24" stroke-width="1" stroke-miterlimit="4" x="117" y="22.78" width="6" height="6" /><text fill="#6A8EF6" font-size="15" font-weight="600" font-family="IBM Plex Sans" x="23, 32, 41, 50, 59, 63, 71, 77, 89, 97, 106, 115, 119, 127, 133, 141, 150, 154, 164, 177, 186, 190, 194, 199, 203, 211" y="172.32">
+			Supply-Modulated Amplifier
+	</text></svg></span>
+<span class="sym-dark"><svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="240" height="186" viewBox="0 0 240 186"><path fill="none" stroke="#9684FA" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M88.82 59.19L88.82 126L155.63 92.59L88.82 59.19Z" /><path fill="none" stroke="#9684FA" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M53.19 92.59L88.82 92.59" /><path fill="none" stroke="#9684FA" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M155.63 92.59L186.81 92.59" /><path fill="none" stroke="#9684FA" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M120 25.78L120 74.78" /><text fill="#9684FA" transform="translate(132.25 44.71)" font-size="6.68" font-family="IBM Plex Sans" x="-4, 0" y="2.51">
+			VS
+	</text><rect fill="none" stroke="#F07846" stroke-width="1" stroke-miterlimit="4" x="50.19" y="89.59" width="6" height="6" /><rect fill="none" stroke="#F07846" stroke-width="1" stroke-miterlimit="4" x="183.81" y="89.59" width="6" height="6" /><rect fill="none" stroke="#F07846" stroke-width="1" stroke-miterlimit="4" x="117" y="22.78" width="6" height="6" /><text fill="#8CAEFF" font-size="15" font-weight="600" font-family="IBM Plex Sans" x="23, 32, 41, 50, 59, 63, 71, 77, 89, 97, 106, 115, 119, 127, 133, 141, 150, 154, 164, 177, 186, 190, 194, 199, 203, 211" y="172.32">
+			Supply-Modulated Amplifier
+	</text></svg></span>
+</span><figcaption>Supply-Modulated Amplifier</figcaption></figure>
+<p>A saturated stage: the supply at <code>VS</code> sets the output amplitude, <code>Ks·VS</code> (or <code>Ks·Vsat·tanh(VS/Vsat)</code>), and turns
+its phase by <code>AMPM·VS</code> degrees, while the RF input sets only the phase. Like the <a href="#amp">Amplifier</a> it has no DC
+power consumption and no efficiency: it is the law of the envelope, not a supply's current.</p>
+<p>Parameters: <a href="components.html#supplyamp">Components › Supply-Modulated Amplifier</a>.</p>
 <h3 id="coupler">Directional Coupler</h3>
 <figure class="symbol"><span class="frame">
 <span class="sym-light"><svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="240" height="186" viewBox="0 0 240 186"><path fill="none" stroke="#2D14C3" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M70.13 118.01L70.13 31.99Q70.13 31.8 70.15 31.62Q70.17 31.44 70.2 31.26Q70.24 31.08 70.29 30.9Q70.34 30.73 70.41 30.56Q70.48 30.39 70.57 30.22Q70.66 30.06 70.76 29.91Q70.86 29.76 70.98 29.61Q71.1 29.47 71.23 29.34Q71.36 29.21 71.5 29.1Q71.64 28.98 71.79 28.88Q71.94 28.78 72.11 28.69Q72.27 28.6 72.44 28.53Q72.61 28.46 72.78 28.41Q72.96 28.35 73.14 28.32Q73.32 28.28 73.5 28.26Q73.69 28.25 73.87 28.25L166.13 28.25Q166.31 28.25 166.5 28.26Q166.68 28.28 166.86 28.32Q167.04 28.35 167.22 28.41Q167.39 28.46 167.56 28.53Q167.73 28.6 167.89 28.69Q168.06 28.78 168.21 28.88Q168.36 28.98 168.5 29.1Q168.65 29.21 168.78 29.34Q168.91 29.47 169.02 29.61Q169.14 29.76 169.24 29.91Q169.34 30.06 169.43 30.22Q169.52 30.39 169.59 30.56Q169.66 30.73 169.71 30.9Q169.76 31.08 169.8 31.26Q169.83 31.44 169.85 31.62Q169.87 31.8 169.87 31.99L169.87 118.01Q169.87 118.2 169.85 118.38Q169.83 118.56 169.8 118.74Q169.76 118.92 169.71 119.1Q169.66 119.28 169.59 119.44Q169.52 119.61 169.43 119.78Q169.34 119.94 169.24 120.09Q169.14 120.24 169.02 120.39Q168.91 120.53 168.78 120.66Q168.65 120.79 168.5 120.9Q168.36 121.02 168.21 121.12Q168.06 121.23 167.89 121.31Q167.73 121.4 167.56 121.47Q167.39 121.54 167.22 121.59Q167.04 121.65 166.86 121.68Q166.68 121.72 166.5 121.74Q166.31 121.75 166.13 121.75L73.87 121.75Q73.69 121.75 73.5 121.74Q73.32 121.72 73.14 121.68Q72.96 121.65 72.78 121.59Q72.61 121.54 72.44 121.47Q72.27 121.4 72.11 121.31Q71.94 121.23 71.79 121.12Q71.64 121.02 71.5 120.9Q71.36 120.79 71.23 120.66Q71.1 120.53 70.98 120.39Q70.86 120.24 70.76 120.09Q70.66 119.94 70.57 119.78Q70.48 119.61 70.41 119.44Q70.34 119.28 70.29 119.1Q70.24 118.92 70.2 118.74Q70.17 118.56 70.15 118.38Q70.13 118.2 70.13 118.01Z" /><path fill="none" stroke="#2D14C3" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M26.49 43.83L213.51 43.83" /><path fill="none" stroke="#2D14C3" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M26.49 106.17L213.51 106.17" /><path fill="none" stroke="#2D14C3" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M107.53 43.83L129 97.49" /><path fill="#2D14C3" d="M132.47 106.17L124.94 99.11L133.05 95.87L132.47 106.17Z" /><text fill="#2D14C3" transform="translate(52.99 31.36)" font-size="9.35" font-family="IBM Plex Sans" x="-2.81" y="3.51">

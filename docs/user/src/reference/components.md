@@ -4,7 +4,7 @@ slug: reference/components.html
 doc-kind: Reference Guide
 breadcrumb: Docs > Reference > Components
 lede: Every component in the standard library — its symbol, what it does, and its parameters.
-keywords: resistor, capacitor, inductor, transmission line, microstrip, MLIN, CPWG, GCPW, coplanar waveguide, SLIN, stripline, via, VIA, VIAGND, part, symbol, library, bead, ferrite, MMIC, MIMCAP, MIM capacitor, SPIRAL, spiral inductor, OSPIRAL, octagonal spiral, TFR, thin-film resistor, AIRBRIDGE, air bridge, CLIN, MCLIN, BCLIN, MBCLIN, MMITER, broadside, coupler, combiner, splitter, power divider, MOD_Source, modulated, LTE, NR, OFDM, pulsed CW, pCW, radar pulse, FSK, GFSK, GMSK, PN9, wireless M-Bus, DBPSK, UNB, LPWAN, CSS, chirp spread spectrum, Bluetooth LE, LoRa, LoRaWAN, Sigfox
+keywords: resistor, capacitor, inductor, transmission line, microstrip, MLIN, CPWG, GCPW, coplanar waveguide, SLIN, stripline, via, VIA, VIAGND, part, symbol, library, bead, ferrite, MMIC, MIMCAP, MIM capacitor, SPIRAL, spiral inductor, OSPIRAL, octagonal spiral, TFR, thin-film resistor, AIRBRIDGE, air bridge, CLIN, MCLIN, BCLIN, MBCLIN, MMITER, broadside, coupler, combiner, splitter, power divider, envelope detector, limiter, phase modulator, supply-modulated amplifier, polar transmitter, MOD_Source, modulated, LTE, NR, OFDM, pulsed CW, pCW, radar pulse, FSK, GFSK, GMSK, PN9, wireless M-Bus, DBPSK, UNB, LPWAN, CSS, chirp spread spectrum, Bluetooth LE, LoRa, LoRaWAN, Sigfox
 ---
 
 Symbols are rendered from the live drawing engine, with their connection leads and their pins shown
@@ -380,6 +380,12 @@ source impedance `Z`.
   takes the same `Rb` and `Data` (the Sigfox uplink: [DBPSK](signal-designer.html#dbpsk)), and a `CSS` carrier,
   `"CSS;SF=7;BW=125kHz;Off=0;P=0"`, a spreading factor and a chirp bandwidth (LoRa: [CSS](signal-designer.html#css));
   each must be the source's only carrier.
+- `Polar` — `amp` or `phase` plays the signal split into its envelope and its phase, at baseband, for a
+  [polar transmitter](system-components.html#polar). Absent (or `rf`) is the RF source. A pair of sources
+  with the same carriers, one of each, is the polar pair: the amplitude half's open-circuit voltage is
+  `|Vs|·|x(t)|`, so a matched load reads the RF envelope the source would deliver; the phase half's is
+  `2·arg x(t)`, so a matched load reads the phase, one volt per radian. Add it as a row in the source's
+  properties.
 - `Record` — periodic record length (s), whole 0.5 ms slots. `Clip` — target PAPR (dB) for
   clip-and-filter; absent means **unclipped** (the natural OFDM PAPR, about 11–12 dB).
   `Shaping` — out-of-channel spectral floor (dBc), or `off`.
@@ -390,7 +396,8 @@ the spectrum, the CCDF and the EVM of the signal before you simulate it.
 
 In a harmonic-balance or loadpull run a MOD_Source is a CW tone at `Fc` carrying `Pavg` — the signal's
 average power, or for a pulsed-CW source the pulse-top power, the steady state of a pulse that never ends;
-in an S-parameter run it is the passive impedance `Z`.
+in an S-parameter run it is the passive impedance `Z`. A polar half is the unmodulated operating point at
+DC there: `|Vs|` (the envelope at its RMS) or 0.
 
 {{table: components/ModSource}}
 
@@ -2484,6 +2491,58 @@ two pins are interchangeable. The delay `T` shows as the label beside the symbol
 In depth: [System Components › Delay](system-components.html#delay).
 
 {{table: components/Delay}}
+
+### Envelope Detector {#envdetector}
+
+{{symbol: env-detector}}
+
+An RF carrier in on the left, its **amplitude** out on the right at baseband: the output into a matched load is
+`Kd` times the carrier's peak amplitude, through an optional one-pole bandwidth `BW`
+(`1/(1 + jf/BW)`; 0 is none). Memoryless otherwise, and it makes no harmonics: it reads the amplitude, not a
+rectified waveform. It runs in single-tone harmonic balance, where the output is a DC voltage, and in a single
+envelope, where it follows the carrier's envelope.
+
+In depth: [System Components › Polar transmitters](system-components.html#polar).
+
+{{table: components/EnvDetector}}
+
+### Limiter {#limiter}
+
+{{symbol: limiter}}
+
+A constant-envelope stage: the output carrier has the fixed power `Pout` into a matched load and the input's
+phase. `Knee` is its one smoothness setting, the available input power at which the output is 3 dB below
+`Pout`; below it the stage is linear. The −100 dBm default is a hard limit.
+
+In depth: [System Components › Polar transmitters](system-components.html#polar).
+
+{{table: components/Limiter}}
+
+### Phase Modulator {#phasemod}
+
+{{symbol: phase-mod}}
+
+An RF carrier in at `IN`, out at `OUT`, turned by the phase at the baseband input `PH` (from below):
+`S21 = 10^(Gain/20) · e^(j·Kp·V(PH))`, with `Kp` in radians per volt.
+
+In depth: [System Components › Polar transmitters](system-components.html#polar).
+
+{{table: components/PhaseMod}}
+
+### Supply-Modulated Amplifier {#supplyamp}
+
+{{symbol: supply-amp}}
+
+A saturated amplifier whose output amplitude is set by its baseband supply `VS` (from above), the amplitude path
+of a polar transmitter, while its output phase follows the RF input. Into a matched load the output carrier is
+`A(VS) · e^(jθ(VS))` at the input's phase, whatever the input's level above `Knee`:
+
+- AM-AM: `A = Ks · VS`, or `Ks · Vsat · tanh(VS/Vsat)` with `Vsat` set; a supply below zero gives no output.
+- AM-PM: `θ = AMPM · VS`, in degrees per volt.
+
+In depth: [System Components › Polar transmitters](system-components.html#polar).
+
+{{table: components/SupplyAmp}}
 
 ### Duplexer {#duplexer}
 
