@@ -64,7 +64,7 @@ same name. Measured wall clock for the whole sweep, release build:
 | `TxFetFinal` | 29 points | 3.0 s |
 | `CascadeBudget` | 601 points | 0.2 s |
 | `PolarTx` | 16 envelope points | 16 min 5 s (CLI) |
-| `DigitalTx` | 20 envelope points | 3 min 17 s (CLI, on a shared and loaded machine) |
+| `DigitalTx` | 20 envelope points | 3 min 17 s (CLI) |
 
 They render headlessly too, which is how the pictures in this file were checked:
 
