@@ -12,7 +12,9 @@
 //    - the Blocks view's strip stands each node on the gap between two blocks, in an array and over two conversions, and
 //      the Copy's picture carries it;
 //    - circuitrf chain --level-diagram writes a .png or an .svg, makes its folder, and refuses anything else, or no file,
-//      before writing anything.
+//      before writing anything;
+//    - a transmit chain's diagram draws its output power, the P1dB and the Psat referred to each node, and keys the
+//      back-off, the noise floor and the ACLR estimate, the transmit readouts' own; a receiver's carries none of it.
 // ================================================================
 
 using System;
@@ -259,6 +261,57 @@ public sealed class ChainLevelDiagramTests : IDisposable
 
         vm.ShowLevels = false;
         Assert.Null(ChainBlocksGraphicExport.LevelsOf(vm));
+    }
+
+    /// <summary>The linear transmitter's diagram: its output power at every node, the P1dB and the Psat referred to each
+    /// node, the back-off from both, the noise floor and the ACLR estimate in its key, each the transmit readouts' own, and
+    /// no sensitivity or SFDR, which are a receiver's. Every receive chain's plan carries none of it.</summary>
+    [Fact]
+    public void ATransmitChainsDiagram_DrawsItsOutputPowerPsatAndBackOff_AndKeysTheAclrEstimate()
+    {
+        var d = Example("Linear TX");
+        var r = ChainBudget.Evaluate(d);
+        var plan = ChainLevelDiagram.For(d, r)!;
+        var tx = ChainTransmit.Read(r)!;
+        Assert.Equal(tx, plan.Tx);
+        var psat = plan.PsatDbm!;
+        Assert.Equal(plan.Nodes.Count, psat.Count);
+        Assert.True(double.IsPositiveInfinity(psat[0]), "nothing saturates the input");
+        var o = plan.Nodes[^1];
+        Assert.Equal(tx.PoutDbm, o.SignalDbm, 9);
+        Assert.Equal(tx.Op1dbDbm, o.CompressionDbm, 9);
+        Assert.Equal(tx.PsatDbm, psat[^1], 9);
+        Assert.Equal(tx.BackoffP1dbDb, o.CompressionDbm - o.SignalDbm, 9);
+        Assert.Equal(tx.BackoffPsatDb, psat[^1] - o.SignalDbm, 9);
+        // Referred to each node: the ceiling the stages up to it give, never above the one before plus the stage's gain.
+        for (int k = 1; k < psat.Count; k++)
+            Assert.True(psat[k] <= psat[k - 1] + r.Stages[k - 1].Stage.GainDb + 1e-9, $"node {k}");
+        Assert.Equal(36.4, psat[^1], 9);
+
+        // Framed on the transmitter's own levels, with the P1dB, the Psat and the IM3 at the top only.
+        var framed = Finite([.. plan.Nodes.SelectMany(n => new[] { n.SignalDbm, n.NoiseDbm, n.InterferenceDbm }.Concat(n.BlockerDbm))]);
+        var topOnly = Finite([.. plan.Nodes.SelectMany(n => new[] { n.Im3Dbm, n.CompressionDbm }), .. psat]);
+        Assert.Equal(ChainBudgetDisplay.LevelWindow(framed, topOnly), (plan.Lo, plan.Hi));
+        Assert.All(framed, v => Assert.InRange(v, plan.Lo, plan.Hi));
+        Assert.All(topOnly, v => Assert.True(v <= plan.Hi));
+
+        Directory.CreateDirectory(_ws);
+        string svg = Path.Combine(_ws, "tx.svg");
+        Assert.True(ChainLevelDiagram.Write(svg, plan, "Linear TX"));
+        string text = File.ReadAllText(svg);
+        foreach (var said in new[] { "Pout 28.0", "Psat 36.4", "P1dB 34.0", "back-off 6.0 dB from P1dB, 8.4 dB from Psat",
+                                     "noise floor −117.8 dBm/Hz", "ACLR −38.1 dBc (estimate, from OIP3)" })
+            Assert.Contains(said, text, StringComparison.Ordinal);
+        foreach (var unsaid in new[] { "sensitivity", "SFDR", "margin to P1dB" })
+            Assert.DoesNotContain(unsaid, text, StringComparison.Ordinal);
+
+        foreach (string chain in Shipped)
+        {
+            var rx = Example(chain);
+            var rp = ChainLevelDiagram.For(rx, ChainBudget.Evaluate(rx))!;
+            Assert.Null(rp.Tx);
+            Assert.Null(rp.PsatDbm);
+        }
     }
 
     [Fact]

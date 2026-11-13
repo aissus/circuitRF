@@ -88,12 +88,8 @@ public static class ChainTransmit
     public static ChainTxReadout? Read(ChainBudgetResult r)
     {
         if (r.Totals is not { } t || r.Design is not { IsTransmit: true } d) return null;
-        double pin = d.InputPowerDbm, cw = pin, psat = double.PositiveInfinity;
-        foreach (var row in r.Stages)
-        {
-            cw = StageCwDbm(row.Stage, cw);
-            psat = Math.Min(psat + row.Stage.GainDb, StagePsatDbm(row.Stage));
-        }
+        double pin = d.InputPowerDbm, cw = pin, psat = PsatAtNodes(r)[^1];
+        foreach (var row in r.Stages) cw = StageCwDbm(row.Stage, cw);
         double pout = t.PoutDbm;
         double aclr = double.IsFinite(t.Oip3Dbm) ? 2 * (pout - t.Oip3Dbm) - AclrConstantDb : double.NegativeInfinity;
         double psd = t.NoiseOutDbm - Db(d.BandwidthHz);
@@ -111,6 +107,16 @@ public static class ChainTransmit
         {
             CubicEquivalent = r.Stages.Any(x => x.Stage.Law?.Kind == Core.Devices.AmplifierLawKind.Rapp),
         };
+    }
+
+    /// <summary>The output's ceiling at every node, dBm: +∞ at the input, then P_k = min(P_(k−1) + g_k, Psat_k) after
+    /// each stage, the last the chain's Psat.</summary>
+    public static double[] PsatAtNodes(ChainBudgetResult r)
+    {
+        var p = new double[r.Stages.Count + 1];
+        p[0] = double.PositiveInfinity;
+        for (int i = 0; i < r.Stages.Count; i++) p[i + 1] = Math.Min(p[i] + r.Stages[i].Stage.GainDb, StagePsatDbm(r.Stages[i].Stage));
+        return p;
     }
 
     /// <summary>The input frequency whose output is <paramref name="offsetHz"/> from the carrier's, and the output noise

@@ -5,8 +5,10 @@
 //  and the sensitivity, the IM3, every blocker and a canceller's interference, and the compression limit; between
 //  them the SNR (noise up to signal), the headroom (signal up to compression) and the SFDR (noise up to where the IM3
 //  would reach it) shaded. With a link, its EIRP stands left of the input, the path's loss on the segment down to the
-//  power each element receives, and the receiver's ceiling marked there. Every number is ChainLevels' (and the
-//  link's own): nothing here computes a level.
+//  power each element receives, and the receiver's ceiling marked there. A transmit chain's is its output power node by
+//  node, the P1dB and the Psat referred to each node, the noise floor and the IM3, and its key the back-off from both,
+//  the noise floor in dBm/Hz and the ACLR estimate; no sensitivity and no SFDR, which are a receiver's. Every number is
+//  ChainLevels' and ChainTransmit's (and the link's own): nothing here computes a level.
 //
 //  One renderer, three callers: the window's Blocks view draws it in a strip under the blocks with each node on the
 //  gap between two blocks; the CLI's --level-diagram and the docs draw it standalone, the nodes evenly spaced.
@@ -35,9 +37,11 @@ public static class ChainLevelDiagram
     public sealed record Front(double EirpDbm, double PathDb, double RxGainDbi, double PrxDbm, double CeilingDbm);
 
     /// <summary>What the figure draws. <paramref name="ElementNodes"/>: how many nodes, from the input, carry one array
-    /// element's levels (up to the combiner's input); 0 with no array.</summary>
+    /// element's levels (up to the combiner's input); 0 with no array. <paramref name="Tx"/>: a transmit chain's readouts,
+    /// and <paramref name="PsatDbm"/> its Psat referred to each node (+∞ before anything saturates); null for a receiver.</summary>
     public sealed record Plan(IReadOnlyList<ChainNodeLevel> Nodes, IReadOnlyList<double> FrequencyHz, int ElementNodes, int ArrayN,
-                              IReadOnlyList<string> Blockers, double RequiredSnrDb, Front? Link, double Lo, double Hi);
+                              IReadOnlyList<string> Blockers, double RequiredSnrDb, Front? Link, double Lo, double Hi,
+                              ChainTxReadout? Tx = null, IReadOnlyList<double>? PsatDbm = null);
 
     /// <summary>The level plan of a budget; null when it was refused.</summary>
     public static Plan? For(ChainDesign d, ChainBudgetResult r)
@@ -53,9 +57,12 @@ public static class ChainLevelDiagram
             front = new Front(l.EirpDbm, l.LfsDb + l.AtmDb, ChainValue.Or(link.GetPath("RxAntennaGain"), 0), l.PrxDbm, o.CeilingDbm);
         }
         // The bottom is set by the levels a receiver lives between; the IM3, the compression limit, the SFDR's top, the
-        // EIRP and the ceiling reach the top only.
-        var framed = lv.SelectMany(n => new[] { n.SignalDbm, n.NoiseDbm, n.SensitivityDbm, n.InterferenceDbm }.Concat(n.BlockerDbm));
-        var topOnly = lv.SelectMany(n => new[] { n.Im3Dbm, n.CompressionDbm, n.NoiseDbm + n.SfdrDb });
+        // EIRP and the ceiling reach the top only. A transmitter's: its own levels, and the P1dB, the Psat and the IM3.
+        var tx = ChainTransmit.Read(r);
+        double[]? psat = tx is null ? null : ChainTransmit.PsatAtNodes(r);
+        var framed = lv.SelectMany(n => new[] { n.SignalDbm, n.NoiseDbm, tx is null ? n.SensitivityDbm : double.NaN, n.InterferenceDbm }.Concat(n.BlockerDbm));
+        var topOnly = tx is null ? lv.SelectMany(n => new[] { n.Im3Dbm, n.CompressionDbm, n.NoiseDbm + n.SfdrDb })
+                                 : lv.SelectMany(n => new[] { n.Im3Dbm, n.CompressionDbm }).Concat(psat!);
         if (front is not null)
         {
             framed = framed.Append(front.PrxDbm);
@@ -64,7 +71,7 @@ public static class ChainLevelDiagram
         var (lo, hi) = ChainBudgetDisplay.LevelWindow(framed, topOnly);
         return new Plan(lv, [d.FrequencyHz, .. r.Stages.Select(s => s.FrequencyHz)], cmb >= 0 ? cmb + 1 : 0,
                         cmb >= 0 ? ChainParts.ReadCombiner(d.Stages[cmb]).N : 1,
-                        [.. d.Blockers.Select((b, k) => $"blocker {k + 1}")], d.RequiredSnrDb, front, lo, hi);
+                        [.. d.Blockers.Select((b, k) => $"blocker {k + 1}")], d.RequiredSnrDb, front, lo, hi, tx, psat);
     }
 
     // ── where things go ───────────────────────────────────────────────────────
@@ -252,7 +259,7 @@ public static class ChainLevelDiagram
         var cComp = theme.LimitColor;
         c.Save();
         c.ClipRect(plot);
-        Band(noise, sfdrTop, cIm3, hatched: true);
+        if (p.Tx is null) Band(noise, sfdrTop, cIm3, hatched: true);
         Band(noise, signal, cNoise);
         Band(signal, comp, cComp);
 
@@ -300,20 +307,20 @@ public static class ChainLevelDiagram
         }
 
         // The lines: the quiet ones first, the signal on top.
-        var series = new List<Series>
-        {
-            new("sensitivity", Palette(theme, 3), Of(x => x.SensitivityDbm), 1.2f, true, false, false),
-            new("noise floor", cNoise, noise, 2f, false, true, true),
-            new("P1dB", cComp, comp, 1.6f, false, true, true),
-            new("IM3", cIm3, Of(x => x.Im3Dbm), 1.6f, false, true, false),
-        };
+        var series = new List<Series>();
+        if (p.Tx is null) series.Add(new("sensitivity", Palette(theme, 3), Of(x => x.SensitivityDbm), 1.2f, true, false, false));
+        series.Add(new("noise floor", cNoise, noise, 2f, false, true, true));
+        // A transmitter's ceiling over its P1dB, dashed in the compression's colour; named at the output, not at each node.
+        if (p.PsatDbm is { } ps) series.Add(new("Psat", cComp, [.. ps], 1.4f, true, true, false));
+        series.Add(new("P1dB", cComp, comp, 1.6f, false, true, true));
+        series.Add(new("IM3", cIm3, Of(x => x.Im3Dbm), 1.6f, false, true, false));
         for (int k = 0; k < p.Blockers.Count; k++)
         {
             int kk = k;
             series.Add(new(p.Blockers[k], Palette(theme, 5 + k), Of(x => x.BlockerDbm[kk]), 1.4f, true, true, false));
         }
         if (p.Nodes.Any(x => Level(x.InterferenceDbm))) series.Add(new("interference", Palette(theme, 2), Of(x => x.InterferenceDbm), 1.6f, false, true, false));
-        series.Add(new("signal", cSignal, signal, 2.6f, false, true, true));
+        series.Add(new(p.Tx is null ? "signal" : "Pout", cSignal, signal, 2.6f, false, true, true));
 
         bool roomForValues = slot >= 44;
         c.Save();
@@ -387,7 +394,14 @@ public static class ChainLevelDiagram
         // The bands' widths at the output, as their key.
         var o = p.Nodes[^1];
         var keys = new List<(string Text, SKColor Color)> { ($"SNR {D(o.SnrDb)} dB", cNoise) };
-        if (Level(o.MarginDb))
+        if (p.Tx is { } tx)
+        {
+            // A transmitter's: the back-off from both limits, the floor per hertz, the ACLR the intercept gives.
+            keys.Add(($"back-off {D(tx.BackoffP1dbDb)} dB from P1dB, {D(tx.BackoffPsatDb)} dB from Psat", cComp));
+            keys.Add(($"noise floor {D(tx.NoisePsdDbmHz)} dBm/Hz", cNoise));
+            if (Level(tx.AclrDbc)) keys.Add(($"ACLR {D(tx.AclrDbc)} dBc (estimate, from OIP3)", cIm3));
+        }
+        else if (Level(o.MarginDb))
         {
             // The budget's margin, as the Levels tab gives it: P1dB less the strongest at the output, which it names.
             int top = -1;
@@ -395,17 +409,22 @@ public static class ChainLevelDiagram
                 if (Level(o.BlockerDbm[k]) && o.BlockerDbm[k] > (top < 0 ? o.SignalDbm : o.BlockerDbm[top])) top = k;
             keys.Add(($"margin to P1dB {D(o.MarginDb)} dB ({(top < 0 ? "signal" : p.Blockers[top])})", cComp));
         }
-        if (Level(o.SfdrDb)) keys.Add(($"SFDR {D(o.SfdrDb)} dB", cIm3));
-        keys.Add(($"sensitivity: MDS + {D(p.RequiredSnrDb).Replace(".0", "")} dB", Palette(theme, 3)));
+        if (p.Tx is null)
+        {
+            if (Level(o.SfdrDb)) keys.Add(($"SFDR {D(o.SfdrDb)} dB", cIm3));
+            keys.Add(($"sensitivity: MDS + {D(p.RequiredSnrDb).Replace(".0", "")} dB", Palette(theme, 3)));
+        }
         float kx = plot.Left, ky = plot.Bottom + f.Font * 2.4f;
         foreach (var (t, col) in keys)
         {
-            bool line = t.StartsWith("sens", StringComparison.Ordinal), hatched = t.StartsWith("SFDR", StringComparison.Ordinal);
+            bool line = t.StartsWith("sens", StringComparison.Ordinal) || t.StartsWith("noise", StringComparison.Ordinal)
+                        || t.StartsWith("ACLR", StringComparison.Ordinal),
+                 hatched = t.StartsWith("SFDR", StringComparison.Ordinal);
             using var sw = new SKPaint
             {
                 IsAntialias = true, Color = col.WithAlpha(line || hatched ? (byte)255 : (byte)90), StrokeWidth = 1.2f,
                 Style = line || hatched ? SKPaintStyle.Stroke : SKPaintStyle.Fill,
-                PathEffect = line ? SKPathEffect.CreateDash([4, 2], 0) : null,
+                PathEffect = t.StartsWith("sens", StringComparison.Ordinal) ? SKPathEffect.CreateDash([4, 2], 0) : null,
             };
             var swatch = new SKRect(kx, ky - f.Font * 0.7f, kx + f.Font * 0.9f, ky);
             if (line) Line(c, kx, ky - f.Font * 0.35f, kx + f.Font * 0.9f, ky - f.Font * 0.35f, sw);

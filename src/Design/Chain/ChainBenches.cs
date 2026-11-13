@@ -1906,14 +1906,14 @@ public static class ChainBenches
                         var spec = IqModSpec.Read(st);
                         double pIq = (s2.Stage > 0 ? r.Stages[s2.Stage - 1].PoutDbm : pop) + ChainValue.Or(st.Get("ConvGain"), 0) + spec.WantedDb;
                         string at(int[] v, string net) => $"at(dB(HB1.V(\"{net}\",{Idx(v)})),\"Pin\",{kop})";
-                        _meas.Add($"ImageIq_calc = {G(Finite(spec.ImageDb - spec.WantedDb, -300))}");
+                        _meas.Add($"ImageIq_calc = {G(Lo(spec.ImageDb - spec.WantedDb))}");
                         string iqNet = $"{d.Stages[s2.Stage].Name}_c";   // before the bench's isolator
                         _meas.Add($"ImageIq_sim = {at(s2.ImageAtIq, iqNet)} - {at(s2.AtIq, iqNet)}");
-                        _meas.Add($"LoIq_calc = {G(Finite(spec.LoLeakDbm - pIq, -300))}");
+                        _meas.Add($"LoIq_calc = {G(Lo(spec.LoLeakDbm - pIq))}");
                         _meas.Add($"LoIq_sim = {at(s2.Lo, iqNet)} - {at(s2.AtIq, iqNet)}");
-                        _meas.Add($"Image_calc = {G(Finite(tx.ImageDbc, -300))}");
+                        _meas.Add($"Image_calc = {G(Lo(tx.ImageDbc))}");
                         _meas.Add($"Image_sim = {at(s2.Image, "out")} - {at(v1, "out")}");
-                        _meas.Add($"LoLeak_calc = {G(Finite(tx.LoLeakDbc, -300))}");
+                        _meas.Add($"LoLeak_calc = {G(Lo(tx.LoLeakDbc))}");
                         _meas.Add($"LoLeak_sim = {at(s2.Lo, "out")} - {at(v1, "out")}");
                     }
                     // The noise at the operating point: just off the carrier, and in the receive band when one is stated. The
