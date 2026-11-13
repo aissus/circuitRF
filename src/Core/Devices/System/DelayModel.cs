@@ -26,8 +26,9 @@ namespace CircuitRF.Core.Devices;
 /// slope, and the ordinary way to cancel a known delay elsewhere in a chain.</para>
 ///
 /// <para>It is also a lossless line of impedance <c>Z0</c> and delay <c>T</c> (<see cref="IUniformLine"/>), which is how
-/// a circuit envelope steps it: as its delay, exactly at every product, the baseband included. A negative delay or a
-/// complex <c>Z0</c> is no causal line, and keeps its stamp there.</para>
+/// a circuit envelope steps it: as its delay at every product, the baseband included — exactly for a whole number of
+/// steps, and interpolated between steps for a fraction of one. A negative delay, a complex <c>Z0</c> or returns that are
+/// not ground is no such line, and keeps its stamp there.</para>
 /// </summary>
 public sealed class DelayModel : IdealSBlockModel, IUniformLine
 {
@@ -52,6 +53,9 @@ public sealed class DelayModel : IdealSBlockModel, IUniformLine
 
     /// <inheritdoc/>
     public (double Z0, Complex GammaLength) LineAt(double freqHz) => (Z0.Real, new Complex(0, 2 * Math.PI * freqHz * _delay));
+
+    /// <summary>A delay remembers what entered it <c>T</c> ago, and no longer: an envelope's parallel segments warm up past it.</summary>
+    public override (double Seconds, string State)? SlowestTimeConstant() => _delay > 0 ? (_delay, "delay") : null;
 
     /// <summary>Two interchangeable ports, numbered as the attenuator's are.</summary>
     public override string[] TerminalNames => ["1", "2"];

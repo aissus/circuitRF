@@ -299,14 +299,15 @@ public sealed class EnvelopeEngine
             for (int i = 0; i < x.Length; i++) x[i] *= vs;
             phase?.Apply(sources[s], x, i0);
             signalDrive[s] = x;
-            if (sources[s].Polar is not null)
+            // A polar half drives the baseband with its share of the signal: the amplitude half |x| (|Vs| in it), the phase
+            // half twice the phase, unwrapped over the whole record (UnwrappedPhase).
+            drive[s] = sources[s].Polar switch
             {
-                // A polar half drives the baseband with its share of the signal: |x| or arg x (ModSourceModel.PolarDrive).
-                var b = new Complex[x.Length];
-                for (int i = 0; i < x.Length; i++) b[i] = sources[s].PolarDrive(x[i]);
-                drive[s] = b;
-            }
-            else drive[s] = x;
+                PolarHalf.Amp => [.. x.Select(v => new Complex(v.Magnitude, 0))],
+                PolarHalf.Phase => UnwrappedPhase(signals[s], sources[s], phase, recordRate, f0 - sources[s].FcHz,
+                                                  (int)Math.Round(nRec), i0, nDrive),
+                _ => x,
+            };
         }
         Complex Drv(int s, int step) => drive[s][step];
         int[] productOf = [.. sources.Select(src => src.EnvelopeProduct)];
@@ -628,8 +629,7 @@ public sealed class EnvelopeEngine
 
         if (prof)
             Console.Error.WriteLine($"[env-profile] steps {total - 1}  linear {swL.Elapsed.TotalSeconds:0.00}s  eval {swE.Elapsed.TotalSeconds:0.00}s  F {swF.Elapsed.TotalSeconds:0.00}s  J {swJ.Elapsed.TotalSeconds:0.00}s ({newton.JacobianBuilds})  update {swU.Elapsed.TotalSeconds:0.00}s  newton {(double)newton.Iterations / Math.Max(1, total - 1):0.00}");
-        // A polar pair's signal is measured once, through its amplitude half: the phase half is the same signal.
-        int[] measured = [.. Enumerable.Range(0, sources.Length).Where(s => sources[s].Polar != PolarHalf.Phase)];
+        int[] measured = Measured(sources);
         var mSources = measured.Select(s => sources[s]).ToArray();
         var mSignals = measured.Select(s => signals[s]).ToArray();
         var res = new EnvelopeRunResult
@@ -668,6 +668,50 @@ public sealed class EnvelopeEngine
                     h.InstanceName, Word(h.Polar), first.InstanceName, Word(first.Polar)).Render());
         if (!halves.Any(s => s.Polar == PolarHalf.Amp))
             throw new InvalidOperationException(CarrierBlockDiagnostics.PolarPhaseAlone(first.InstanceName).Render());
+    }
+
+    /// <summary>
+    /// The sources a run measures: every RF source, and a polar pair once, through its amplitude half — the phase half is
+    /// the same signal. An amplitude half beside an RF source playing that same signal (envelope tracking: the RF source
+    /// is the signal, the amplitude half its supply) is not measured again either: the RF source already is.
+    /// </summary>
+    public static int[] Measured(ModSourceModel[] sources)
+    {
+        bool PlayedAsRf(ModSourceModel a) =>
+            sources.Any(o => o.Polar is null && o.FcHz == a.FcHz && o.Spec.CacheKey() == a.Spec.CacheKey());
+        return [.. Enumerable.Range(0, sources.Length).Where(s => sources[s].Polar switch
+        {
+            null => true,
+            PolarHalf.Amp => !PlayedAsRf(sources[s]),
+            _ => false,
+        })];
+    }
+
+    /// <summary>
+    /// A phase half's drive window: twice the signal's phase, UNWRAPPED over the record so it is continuous, as a polar
+    /// transmitter's phase path carries it — a filter or a fractional delay on that path then sees the phase, not its
+    /// 2π wraps. It is a function of the absolute sample alone (every segment and every run reads the same value): the
+    /// record at <paramref name="rate"/>, any phase-noise rotation applied, unwrapped from sample 0, and each further
+    /// period adds the record's own winding. The phase still turns by about π across a null of the envelope; that is
+    /// the signal, and why a phase path needs bandwidth.
+    /// </summary>
+    internal static Complex[] UnwrappedPhase(ModulatedSignal sig, ModSourceModel src, EnvelopePhaseNoise? pn, double rate,
+                                             double centreHz, int n, long i0, int count)
+    {
+        var x = sig.CompositeWindow(rate, centreHz, 0, n);
+        pn?.Apply(src, x, 0);
+        var u = new double[n + 1];
+        u[0] = x[0].Phase;
+        for (int i = 1; i <= n; i++) u[i] = u[i - 1] + Math.IEEERemainder(x[i % n].Phase - x[i - 1].Phase, 2 * Math.PI);
+        double winding = u[n] - u[0];
+        var d = new Complex[count];
+        for (int m = 0; m < count; m++)
+        {
+            long g = i0 + m;
+            long period = (long)Math.Floor((double)g / n);
+            d[m] = new Complex(2 * (u[(int)(g - period * n)] + period * winding), 0);
+        }
+        return d;
     }
 
     /// <summary>A polar half's <c>Polar=</c> word, as the netlist spells it.</summary>

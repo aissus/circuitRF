@@ -332,22 +332,23 @@ public static class EnvelopeLineDelay
             if (ec.IsNonlinear || Ends(ec) is not var (na, nb)) continue;
             var model = new DelayLineModel(ec.Model, ec.Multiplicity);
             var P = new Coeffs[productHz.Count];
-            double worst = 0;
+            double worst = 0, stepped = 0;
             var dropped = new List<double>();
             for (int k = 0; k < P.Length; k++)
             {
                 var p = P[k] = Of(model, productHz[k], h, nyq);
-                worst = Math.Max(worst, Error(model, p, productHz[k], bandHz));
+                worst = Math.Max(worst, Error(model, p, productHz[k], bandHz, h, interpolated: false));
+                stepped = Math.Max(stepped, Error(model, p, productHz[k], bandHz, h, interpolated: true));
                 if (p.SlopeDropped) dropped.Add(productHz[k]);
             }
             run.Add(new Line { Index = i, Original = ec, Model = model, Na = na, Nb = nb, P = P });
             string who = $"{ec.ComponentType} '{ec.InstancePath}'";
             nl.AddNoteOnce("env-line-delay:" + ec.InstancePath, string.Format(inv,
                 "{0}: stepped as its delay ({1:0.####} ns) with its loss to first order around each harmonic; {2:0.##} % (RMS) " +
-                "from the line across the ±{3:0.##} MHz signal band{4}",
+                "from the line across the ±{3:0.##} MHz signal band, {5:0.##} % with the delay interpolated between steps{4}",
                 who, P[0].Tau * 1e9, 100 * worst, bandHz / 1e6,
                 dropped.Count == 0 ? "" : "; its loss slope is left out at " + string.Join(", ", dropped.Select(f => (f / 1e9).ToString("0.####", inv) + " GHz")) +
-                                          ", where it would make the line gain energy within the step's band"));
+                                          ", where it would make the line gain energy within the step's band", 100 * stepped));
             if (worst > EnvelopeTangentCheck.WarnAbove)
                 nl.AddWarningOnce("env-line-delay-error:" + ec.InstancePath, string.Format(inv,
                     "envelope: '{0}' ({1:0.#} %) is stepped as its delay with its loss to first order around each harmonic, off by " +
@@ -362,7 +363,7 @@ public static class EnvelopeLineDelay
     /// two-conductor line binds them as its first two nets. A System Delay binds four (1+, 1−, 2+, 2−) and is stepped
     /// only as a causal line whose ports return to ground; otherwise it keeps its stamp.
     /// </summary>
-    private static (int A, int B)? Ends(ElaboratedComponent ec) => ec.Model switch
+    internal static (int A, int B)? Ends(ElaboratedComponent ec) => ec.Model switch
     {
         DelayModel d => d.IsCausalLine && ec.Nodes.Length == 4 && ec.Nodes[1] == 0 && ec.Nodes[3] == 0 ? (ec.Nodes[0], ec.Nodes[2]) : null,
         IUniformLine when ec.Nodes.Length >= 2 => (ec.Nodes[0], ec.Nodes[1]),
@@ -405,10 +406,14 @@ public static class EnvelopeLineDelay
     }
 
     /// <summary>
-    /// How far the realization (the delay exact, the residual to first order) is from the line across the band: RMS over
-    /// 8 offsets per side of max_ij |ΔS_ij| / |S_ij| (|S| floored at 1e-3), S in 50 Ω — the tangent check's measure.
+    /// How far the realization is from the line across the band: RMS over 8 offsets per side of max_ij |ΔS_ij| / |S_ij|
+    /// (|S| floored at 1e-3), S in 50 Ω — the tangent check's measure. The realization is the residual to first order
+    /// and, <paramref name="interpolated"/>, the delay as the steps interpolate it: an envelope offset df through the
+    /// quadratic Lagrange weights on the step grid reads <see cref="Interpolated"/> where the line reads e^(−j2π·df·τ).
+    /// A delay of whole steps is exact; a fraction of a step is not, most at the band's edge, which at draft is the
+    /// step's own Nyquist — the warning reads the line's own error, the note both.
     /// </summary>
-    private static double Error(DelayLineModel m, Coeffs p, double fk, double bandHz)
+    private static double Error(DelayLineModel m, Coeffs p, double fk, double bandHz, double h, bool interpolated)
     {
         const int n = 8;
         double sum = 0; int cnt = 0;
@@ -418,12 +423,24 @@ public static class EnvelopeLineDelay
             double df = bandHz * i / n, f = fk + df;
             var (zc, gl) = m.At(f);
             var exact = S(zc, Complex.Exp(-gl));
-            var real = S(p.Zc, Complex.Exp(new Complex(0, -2 * Math.PI * f * p.Tau)) * (fk <= 0 ? Complex.One : p.H0 + p.G1 * new Complex(0, 2 * Math.PI * df)));
+            var delayed = interpolated ? Complex.Exp(new Complex(0, -2 * Math.PI * fk * p.Tau)) * Interpolated(p, df, h)
+                                       : Complex.Exp(new Complex(0, -2 * Math.PI * f * p.Tau));
+            var real = S(p.Zc, delayed
+                               * (fk <= 0 ? Complex.One : p.H0 + p.G1 * new Complex(0, 2 * Math.PI * df)));
             double d = Math.Max((exact.s11 - real.s11).Magnitude / Math.Max(exact.s11.Magnitude, 1e-3),
                                 (exact.s21 - real.s21).Magnitude / Math.Max(exact.s21.Magnitude, 1e-3));
             sum += d * d; cnt++;
         }
         return cnt == 0 ? 0 : Math.Sqrt(sum / cnt);
+    }
+
+    /// <summary>The delayed envelope's response at offset <paramref name="df"/> as the steps realize it: Σ_j L_j·e^(−j2π·df·h·(N0 + j)),
+    /// the quadratic Lagrange weights on the nodes N0, N0 + 1, N0 + 2 steps back. e^(−j2π·df·τ) for a whole number of steps.</summary>
+    internal static Complex Interpolated(Coeffs p, double df, double h)
+    {
+        Complex acc = 0;
+        for (int j = 0; j < 3; j++) acc += p.L[j] * Complex.Exp(new Complex(0, -2 * Math.PI * df * h * (p.N0 + j)));
+        return acc;
     }
 
     private static (Complex s11, Complex s21) S(double zc, Complex H)

@@ -1584,9 +1584,10 @@ internal static class Explain
                 {
                     string[] listed = env.Probes.Split([',', ' ', ';'], StringSplitOptions.RemoveEmptyEntries);
                     var nets = CircuitRF.Engine.Envelope.EnvelopeEngine.RecordedNodes(nl, listed, src).Select(x => x.name).ToList();
-                    // Brief NZ-8: which carriers EVM is measured on, and what EvmSplit costs. A polar pair is measured once,
-                    // through its amplitude half, as the run measures it.
-                    var qam = src.Where(c => ((ModSourceModel)c.Model).Polar != PolarHalf.Phase)
+                    // Brief NZ-8: which carriers EVM is measured on, and what EvmSplit costs. The sources the run measures
+                    // (EnvelopeEngine.Measured): a polar pair once, and an amplitude half beside its own RF signal not at all.
+                    var srcModels = src.Select(c => (ModSourceModel)c.Model).ToArray();
+                    var qam = CircuitRF.Engine.Envelope.EnvelopeEngine.Measured(srcModels).Select(i => src[i])
                                  .SelectMany(c => ((ModSourceModel)c.Model).Spec.Carriers.Select(k => (c.InstancePath, k)))
                                  .Select(x => (x.InstancePath, x.k, what: x.k.Standard switch
                                  {

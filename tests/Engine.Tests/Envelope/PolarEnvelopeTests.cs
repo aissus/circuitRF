@@ -265,6 +265,225 @@ public sealed class PolarEnvelopeTests(ITestOutputHelper output)
         return Math.Sqrt(err / px);
     }
 
+    private static (EnvelopeRunResult r, List<string> notes, List<string> warnings) RunEngineNotes(string cnl, EnvelopeParams p)
+    {
+        var (lib, tb) = new CnlReader().Read(cnl);
+        using var nl = new Elaborator(lib).Elaborate(tb);
+        var r = new EnvelopeEngine(nl).Run(p);
+        return (r, [.. nl.Notes], [.. nl.Warnings]);
+    }
+
+    /// <summary>
+    /// Envelope tracking: an RF source and the amplitude half of the same signal, the half on a supply-modulated
+    /// amplifier's supply. The RF source is the signal, so it is measured once: Pin is the source's −10 dBm, Gt is 0 dB
+    /// (Ks = 1, matched), and the carrier is listed once — not twice, with the drive counted twice (6 dB).
+    /// </summary>
+    [Fact]
+    public void EnvelopeTracking_MeasuresTheSignalOnce()
+    {
+        var (ds, _) = RunPlan($"""
+            MOD_Source:SR r 0 Fc=1e9 Pavg=-10 Z=50 {Lte}
+            MOD_Source:SA a 0 Fc=1e9 Pavg=-10 Z=50 Polar=amp {Lte}
+            SupplyAmp:PA r 0 f 0 a 0 Ks=1
+            IProbe:Iout f g
+            R:RL g 0 R=50 Ohm
+            analysis ENV1 type=env Accuracy=draft MaxHarm=1 Segments=1 Warmup=1e-6 Stop=0.2e-3
+            """);
+        output.WriteLine($"Pin {ds["Pin_avg_dBm"].RealValues[0]:F4} dBm, Gt {ds["Gt_dB"].RealValues[0]:F4} dB, " +
+                         $"{ds["EVM_pct"].RealValues.Length} EVM value(s)");
+        Assert.InRange(ds["Pin_avg_dBm"].RealValues[0], -10.05, -9.95);   // 0.2 ms of a 0.5 ms record: not quite its average
+        Assert.InRange(ds["Gt_dB"].RealValues[0], -0.01, 0.01);
+        Assert.Single(ds["EVM_pct"].RealValues);
+        Assert.Equal(1, ds["ACLR"].Axes[1].Length);
+    }
+
+    /// <summary>
+    /// The phase half plays the phase UNWRAPPED over the record: continuous (no step over π), twice the signal's own
+    /// phase to within whole turns, and a function of the absolute sample alone — a window starting anywhere, before the
+    /// record or a period later, reads the same values, a period adding the record's own winding.
+    /// </summary>
+    [Fact]
+    public void ThePhaseHalf_PlaysTheUnwrappedPhase_TheSameInEveryWindow()
+    {
+        var (lib, tb) = new CnlReader().Read(Pair);
+        using var nl = new Elaborator(lib).Elaborate(tb);
+        var sp = nl.Components.Select(c => c.Model).OfType<ModSourceModel>().Single(m => m.Polar == PolarHalf.Phase);
+        double h = Step();
+        int n = (int)Math.Round(sp.Signal.RecordSeconds / h);
+        var whole = EnvelopeEngine.UnwrappedPhase(sp.Signal, sp, null, 1 / h, 0, n, 0, 2 * n);
+        var x = sp.Signal.CompositeWindow(1 / h, 0, 0, n);
+        double jump = 0, off = 0;
+        for (int i = 1; i < 2 * n; i++) jump = Math.Max(jump, Math.Abs(whole[i].Real - whole[i - 1].Real) / 2);
+        for (int i = 0; i < n; i++) off = Math.Max(off, Math.Abs(Math.IEEERemainder(whole[i].Real / 2 - x[i].Phase, 2 * Math.PI)));
+        double winding = (whole[n].Real - whole[0].Real) / 2;
+        var early = EnvelopeEngine.UnwrappedPhase(sp.Signal, sp, null, 1 / h, 0, n, -7, 20);
+        double shift = 0;
+        for (int i = 7; i < 20; i++) shift = Math.Max(shift, Math.Abs(early[i].Real - whole[i - 7].Real));
+        for (int i = 0; i < 7; i++) shift = Math.Max(shift, Math.Abs(early[i].Real - (whole[n - 7 + i].Real - 2 * winding)));
+        output.WriteLine($"{n} samples a record: largest step {jump:F3} rad, off arg x by {off:E1}, winding {winding / (2 * Math.PI):F3} turns, window mismatch {shift:E1}");
+        Assert.True(jump <= Math.PI + 1e-12);
+        Assert.True(off < 1e-9);
+        Assert.Equal(0.0, Math.IEEERemainder(winding, 2 * Math.PI), 9);
+        Assert.True(shift < 1e-9);
+    }
+
+    /// <summary>
+    /// The phase path is a path like the amplitude one: half a step of delay on the phase reads as half a step on the
+    /// amplitude (the demodulator's delay fit takes out the common part, so delaying φ by τ is advancing a by τ). With the
+    /// wrapped phase it read four times the EVM, the delay interpolating across every 2π wrap.
+    /// </summary>
+    [Fact]
+    [Trait("Category", "Benchmark")]      // two whole records
+    public void AHalfStepDelayOnThePhasePath_ReadsAsOneOnTheAmplitudePath()
+    {
+        double half = 0.5 * Step();
+        string Bench(double tAm, double tPh) => PolarTx(tAm).Replace("PhaseMod:PM1 d 0 e 0 p 0 Kp=1",
+            $"Delay:DP p 0 pd 0 T={N(tPh)}\nPhaseMod:PM1 d 0 e 0 pd 0 Kp=1");
+        double am = RunPlan(Bench(half, 0)).ds["EVM_pct"].RealValues[0];
+        double ph = RunPlan(Bench(0, half)).ds["EVM_pct"].RealValues[0];
+        output.WriteLine($"half a step ({half * 1e9:F1} ns): on the amplitude path {am:F4} %, on the phase path {ph:F4} %");
+        Assert.InRange(ph, 0.8 * am, 1.25 * am);
+    }
+
+    /// <summary>
+    /// A Delay of a fraction of a step is the quadratic Lagrange interpolation of the delayed wave on the step grid:
+    /// a CW carrier offset fm from the envelope's centre comes out turned by Σ_j L_j·e^(−j·2π·fm·h·j), with
+    /// L = (3/8, 3/4, −1/8) at half a step, and the carrier's own e^(−jω0·T) — to 1e-9. The run's note now states that
+    /// interpolation's distance from the line across the band beside the line's own (0 % here), which it used to omit.
+    /// </summary>
+    [Fact]
+    public void AFractionalDelay_IsTheLagrangeInterpolation_AndItsNoteSaysSo()
+    {
+        const double fm = 300e3;
+        string Cw(double t) => $"""
+            MOD_Source:S1 x 0 Fc=1e9 Pavg=-10 Z=50 Record=0.1e-3 Carrier[1]="CW;BW=0.2MHz;Off=300kHz;P=0"
+            Delay:D1 x 0 y 0 T={N(t)}
+            R:R1 y 0 R=50
+            """;
+        var probe = new EnvelopeParams { StopS = 10e-6, WarmupS = 2e-6, Oversample = 1, MaxHarm = 1, Probes = ["x", "y"] };
+        double h = RunEngine(Cw(0), probe).StepS, t = 0.5 * h;
+        var (r, notes, warnings) = RunEngineNotes(Cw(t), probe);
+        Assert.Equal(h, r.StepS, 15);
+        int ix = Array.IndexOf(r.ProbeNames, "x"), iy = Array.IndexOf(r.ProbeNames, "y");
+        double th = 2 * Math.PI * fm * h;
+        var lagrange = 0.375 + 0.75 * Complex.FromPolarCoordinates(1, -th) - 0.125 * Complex.FromPolarCoordinates(1, -2 * th);
+        var expect = Complex.FromPolarCoordinates(1, -2 * Math.PI * 1e9 * t) * lagrange;
+        double worst = 0;
+        for (int n = 3; n < r.Time.Length; n++)
+            worst = Math.Max(worst, (r.Probe[n][iy][1] / r.Probe[n - 0][ix][1] - expect).Magnitude);
+        var note = notes.Single(x => x.Contains("'D1'") && x.Contains("stepped as its delay"));
+        output.WriteLine($"h {h * 1e9:F2} ns, T = h/2: out/in vs the Lagrange closed form, worst {worst:E2}; " +
+                         $"|L·e^(jθ/2)| = {(lagrange * Complex.FromPolarCoordinates(1, th / 2)).Magnitude:F6}; note: {note}");
+        Assert.True(worst < 1e-9);
+        var pct = System.Text.RegularExpressions.Regex.Match(note, @"; 0 % \(RMS\).*, ([0-9.]+) % with the delay interpolated between steps");
+        Assert.True(pct.Success && double.Parse(pct.Groups[1].Value, CultureInfo.InvariantCulture) > 1, note);
+        Assert.DoesNotContain(warnings, w => w.Contains("'D1'"));                 // the warning reads the line's own error
+        Assert.Contains(RunEngineNotes(Cw(3 * h), probe).notes, x => x.Contains("'D1'") && x.Contains(", 0 % with the delay interpolated"));
+    }
+
+    /// <summary>A Delay that is no causal line in a ground-referenced system — a negative T, a complex Z0, returns that are
+    /// not ground — keeps the path it had: it is not stepped as a delay, and the run completes.</summary>
+    [Theory]
+    [InlineData("Delay:D1 x 0 y 0 T=-1ns", "")]
+    [InlineData("Delay:D1 x 0 y 0 T=1ns Z0=50+j10", "")]
+    [InlineData("Delay:D1 x rx y ry T=1ns", "R:RX rx 0 R=1\nR:RY ry 0 R=1")]
+    public void ADelayThatIsNoLine_KeepsItsOldPath(string delay, string extra)
+    {
+        var (r, notes, warnings) = RunEngineNotes($"""
+            MOD_Source:S1 x 0 Fc=1e9 Pavg=-10 Z=50 {Lte}
+            {delay}
+            {extra}
+            R:R1 y 0 R=50
+            """, new EnvelopeParams { StopS = 5e-6, WarmupS = 1e-6, Oversample = 1, MaxHarm = 1, Probes = ["y"] });
+        output.WriteLine(string.Join(" | ", notes.Concat(warnings).Where(x => x.Contains("D1"))));
+        Assert.DoesNotContain(notes, x => x.Contains("'D1'") && x.Contains("stepped as its delay"));
+        Assert.True(r.Time.Length > 10);
+    }
+
+    /// <summary>
+    /// The multi-fundamental envelope steps a Delay as its delay too: two carriers 200 MHz apart, each on its own
+    /// fundamental, through a Delay of whole steps, come out sample for sample as they went in three steps earlier, each
+    /// product turned by e^(−j2π·f·T) at its own frequency — to 1e-9. On main the same Delay was a rational fit that
+    /// missed, and two NR carriers through 5 ns read 1.2 % of EVM against 0.15 % here.
+    /// </summary>
+    [Fact]
+    public void TheMultiFundamentalEnvelope_StepsADelayAsItsDelay()
+    {
+        const string two = "Carrier[1]=\"LTE;BW=1.4MHz;Mod=64QAM;Off=-100MHz;P=0;Seed=3\" " +
+                           "Carrier[2]=\"LTE;BW=1.4MHz;Mod=64QAM;Off=100MHz;P=0;Seed=4\" Record=0.5e-3";
+        var (lib0, tb0) = new CnlReader().Read($"MOD_Source:S1 x 0 Fc=1e9 Pavg=-10 Z=50 {two}");
+        double h;
+        using (var nl0 = new Elaborator(lib0).Elaborate(tb0))
+            h = EnvelopeRunner.StepSeconds([.. nl0.Components.Select(c => c.Model).OfType<ModSourceModel>()], new EnvelopeParams { Oversample = 1 }, 2);
+        var (lib, tb) = new CnlReader().Read($"""
+            MOD_Source:S1 x 0 Fc=1e9 Pavg=-10 Z=50 {two}
+            Delay:D1 x 0 y 0 T={N(3 * h)}
+            R:R1 y 0 R=50
+            """);
+        using var nl = new Elaborator(lib).Elaborate(tb);
+        var r = new EnvelopeEngineMt(nl).Run(new EnvelopeParams { StopS = 20e-6, WarmupS = 2e-6, Oversample = 1, MaxHarm = 1, Probes = ["x", "y"] }, 3);
+        Assert.Equal(h, r.StepS, 15);
+        Assert.Contains(nl.Notes, n => n.Contains("'D1'") && n.Contains("stepped as its delay"));
+        int ix = Array.IndexOf(r.ProbeNames, "x"), iy = Array.IndexOf(r.ProbeNames, "y");
+        foreach (int m in r.CarrierMix.Distinct())
+        {
+            var rot = Complex.FromPolarCoordinates(1, -2 * Math.PI * r.MixFreqHz![m] * 3 * h);
+            double worst = 0, peak = 0;
+            for (int n = 3; n < r.Time.Length; n++)
+            {
+                peak = Math.Max(peak, r.Probe[n][ix][m].Magnitude);
+                worst = Math.Max(worst, (r.Probe[n][iy][m] - rot * r.Probe[n - 3][ix][m]).Magnitude);
+            }
+            output.WriteLine($"product {r.MixLabels![m]} at {r.MixFreqHz[m] / 1e9:F3} GHz: worst {worst / peak:E2} of the peak");
+            Assert.True(worst < 1e-9 * peak);
+        }
+    }
+
+    /// <summary>The multi-fundamental envelope drops weighted (w ≥ 2) terms, so it refuses a carrier block, and it has no
+    /// one baseband for a polar half to drive, so it refuses that too — each by name.</summary>
+    [Theory]
+    [InlineData("Limiter:LIM7 x 0 y 0 Pout=0", "", "quadrature")]
+    [InlineData("R:R0 x y R=1", "MOD_Source:SA7 a 0 Fc=1e9 Pavg=-10 Z=50 Polar=amp " + Lte + "\nR:RA a 0 R=50", "polar half")]
+    public void TheMultiFundamentalEnvelope_RefusesWhatItCannotRun(string part, string extra, string why)
+    {
+        var (lib, tb) = new CnlReader().Read($"""
+            MOD_Source:S1 x 0 Fc=1e9 Pavg=-10 Z=50 Carrier[1]="LTE;BW=1.4MHz;Off=-100MHz;P=0;Seed=3" Carrier[2]="LTE;BW=1.4MHz;Off=100MHz;P=0;Seed=4" Record=0.5e-3
+            {part}
+            {extra}
+            R:R1 y 0 R=50
+            """);
+        using var nl = new Elaborator(lib).Elaborate(tb);
+        var ex = Assert.ThrowsAny<InvalidOperationException>(() => new EnvelopeEngineMt(nl).Run(new EnvelopeParams { StopS = 1e-6 }, 3));
+        Assert.Contains(why, ex.Message);
+        Assert.Contains(part.Contains("LIM7") ? "LIM7" : "SA7", ex.Message);
+    }
+
+    /// <summary>
+    /// The warm-up estimate holds a Delay as the line it is stepped as, and the Delay declares its own memory, T: an
+    /// amplifier, 5 ns of Delay and an amplifier warm up on 5 µs and run in parallel. Before, the Delay's stamp between
+    /// two nonlinear ports read as a pole of tens of seconds and the run went to one segment.
+    /// </summary>
+    [Fact]
+    public void ADelayBetweenTwoAmplifiers_IsFiveNanosecondsOfMemory_NotSeconds()
+    {
+        var (lib, tb) = new CnlReader().Read($"""
+            MOD_Source:S1 a 0 Fc=1e9 Pavg=-20 Z=50 {Lte}
+            Amp:A1 a 0 b 0 Gain=10 IP3=20 IP3Ref=Input
+            Delay:D1 b 0 c 0 T=5ns
+            Amp:A2 c 0 d 0 Gain=10 IP3=30 IP3Ref=Input
+            R:RL d 0 R=50
+            analysis ENV1 type=env Accuracy=draft MaxHarm=1 Stop=100e-6
+            """);
+        using var nl = new Elaborator(lib).Elaborate(tb);
+        var declared = EnvelopeMemory.Declared(nl);
+        Assert.NotNull(declared);
+        Assert.Equal(5e-9, declared!.Seconds, 15);
+        using var own = new Elaborator(lib).Elaborate(tb);
+        var pole = EnvelopeMemory.LinearPole(own, new AnalysisSettings(), Math.PI * 7e6, 100e-6);
+        output.WriteLine($"declared {declared.What} {declared.Seconds * 1e9:F1} ns; the linear network's slowest pole: {(pole is null ? "none" : $"{pole.Seconds:E2} s at {pole.What}")}");
+        Assert.True(pole is null || pole.Seconds < 1e-6);
+    }
+
     [Fact]
     public void APolarPair_PlayingTwoSignals_IsRefusedByName()
     {

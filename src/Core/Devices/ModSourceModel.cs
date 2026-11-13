@@ -36,8 +36,9 @@ namespace CircuitRF.Core.Devices;
 ///
 /// <para><b>A polar half</b> (<c>Polar=amp</c> or <c>Polar=phase</c>) plays the same signal split into its envelope and
 /// its phase, at baseband: the amplitude half's open-circuit voltage is <c>|Vs|·|x(t)|</c> (a matched load reads the
-/// peak RF envelope the source would deliver as RF), the phase half's <c>2·arg x(t)</c> (a matched load reads the phase,
-/// one volt per radian). Harmonic balance sees the unmodulated operating point at DC: <c>|Vs|</c> (|x| at its RMS of 1)
+/// peak RF envelope the source would deliver as RF), the phase half's <c>2·φ(t)</c>, φ the phase unwrapped over the record
+/// (a matched load reads the phase, one volt per radian, continuous; it still turns by about π across a null of the
+/// envelope). Harmonic balance sees the unmodulated operating point at DC: <c>|Vs|</c> (|x| at its RMS of 1)
 /// and 0. The two halves of a pair state the same carriers; the run measures the signal once, through the amplitude
 /// half, whose recorded drive is the complex signal the pair stands for.</para>
 /// </summary>
@@ -62,10 +63,6 @@ public sealed class ModSourceModel : ComponentModel, IDriveScalable
 
     /// <summary>The product an envelope run drives this source at: the baseband for a polar half, the carrier otherwise.</summary>
     public int EnvelopeProduct => Polar is null ? 1 : 0;
-
-    /// <summary>A polar half's baseband open-circuit voltage for one sample <paramref name="vsX"/> of the drive
-    /// (|Vs|·x(t), complex): its magnitude for the amplitude half, twice its phase for the phase half.</summary>
-    public double PolarDrive(Complex vsX) => Polar == PolarHalf.Amp ? vsX.Magnitude : 2 * vsX.Phase;
 
     /// <summary>
     /// Envelope assembly hook: when non-null the drive branch is stamped at EVERY frequency with this

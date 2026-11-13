@@ -53,7 +53,10 @@ public sealed class BasebandHeldModel : ComponentModel, IReportsWarnings
     {
         Inner = inner;
         _original = original;
-        Shorts = (inner as IDcShortedTerminals)?.DcShortedTerminals;
+        // A System Delay the envelope steps as a line is held as one too: its two + nets shorted, as it is at DC, the element
+        // re-noded to them as a line's two nets are (HeldAsLine). Only the warm-up estimate meets one here
+        // (EnvelopeMemory.LinearPole); a run has already replaced it (EnvelopeLineDelay).
+        Shorts = (inner as IDcShortedTerminals)?.DcShortedTerminals ?? (HeldAsLine(original) ? [(0, 1)] : null);
     }
 
     public ComponentModel Inner { get; }
@@ -85,6 +88,9 @@ public sealed class BasebandHeldModel : ComponentModel, IReportsWarnings
     }
 
     public IReadOnlyList<(string Key, string Message)> DrainWarnings() => Inner is IReportsWarnings rw ? rw.DrainWarnings() : [];
+
+    /// <summary>A System Delay the envelope steps as a line (<see cref="EnvelopeLineDelay"/>): held between its + nets.</summary>
+    internal static bool HeldAsLine(ElaboratedComponent ec) => ec.Model is DelayModel && EnvelopeLineDelay.Ends(ec) is not null;
 }
 
 public static class EnvelopeBaseband
@@ -130,7 +136,8 @@ public static class EnvelopeBaseband
                     or VdcModel or ToneSourceModelBase or TunerModel or P1ToneModel or PnToneModel or DelayLineModel)
                 continue;
             var model = new BasebandHeldModel(ec.Model, ec);
-            var replacement = new ElaboratedComponent(ec.ComponentType, ec.InstancePath, ec.Nodes, ec.Parameters, model)
+            int[] nodes = BasebandHeldModel.HeldAsLine(ec) ? [ec.Nodes[0], ec.Nodes[2]] : ec.Nodes;
+            var replacement = new ElaboratedComponent(ec.ComponentType, ec.InstancePath, nodes, ec.Parameters, model)
             {
                 ReferenceNode = ec.ReferenceNode,
                 Multiplicity = model.Shorts is null ? ec.Multiplicity : 1.0,
@@ -140,8 +147,12 @@ public static class EnvelopeBaseband
             {
                 // A line's baseband tangent is never exact (its Y has a pole at w = 0), so it is not measured: stamping it at
                 // 1 Hz only reaches the resonance clamp. What it costs is measured against the short it is held at.
-                try { held = EnvelopeTangentCheck.HeldError(replacement, model, bandRad); }
-                catch (Exception) { continue; }
+                // A Delay held as a line is held only for the warm-up estimate, whose netlist and warnings are its own; its
+                // S-block stamp has branch unknowns the short does not, so the measure would not compare like with like.
+                if (BasebandHeldModel.HeldAsLine(ec)) held = 0;
+                else
+                    try { held = EnvelopeTangentCheck.HeldError(replacement, model, bandRad); }
+                    catch (Exception) { continue; }
             }
             else
             {
