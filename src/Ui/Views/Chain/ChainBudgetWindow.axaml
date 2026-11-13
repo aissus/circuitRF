@@ -106,7 +106,7 @@
     <!-- A parameter row's field, for the rows that are not stages (the Link tab's): the stage list's own template. -->
     <Window.DataTemplates>
         <DataTemplate DataType="vm:ChainParamViewModel">
-            <StackPanel Orientation="Horizontal" Margin="0,0,5,2" ToolTip.Tip="{Binding Tip}">
+            <StackPanel Orientation="Horizontal" Margin="0,0,5,2" ToolTip.Tip="{Binding Tip}" IsVisible="{Binding Shown}">
                 <TextBlock Classes="lbl" Text="{Binding Name}"/>
                 <TextBox Classes="p param" Text="{Binding Value}" Classes.invalid="{Binding Invalid}" IsVisible="{Binding IsText}" PlaceholderText="{Binding Watermark}"/>
                 <ComboBox Classes="p param" ItemsSource="{Binding Options}" SelectedItem="{Binding Value}" IsVisible="{Binding HasOptions}"/>
@@ -201,30 +201,43 @@
             </DockPanel>
         </Border>
 
-        <!-- The system inputs, the chain's direction first: a transmit chain is read at its output. -->
+        <!-- The system inputs, the chain's direction first: a transmit chain is read at its output. Each field's label,
+             box and unit are one StackPanel, so the WrapPanel wraps whole fields and never parts a label from its box. -->
         <Border Classes="pane" DockPanel.Dock="Top">
             <WrapPanel>
                 <ItemsControl ItemsSource="{Binding TransmitInputs}">
                     <ItemsControl.ItemsPanel><ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate></ItemsControl.ItemsPanel>
                 </ItemsControl>
-                <TextBlock Classes="lbl" Text="Frequency"/>
-                <TextBox Name="FrequencyBox" Classes="p" Text="{Binding Frequency}" Classes.invalid="{Binding FrequencyInvalid}" ToolTip.Tip="The input (RF) frequency"/>
-                <TextBlock Classes="unit" Text="{Binding FrequencyUnit}"/>
-                <TextBlock Classes="lbl" Text="Bandwidth"/>
-                <TextBox Classes="p" Text="{Binding BandwidthMHz}" Classes.invalid="{Binding BandwidthInvalid}" ToolTip.Tip="The noise bandwidth the floor, the MDS and the SNR are read in"/>
-                <TextBlock Classes="unit" Text="MHz"/>
-                <TextBlock Classes="lbl" Text="Input power"/>
-                <TextBox Classes="p" Text="{Binding InputPowerDbm}" Classes.invalid="{Binding InputPowerInvalid}" IsEnabled="{Binding !HasLink}" ToolTip.Tip="The signal at the input; in an array, at each element. With a link, the power it delivers"/>
-                <TextBlock Classes="unit" Text="dBm"/>
-                <TextBlock Classes="lbl" Text="Source temperature"/>
-                <TextBox Classes="p" Text="{Binding TemperatureK}" Classes.invalid="{Binding TemperatureInvalid}" ToolTip.Tip="The source's (antenna's) noise temperature; 290 K is T0"/>
-                <TextBlock Classes="unit" Text="K"/>
-                <TextBlock Classes="lbl" Text="Required SNR"/>
-                <TextBox Classes="p" Text="{Binding RequiredSnrDb}" Classes.invalid="{Binding RequiredSnrInvalid}" ToolTip.Tip="The SNR the demodulator needs: sensitivity is the MDS plus this"/>
-                <TextBlock Classes="unit" Text="dB"/>
-                <TextBlock Classes="lbl" Text="Blockers"/>
-                <TextBox Classes="p" Text="{Binding Blockers}" Classes.invalid="{Binding BlockersInvalid}" MinWidth="200" PlaceholderText="offset MHz, level dBm; …"
-                         ToolTip.Tip="Blockers at the input: an offset from the frequency (MHz when bare) and a level, dBm, separated by ';'. Each is carried through every stage's gain and every filter's rejection at its own frequency."/>
+                <StackPanel Orientation="Horizontal">
+                    <TextBlock Classes="lbl" Text="Frequency"/>
+                    <TextBox Name="FrequencyBox" Classes="p" Text="{Binding Frequency}" Classes.invalid="{Binding FrequencyInvalid}" ToolTip.Tip="The input (RF) frequency"/>
+                    <TextBlock Classes="unit" Text="{Binding FrequencyUnit}"/>
+                </StackPanel>
+                <StackPanel Orientation="Horizontal">
+                    <TextBlock Classes="lbl" Text="Bandwidth"/>
+                    <TextBox Classes="p" Text="{Binding BandwidthMHz}" Classes.invalid="{Binding BandwidthInvalid}" ToolTip.Tip="The noise bandwidth the floor, the MDS and the SNR are read in"/>
+                    <TextBlock Classes="unit" Text="MHz"/>
+                </StackPanel>
+                <StackPanel Orientation="Horizontal">
+                    <TextBlock Classes="lbl" Text="Input power"/>
+                    <TextBox Classes="p" Text="{Binding InputPowerDbm}" Classes.invalid="{Binding InputPowerInvalid}" IsEnabled="{Binding !HasLink}" ToolTip.Tip="The signal at the input; in an array, at each element. With a link, the power it delivers"/>
+                    <TextBlock Classes="unit" Text="dBm"/>
+                </StackPanel>
+                <StackPanel Orientation="Horizontal">
+                    <TextBlock Classes="lbl" Text="Source temperature"/>
+                    <TextBox Classes="p" Text="{Binding TemperatureK}" Classes.invalid="{Binding TemperatureInvalid}" ToolTip.Tip="The source's (antenna's) noise temperature; 290 K is T0"/>
+                    <TextBlock Classes="unit" Text="K"/>
+                </StackPanel>
+                <StackPanel Orientation="Horizontal">
+                    <TextBlock Classes="lbl" Text="Required SNR"/>
+                    <TextBox Classes="p" Text="{Binding RequiredSnrDb}" Classes.invalid="{Binding RequiredSnrInvalid}" ToolTip.Tip="The SNR the demodulator needs: sensitivity is the MDS plus this"/>
+                    <TextBlock Classes="unit" Text="dB"/>
+                </StackPanel>
+                <StackPanel Orientation="Horizontal">
+                    <TextBlock Classes="lbl" Text="Blockers"/>
+                    <TextBox Classes="p" Text="{Binding Blockers}" Classes.invalid="{Binding BlockersInvalid}" MinWidth="200" PlaceholderText="offset MHz, level dBm; …"
+                             ToolTip.Tip="Blockers at the input: an offset from the frequency (MHz when bare) and a level, dBm, separated by ';'. Each is carried through every stage's gain and every filter's rejection at its own frequency."/>
+                </StackPanel>
             </WrapPanel>
         </Border>
 

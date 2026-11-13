@@ -39,6 +39,9 @@ public sealed partial class ChainParamViewModel(ChainParam param, string value, 
     /// last chain that evaluated, and leaving the box puts <see cref="LastGood"/> back.</summary>
     [ObservableProperty] private bool _invalid;
 
+    /// <summary>The row is drawn; a hidden one keeps its value. A transmit chain's receive band, on a receive chain.</summary>
+    [ObservableProperty] private bool _shown = true;
+
     /// <summary>The value this field had the last time the whole chain evaluated.</summary>
     public string LastGood { get; set; } = value;
 
@@ -819,6 +822,8 @@ public sealed partial class ChainBudgetViewModel : ObservableObject
     public bool Recompute()
     {
         var d = ToDesign();
+        // The receive band is a transmit chain's alone: on a receive chain its two rows are hidden, their values kept.
+        foreach (var p in TransmitInputs) p.Shown = p.Name == "Direction" || d.IsTransmit;
         var r = ChainBudget.Evaluate(d);
         if (r.Totals is null && _hasGood)
         {

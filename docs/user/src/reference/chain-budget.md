@@ -113,7 +113,7 @@ as a tree combiner whose N is not a power of 2, is not made, and the reason is s
 | Required SNR | What the demodulator needs: sensitivity is the MDS plus this. |
 | Blockers | Carriers at the input besides the signal: an offset from the frequency (MHz when bare) and a level, dBm, each pair separated by `;` (`150 MHz, -40; 20 MHz, -50`). See [Levels](#levels). |
 | Direction | `Receive`, the default, or `Transmit`: a chain driven at its input and read at its output. See [Transmit chains](#transmit). |
-| RxOffset, RxBandwidth | A transmit chain's receive band, where its output noise is read: its centre's offset from the carrier at the output and its width, MHz. Blank offset: none. |
+| RxOffset, RxBandwidth | A transmit chain's receive band, where its output noise is read: its centre's offset from the carrier at the output and its width, MHz. Blank offset: none. Shown only when Direction is `Transmit`; a receive chain keeps the values. |
 
 **Transfer to Schematic**'s drop-down has **include a modulated-signal demo**, which adds the [demo bench](#demo) to
 what it writes.
