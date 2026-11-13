@@ -556,8 +556,7 @@ enough here because none of these blocks makes harmonics.
 `MOD_Source`s with the same carrier play its two rails at baseband, `SI` (`Baseband=i`) and `SQ` (`Baseband=q`). Each
 rail goes through
 
-- a [DAC](../../docs/user/reference/components.html#dac), `DI` / `DQ`: `Bits` bits across `±FS`, sampled at `Fs`,
-  NRZ (a zero-order hold);
+- a DAC, `DI` / `DQ`: `Bits` bits across `±FS`, sampled at `Fs`, NRZ (a zero-order hold);
 - a reconstruction filter, `FI` / `FQ`: a Butterworth lowpass of order `Order` with its corner at `Fbw = 0.4·Fs`, just
   below the DAC's Nyquist frequency;
 - a mixer of an I/Q modulator built as `TxDirectConversion`'s is: a CW LO split by a 90° hybrid, its two outputs summed.
