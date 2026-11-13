@@ -4439,3 +4439,42 @@ Findings worth keeping:
 - **The device pass, not the model, is an envelope step's cost.** On the 9-interface-node polar chain, ~90 % of a
   step is `HbNewton.EvaluateNonlinear`'s O(N²) small FFTs of the Jacobian spectra; making the blocks
   allocation-free (`EvaluateGrid`) did not change it.
+
+## A DAC in the circuit envelope, converted before the first step (2026-11-13)
+
+A DAC's input is a digital stream, and the only one a design has is a Signal Designer record: a MOD_Source rail
+(`Baseband=i|q`, driven at k = 0 like a polar half) on the DAC's input net with nothing else on it
+(`EnvelopeDac.RailOf` refuses anything else by name). Because the record is periodic the whole conversion is known in
+advance: the rail resampled at the DAC's Fs (`ModulatedSignal.Composite`, band-limited), through the divider into Zin,
+then `DacModel.Convert` onto the envelope's own record — the stream's spectrum times `H(f)`, bin by bin. The rail's
+source then plays that conversion (scaled back up by the divider) and the DAC's S-block carries it to the output with
+its gain. A function of the absolute sample, as every drive is, so segments and warm-ups read the same values.
+
+- **Why not resolve the hold in time.** The envelope's step is `1/(rate·Oversample)` and has nothing to do with Fs.
+  Sampling a staircase on an incommensurate grid folds the images above the step's Nyquist back onto the signal (at
+  2 ns and 122.88 MHz the fourth image lands 34 dB below it), and a step forced to divide 1/Fs would still give a
+  Dirichlet kernel, not the sinc. The bin-by-bin conversion is exact and costs two FFTs per DAC per run.
+- **The band edge is the run's signal band, ± rate/2**, not the step's Nyquist: it is where ACLR is measured and where
+  `EnvelopeSnpFit` fits a System Filter, so the reconstruction filter is exact over everything the DAC injects. Above it
+  a Gear-2 step's frequency warp grows as θ²/3 (θ = 2π·f·h): at 122.88 MHz on a 2 ns step that is 80 %, and an image
+  stepped through a filter there would read tens of dB wrong. What is left out — images and quantisation noise above
+  the band — is named in a note per DAC (`DacDiagnostics.Band`), with the first image and the bound
+  `|H(f)| ≤ Fs/(π·f)` against the signal's own `|H|` at its edge.
+- **Inside the band the step's warp still applies to the filter.** An image at 25 MHz through a fifth-order
+  Butterworth at 12.3 MHz reads 1.3 dB lower at `standard` than the closed form (3.4 % of warp × order 5), 0.3 dB at
+  `fine`: the envelope's accuracy, not the DAC's.
+- **Measured once, through the I rail** (`Measured`): the I rail's recorded drive is the complex signal, as a polar
+  pair's amplitude half's is; a Q rail is never measured, and a Q rail alone is refused (`BasebandPair`). An amplitude
+  half beside an I rail of the same signal is not measured again.
+- **A phase-noise mask on a rail a DAC converts is refused**: the mask is drawn at the envelope rate and a digital
+  stream has none.
+- **Not DAC-specific, found on the way:** with System Filters at baseband between the rails and two mixers, and a
+  compressing (tanh) amplifier after them, `EnvelopeRunner`'s seam check reads the mixers' summing node (the amplifier's
+  input) up to ~36 % of its RMS apart across a seam, at isolated steps a few apart, while the amplifier's output agrees
+  to 2e-4 and EVM and ACLR to 0.1 % against one segment. The same with the DACs replaced by wires; gone with a linear
+  amplifier, with the filters out, or with one segment. The `DigitalTx` example leaves that net unlabelled.
+
+Gates: `tests/Engine.Tests/Envelope/DacEnvelopeTests.cs` — a rail through a DAC is its conversion step for step
+(5e-11), ideal DACs read the source's own EVM through an I/Q modulator, EVM against bits within 10 % of the closed form
+in quadrature with the 24-bit floor (6 and 8 bits: −2.7 % and +4.3 %), the pair measured once, the refusals in the
+envelope and in harmonic balance.

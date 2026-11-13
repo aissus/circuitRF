@@ -158,6 +158,10 @@ public sealed class EnvelopeEngineMt
         if (sources.FirstOrDefault(s => s.Polar is not null) is { } polar)
             throw new InvalidOperationException(
                 CarrierBlockDiagnostics.PolarMultiFundamental(polar.InstanceName, EnvelopeEngine.Word(polar.Polar)).Render());
+        if (sources.FirstOrDefault(s => s.Baseband is not null) is { } rail)
+            throw new InvalidOperationException(DacDiagnostics.BasebandMultiFundamental(rail.InstanceName).Render());
+        if (_nl.Components.FirstOrDefault(c => c.Model is DacModel) is { } dac)
+            throw new InvalidOperationException(DacDiagnostics.NotInMultiFundamental(dac.InstancePath).Render());
         var toneSources = ToneSources(_nl);
         var plan = Plan(sources, toneSources, sources[0].FcHz, p.MaxHarm, maxMixOrder);
         if (plan.Count != 2)

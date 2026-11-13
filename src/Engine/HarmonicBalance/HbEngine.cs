@@ -465,6 +465,9 @@ public sealed class HbEngine
     /// </summary>
     public HbRunResult Run(HbAnalysisParams p, Complex[,]? warmStart = null)
     {
+        // A DAC samples a digital stream at its own rate, and harmonic balance has no stream: refused by name, at any tone count.
+        if (_netlist.Components.FirstOrDefault(c => c.Model is DacModel) is { } dac)
+            throw new InvalidOperationException(DacDiagnostics.NotInHarmonicBalance(dac.InstancePath).Render());
         // Before any evaluation reads charge, warm-started or not (brief-modelcomposer-21 R-mc21-3).
         BiasFreeze.Ensure(_netlist, _settings);
         // TWO OR MORE tones go to the APFT lattice path. Two tones used to be routed to the
