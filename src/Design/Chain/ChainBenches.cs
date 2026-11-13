@@ -235,7 +235,8 @@ public static class ChainBenches
     {
         int law = d.Stages.FindLastIndex(s => ChainParts.LawOf(s) is not null);
         return law >= 0 ? law
-             : d.Stages.FindLastIndex(s => s.Part == ChainParts.Amp && ChainValue.Or(s.Get("IP3"), 40) < ChainParts.AmpLinearDbm);
+             : d.Stages.FindLastIndex(s => s.Part == ChainParts.Amp && !ChainParts.HasBandpassLaw(s)
+                                           && ChainValue.Or(s.Get("IP3"), 40) < ChainParts.AmpLinearDbm);
     }
 
     /// <summary>
@@ -1204,7 +1205,7 @@ public static class ChainBenches
             {
                 case ChainParts.Amp:
                     // A bandpass law replaces the intercept, which its line then does not carry.
-                    Line($"Amp:{name}  {a}  0  {b}  0{(ChainParts.LawOf(s) is null ? Params(s) : Params(s, "IP3", "IP3Ref"))}"); Inline(name, 300);
+                    Line($"Amp:{name}  {a}  0  {b}  0{(ChainParts.HasBandpassLaw(s) ? Params(s, "IP3", "IP3Ref") : Params(s))}"); Inline(name, 300);
                     if (ChainValue.Or(s.Get("NF"), 0) > 0) placed.Add(name);
                     break;
                 case ChainParts.Atten:
@@ -1882,7 +1883,7 @@ public static class ChainBenches
                     _meas.Add($"Ptop_calc = {G(CwAt(pins[^1]))}");
                     _meas.Add($"Ptop_sim = at(Pout_sim,\"Pin\",{pins.Length - 1})");
                     _meas.Add("Ptop_err = Ptop_sim - Ptop_calc");
-                    _meas.Add($"Psat_calc = {G(tx.PsatDbm)}");
+                    if (double.IsFinite(tx.PsatDbm)) _meas.Add($"Psat_calc = {G(tx.PsatDbm)}");
                     if (double.IsFinite(_t.Ip1dbDbm))
                     {
                         int k0 = Array.IndexOf(pins, Math.Round(_t.Ip1dbDbm - CompressionBackoffDb, 6));
@@ -2049,6 +2050,8 @@ public static class ChainBenches
                 _meas.Add("PAE_env_sim = 100*(10^((ENVP.Pavg_dBm[\"Iout\"] - 30)/10) - 10^((Pop - 30)/10))/" + G(pdc));
             }
             _meas.Add("Penv_sim = ENVP.Pavg_dBm[\"Iout\"]");
+            // The ACLR the budget's relation gives the PA alone: its linear output at its input power against its intercept.
+            _meas.Add($"ACLR_calc = {G(2 * (pop + row.GainDb - (row.Iip3Dbm + row.GainDb)) - ChainTransmit.AclrConstantDb)}");
             _meas.Add("ACLR_L_sim = ENVP.ACLR[\"Iout\", 0, \"ACPR1L\"]");
             _meas.Add("ACLR_U_sim = ENVP.ACLR[\"Iout\", 0, \"ACPR1U\"]");
             _meas.Add("EVM_sim = ENVP.EVM_pct[\"Iout\", 0]");

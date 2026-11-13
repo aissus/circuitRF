@@ -222,6 +222,57 @@ public sealed class ChainTransmitTests(ITestOutputHelper output) : IDisposable
         Assert.DoesNotContain("IP3=", benches.Single(b => b.Kind == ChainBench.Pa).Netlist, StringComparison.Ordinal);
     }
 
+    /// <summary>A Rapp or Saleh law its Psat switches off is linear in the budget, as the block is, whatever the line's
+    /// IP3 says.</summary>
+    [Fact]
+    public void ALawSwitchedOff_IsLinear()
+    {
+        var d = Tx();
+        d.Stages[1].Parameters["Psat"] = "200";
+        var pa = ChainBudget.Evaluate(d).Stages[1].Stage;
+        Assert.True(double.IsPositiveInfinity(pa.Iip3Dbm));
+        Assert.True(double.IsPositiveInfinity(pa.Ip1dbDbm));
+        Assert.Null(pa.Law);
+    }
+
+    /// <summary>The receive band's noise passes a Combiner at its noise gain, not its coherent signal gain: a flat chain
+    /// with a 4-way combiner reads the same noise in the band as at the carrier.</summary>
+    [Fact]
+    public void TheReceiveBand_TakesACombinersNoiseGain()
+    {
+        var d = new ChainDesign
+        {
+            Direction = ChainDesign.Transmit, FrequencyHz = 3.5e9, BandwidthHz = 100e6, InputPowerDbm = -20, RxBandOffsetHz = 200e6,
+            Stages = [S("A1", "Amp", ("Gain", "20"), ("NF", "3"), ("IP3", "30")), S("CMB", "Combiner", ("N", "4"), ("IL", "0.5")),
+                      S("A2", "Amp", ("Gain", "10"), ("NF", "5"), ("IP3", "40"))],
+        };
+        var x = ChainTransmit.Read(ChainBudget.Evaluate(d))!;
+        Assert.InRange(x.RxNoisePsdDbmHz - x.NoisePsdDbmHz, -1e-9, 1e-9);
+    }
+
+    /// <summary>The lower sideband from an LO above the output: the IQ modulator's image and LO on their closed forms at
+    /// its own output and at the chain's, simulated (its 1-Tone bench's harmonic-balance sweep, 26 drives: about 6 s).</summary>
+    [Fact]
+    [Trait("Category", "Benchmark")]
+    public void TheLowerSideband_AHighSideLo_ItsImageAndLoOnTheBudget()
+    {
+        var d = new ChainDesign
+        {
+            Direction = ChainDesign.Transmit, FrequencyHz = 200e6, BandwidthHz = 20e6, InputPowerDbm = -10,
+            Stages = [S("IQ", "IQMod", ("ConvGain", "-6"), ("Flo", "3.7 GHz"), ("Sideband", "Lower"), ("GainImb", "0.3"),
+                        ("PhaseImb", "2"), ("IsoLO_IF", "40")),
+                      S("AMP", "Amp", ("Gain", "10"), ("IP3", "200"))],
+        };
+        Assert.Equal(3.5e9, ChainBudget.Evaluate(d).Totals!.OutputFrequencyHz, 3);
+        var ds = Bench(d, "L", ChainBench.OneTone, hbOnly: true);
+        foreach (var q in new[] { "ImageIq", "LoIq", "Image", "LoLeak" })
+        {
+            output.WriteLine($"{q}: budget {M(ds, q + "_calc"):F4} dBc, simulated {M(ds, q + "_sim"):F4} dBc");
+            Assert.InRange(M(ds, q + "_sim") - M(ds, q + "_calc"), -1e-2, 1e-2);
+        }
+        Assert.InRange(M(ds, "Pout_op_sim") - M(ds, "Pout_op_calc"), -1e-3, 1e-3);
+    }
+
     /// <summary>A transmit chain's benches go through the receive chain's checks before they are written: an LO at twice
     /// the IF puts the modulator's LO, which the 1-Tone bench reads, on the IF's second harmonic, and the envelope run's two
     /// fundamentals on one product too, so neither is written, and Transfer says why.</summary>
@@ -258,8 +309,9 @@ public sealed class ChainTransmitTests(ITestOutputHelper output) : IDisposable
 
     private static double M(DataSet ds, string name) => ds["measurements." + name].RealValues[0];
 
-    /// <summary>A bench of the chain written into the test's workspace and run as Simulate runs it (its HB analyses).</summary>
-    private DataSet Bench(ChainDesign d, string chain, ChainBench which)
+    /// <summary>A bench of the chain written into the test's workspace and run as Simulate runs it (its HB analyses);
+    /// <paramref name="hbOnly"/> leaves out its harmonic-balance noise run too.</summary>
+    private DataSet Bench(ChainDesign d, string chain, ChainBench which, bool hbOnly = false)
     {
         Directory.CreateDirectory(_ws);
         File.WriteAllText(Path.Combine(_ws, ".cws"), "{\"FormatVersion\": 2, \"LibraryRefs\": [], \"KnownFiles\": []}");
@@ -269,7 +321,8 @@ public sealed class ChainTransmitTests(ITestOutputHelper output) : IDisposable
         var (model, _, _) = SchematicPersistence.LoadFromFile(Path.Combine(_ws, cell, "schematic", cell + ".csch"));
         // Its envelope run is the TX display's, minutes on a loaded machine: left out here, the HB sweep is what is read.
         string text = string.Join("\n", SchematicCircuit.CnlTextOf(model, cell).Split('\n')
-                                         .Where(l => !l.StartsWith("analysis ENV", StringComparison.Ordinal) && !l.Contains("ENVP.", StringComparison.Ordinal)));
+                                         .Where(l => !l.StartsWith("analysis ENV", StringComparison.Ordinal) && !l.Contains("ENVP.", StringComparison.Ordinal)
+                                                     && !(hbOnly && (l.StartsWith("analysis HBN", StringComparison.Ordinal) || l.Contains("HBN.", StringComparison.Ordinal) || l.Contains("Noise_", StringComparison.Ordinal)))));
         string netlist = Path.Combine(_ws, "netlist.cnl");
         File.WriteAllText(netlist, text);
         var run = SchematicRunService.RunNetlist(netlist, _ws);

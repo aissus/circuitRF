@@ -104,11 +104,16 @@ public static class ChainParts
     /// <summary>Whether a converter takes its sum sideband, f + Flo.</summary>
     public static bool IsUpper(ChainStage s) => s.Get("Sideband").Trim().Equals(Upper, StringComparison.OrdinalIgnoreCase);
 
+    /// <summary>Whether a stage is an Amplifier whose law is Rapp or Saleh, on or off.</summary>
+    public static bool HasBandpassLaw(ChainStage s) =>
+        s.Part == Amp && Enum.TryParse<AmplifierLawKind>(s.Get("Law").Trim(), true, out var k) && k != AmplifierLawKind.Tanh;
+
     /// <summary>The Amplifier's law as a stage states it (<c>Law</c>, <c>Psat</c>, <c>P</c>, <c>PhiSat</c>,
-    /// <c>PhiMax</c>), read; null for the tanh law or a linear one.</summary>
+    /// <c>PhiMax</c>), read; null for the tanh law, or for a law its Psat switches off (a linear amplifier).</summary>
     public static AmplifierLaw? LawOf(ChainStage s)
     {
-        if (s.Part != Amp || !Enum.TryParse<AmplifierLawKind>(s.Get("Law").Trim(), true, out var k) || k == AmplifierLawKind.Tanh) return null;
+        if (!HasBandpassLaw(s)) return null;
+        var k = Enum.Parse<AmplifierLawKind>(s.Get("Law").Trim(), true);
         double g = Num(s, "Gain"), psat = Num(s, "Psat", 30);
         if (psat >= AmplifierLaw.OffDbm) return null;
         return k == AmplifierLawKind.Rapp ? AmplifierLaw.Rapp(psat, g, Num(s, "P", 2))
@@ -231,6 +236,9 @@ public static class ChainParts
                                   "the same 1 dB compression point, IP1dB + 9.64 dB.");
                     return new StageBudget(g, g, blankNf ? 0 : Num(s, "NF"), law.Iip3Dbm, law.Ip1dbDbm, 1, notes) { Law = law };
                 }
+                // A Rapp or Saleh law its Psat switches off: linear, as the block is, whatever the line's IP3.
+                if (HasBandpassLaw(s))
+                    return new(g, g, blankNf ? 0 : Num(s, "NF"), double.PositiveInfinity, double.PositiveInfinity, 1, notes);
                 double iip3 = ip >= AmpLinearDbm ? double.PositiveInfinity
                             : s.Get("IP3Ref").Trim().Equals("Input", StringComparison.OrdinalIgnoreCase) ? ip : ip - g;
                 return new(g, g, blankNf ? 0 : Num(s, "NF"), iip3, P1(iip3), 1, notes);

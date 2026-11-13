@@ -455,13 +455,13 @@ public static class ChainBudgetDisplay
                 return
                 [
                     Rect("Adjacent-channel ratio against the drive", "Pin, dBm", "dBc", 0, 0, 560, 300,
-                         [Over(src, "ACLR_calc", "Pin", "budget, 2·(Pout − OIP3) − 4.77 dB", C(1), false),
+                         [Over(src, "ACLR_calc", "Pin", "estimate, 2·(Pout − OIP3) − 4.77 dB", C(1), false),
                           Over(src, "ACLR_L_sim", "Pin", "lower, simulated", C(3), true), Over(src, "ACLR_U_sim", "Pin", "upper, simulated", C(5), true)]),
                     Rect("Output power and EVM against the drive", "Pin, dBm", "dBm, %", 560 + Gap, 0, 560, 300,
                          [Over(src, "Pout_calc", "Pin", "linear budget, dBm", C(1), false), Over(src, "Pout_sim", "Pin", "simulated, dBm", C(1), true),
                           Over(src, "EVM_sim", "Pin", "EVM, %", C(2), true)]),
                     At(Table("At the operating point", src,
-                             [("Pout_op_calc", "output, dBm: budget"), ("Pout_op_sim", "simulated"), ("ACLR_op_calc", "ACLR, the worse side, dBc: budget"),
+                             [("Pout_op_calc", "output, dBm: budget"), ("Pout_op_sim", "simulated"), ("ACLR_op_calc", "ACLR, the worse side, dBc: estimate"),
                               ("ACLR_op_sim", "simulated"), ("EVM_op_sim", "EVM, %")], first: 280), y),
                     new PlotContainerConfig
                     {
@@ -487,7 +487,8 @@ public static class ChainBudgetDisplay
         var t = Table("At the 1 dB point and the operating point", src,
                       [("IP1dB_calc", "input P1dB, dBm: budget"), ("IP1dB_sim", "simulated"), ("Pout_op_calc", "output at the operating point, dBm: budget"),
                        ("Pout_op_sim", "simulated"), ("Ptop_calc", "at the sweep's top: budget"), ("Ptop_sim", "simulated"),
-                       ("ACLR_L_sim", "NR carrier: ACLR lower, dBc"), ("ACLR_U_sim", "upper"), ("EVM_sim", "EVM, %")], first: 280);
+                       ("ACLR_calc", "NR carrier: ACLR estimate, dBc"), ("ACLR_L_sim", "lower, simulated"), ("ACLR_U_sim", "upper"),
+                       ("EVM_sim", "EVM, %")], first: 280);
         t.Top = 2 * (300 + Gap);
         var list = new List<PlotContainerConfig>
         {

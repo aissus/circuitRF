@@ -150,7 +150,9 @@ internal static class Chain
             // A transmit chain is read at its output: no sensitivity or range at its input, which is its drive.
             Console.WriteLine($"  transmit: Pout {D(x.PoutDbm)} dBm, CW {D(x.PoutCwDbm)} dBm ({D(x.CompressionDb)} dB compressed), "
                             + $"back-off {D(x.BackoffP1dbDb)} dB from OP1dB and {D(x.BackoffPsatDb)} dB from Psat {D(x.PsatDbm)} dBm");
-            Console.WriteLine($"  ACLR {D(x.AclrDbc)} dBc, output noise {D(x.NoisePsdDbmHz)} dBm/Hz"
+            Console.WriteLine($"  ACLR estimate {D(x.AclrDbc)} dBc from OIP3 {D(x.Oip3Dbm)} dBm"
+                            + (x.CubicEquivalent ? " (a Rapp stage's intercept the cubic's at its 1 dB point)" : "")
+                            + $", output noise {D(x.NoisePsdDbmHz)} dBm/Hz"
                             + (double.IsFinite(x.RxNoiseDbm) ? $", {D(x.RxNoiseDbm)} dBm ({D(x.RxNoisePsdDbmHz)} dBm/Hz) in the receive band at {x.RxFrequencyHz / 1e6:0.###} MHz" : "")
                             + (double.IsFinite(x.ImageDbc) ? $", image {D(x.ImageDbc)} dBc" : "")
                             + (double.IsFinite(x.LoLeakDbc) ? $", LO {D(x.LoLeakDbc)} dBc" : ""));

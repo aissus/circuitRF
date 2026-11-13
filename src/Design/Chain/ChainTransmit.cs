@@ -19,12 +19,13 @@
 // The ACLR relation: a memoryless bandpass nonlinearity to third order, y = a1·x + a3·x·|x|², driven by a complex
 // Gaussian signal x of power P and a flat spectrum of width B. Its third-order output is correlated with x in part
 // (a gain change, 2·a3·P·x, by E|x|⁴ = 2P²) and the rest, of power |a3|²·(E|x|⁶ − 4P³) = 2·|a3|²·P³ (E|x|⁶ = 6P³, by
-// Isserlis' theorem), spreads as the threefold convolution of the flat spectrum over 3B: 2/3 of it in the channel and
+// Isserlis' theorem, Reed's for a complex Gaussian), spreads as the threefold convolution of the flat spectrum over 3B: 2/3 of it in the channel and
 // 1/6 in each neighbour of the same width, centred B away. The two-tone intercept of the same nonlinearity is
 // IIP3 = |a1/a3| per tone. So the adjacent channel holds |a3|²·P³/3 against |a1|²·P in the channel:
 // ACLR = (P/IIP3)²/3 = 2·(Pout − OIP3) − 4.77 dB. It assumes third order dominates (a back-off well under compression),
 // a noise-like signal (OFDM is one, by the central limit theorem) and every stage's IM3 adding in phase, as the
-// cascade's intercept does; a Rapp stage's intercept is the cubic's with its 1 dB point.
+// cascade's intercept does; a Rapp stage's intercept is the cubic's with its 1 dB point, which is optimistic for a
+// carrier whose peaks reach past that point (Rapp clips harder than the cubic there). It is an estimate, and says so.
 
 using RfCore.Data;
 
@@ -36,7 +37,11 @@ public sealed record ChainTxReadout(
     double Op1dbDbm, double BackoffP1dbDb, double PsatDbm, double BackoffPsatDb,
     double Oip3Dbm, double AclrDbc, double NoisePsdDbmHz,
     double RxFrequencyHz, double RxNoisePsdDbmHz, double RxNoiseDbm,
-    double ImageDbc, double LoLeakDbc);
+    double ImageDbc, double LoLeakDbc)
+{
+    /// <summary>Whether the intercept the ACLR is estimated from takes a Rapp stage's as the cubic's at its 1 dB point.</summary>
+    public bool CubicEquivalent { get; init; }
+}
 
 public static class ChainTransmit
 {
@@ -102,7 +107,10 @@ public static class ChainTransmit
         }
         var (image, lo) = Spurs(d, r);
         return new ChainTxReadout(pout, cw, pout - cw, t.Op1dbDbm, t.Op1dbDbm - pout, psat, psat - pout,
-                                  t.Oip3Dbm, aclr, psd, rxHz, rxPsd, rxN, image - pout, lo - pout);
+                                  t.Oip3Dbm, aclr, psd, rxHz, rxPsd, rxN, image - pout, lo - pout)
+        {
+            CubicEquivalent = r.Stages.Any(x => x.Stage.Law?.Kind == Core.Devices.AmplifierLawKind.Rapp),
+        };
     }
 
     /// <summary>The input frequency whose output is <paramref name="offsetHz"/> from the carrier's, and the output noise
@@ -129,7 +137,8 @@ public static class ChainTransmit
                 tk = tk * g21 + ChainBudget.T0 * Math.Max(0, 1 - g21 - g22);
                 continue;
             }
-            double g = Lin(ChainLevels.GainAt(st, b, ref f, d.BaseDirectory));
+            // The gain noise sees: a Combiner's coherent signal gain is not its noise's.
+            double g = Lin(ChainLevels.GainAt(st, b, ref f, d.BaseDirectory) - b.GainDb + b.NoiseGainDb);
             // Every other passive stage is matched at every frequency: its noise figure is its loss there.
             double fac = Math.Abs(b.NfDb + b.GainDb) < 1e-9 && b.GainDb <= 0 ? 1 / Math.Max(g, 1e-300) : Lin(b.NfDb);
             tk = (tk + ChainBudget.T0 * (fac - 1)) * g;

@@ -851,7 +851,8 @@ public sealed partial class ChainBudgetViewModel : ObservableObject
             (ChainTransmit.Read(r) is { } x
                 ? $"\nTransmit: Pout {D(x.PoutDbm)} dBm, CW {D(x.PoutCwDbm)} dBm ({D(x.CompressionDb)} dB compressed)    " +
                   $"Back-off {D(x.BackoffP1dbDb)} dB from OP1dB, {D(x.BackoffPsatDb)} dB from Psat {D(x.PsatDbm)} dBm    " +
-                  $"ACLR {D(x.AclrDbc)} dBc    Noise {D(x.NoisePsdDbmHz)} dBm/Hz" +
+                  $"ACLR estimate {D(x.AclrDbc)} dBc from OIP3 {D(x.Oip3Dbm)} dBm{(x.CubicEquivalent ? " (a Rapp stage's the cubic's)" : "")}    " +
+                  $"Noise {D(x.NoisePsdDbmHz)} dBm/Hz" +
                   (double.IsFinite(x.RxNoiseDbm) ? $"    In the receive band {D(x.RxNoiseDbm)} dBm ({D(x.RxNoisePsdDbmHz)} dBm/Hz)" : "") +
                   (double.IsFinite(x.ImageDbc) ? $"    Image {D(x.ImageDbc)} dBc" : "") +
                   (double.IsFinite(x.LoLeakDbc) ? $"    LO {D(x.LoLeakDbc)} dBc" : "")

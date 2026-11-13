@@ -370,6 +370,13 @@
           "Dimension": "None"
         },
         {
+          "Name": "ACLR_calc",
+          "Expression": "-38.51380471244073",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
           "Name": "ACLR_L_sim",
           "Expression": "ENVP.ACLR[\u0022Iout\u0022, 0, \u0022ACPR1L\u0022]",
           "Unit": "",

@@ -58,15 +58,26 @@ public sealed class ChainBudgetExampleTests(ITestOutputHelper output) : IDisposa
     /// (<see cref="TheShippedLinkBenches_AreWhatTransferWritesToday"/>), and this one still counts their folders.</summary>
     private const string LinkChain = "26 GHz Link";
 
-    [Fact]
-    public void TheShippedBenches_AreWhatTransferWritesToday()
+    /// <summary>One shipped chain's benches and displays, transferred in a copy and compared, a case a chain so each stays
+    /// short; the link's is a benchmark (<see cref="TheShippedLinkBenches_AreWhatTransferWritesToday"/>).</summary>
+    [Theory]
+    [InlineData("Superhet")]
+    [InlineData("Array")]
+    [InlineData("Front End")]
+    [InlineData("Dual Conversion")]
+    [InlineData("Linear TX")]
+    public void TheShippedBenches_AreWhatTransferWritesToday(string chain)
     {
         CopyDirectory(Workspace, _ws);
-        var written = new HashSet<string>(StringComparer.Ordinal);
-        foreach (string chain in Chains.Where(c => c != LinkChain)) written.UnionWith(TransferAndCompare(chain));
-        written.UnionWith(Benches(Workspace, LinkChain).Select(b => b.CellName));
-        // And nothing shipped that Transfer no longer writes: every bench folder and display is one of them (the README's
-        // pictures folder aside).
+        Assert.NotEmpty(TransferAndCompare(chain));
+    }
+
+    /// <summary>And nothing shipped that Transfer no longer writes: every bench folder and display is one of the shipped
+    /// chains' benches, the link's included (the README's pictures folder aside).</summary>
+    [Fact]
+    public void EveryShippedBench_IsOneTransferWrites()
+    {
+        var written = Chains.SelectMany(c => Benches(Workspace, c).Select(b => b.CellName)).ToHashSet(StringComparer.Ordinal);
         Assert.Equal(written.Order(), Directory.GetDirectories(Workspace).Select(x => Path.GetFileName(x)).Where(x => x != "pictures").Order());
         Assert.Equal(written.Order(), Directory.GetFiles(Workspace, "*.cdd").Select(x => Path.GetFileNameWithoutExtension(x)).Order());
     }
@@ -345,29 +356,41 @@ public sealed class ChainBudgetExampleTests(ITestOutputHelper output) : IDisposa
 
     // ── the linear transmitter ───────────────────────────────────────────────
 
-    /// <summary>The transmitter's readouts are the README's, worked out by hand from their textbook forms, the PA's 1 dB
-    /// point and saturation by root-finding Rapp's own AM-AM.</summary>
+    /// <summary>The transmitter's readouts are an independent calculation's (testdata/chain/tx_reference.py, every number
+    /// from its textbook form, each law's 1 dB point and saturation by root-finding its own AM-AM), to 10⁻⁶ dB.</summary>
     [Fact]
-    public void LinearTx_TheBudget_IsTheHandCheck()
+    public void LinearTx_TheBudget_IsTheIndependentReference()
     {
-        var x = ChainTransmit.Read(ChainBudget.Evaluate(ChainDesignIo.LoadFromFile(Path.Combine(Workspace, "Linear TX.cchain"))))!;
-        Assert.Equal(27.999832, x.PoutDbm, 5);
-        Assert.Equal(27.945698, x.PoutCwDbm, 5);
-        Assert.Equal(6.043250, x.BackoffP1dbDb, 5);
-        Assert.Equal(36.4, x.PsatDbm, 9);
-        Assert.Equal(8.400168, x.BackoffPsatDb, 5);
-        Assert.Equal(44.647399, x.Oip3Dbm, 5);
-        Assert.Equal(-38.066347, x.AclrDbc, 5);
-        Assert.Equal(-117.837909, x.NoisePsdDbmHz, 5);
-        Assert.Equal(-156.502192, x.RxNoisePsdDbmHz, 4);
-        Assert.Equal(-83.491892, x.RxNoiseDbm, 4);
-        Assert.Equal(-167.823758, x.ImageDbc, 4);
-        Assert.Equal(-90.267760, x.LoLeakDbc, 4);
+        var refs = JsonNode.Parse(File.ReadAllText(Path.Combine(PalaceBackendTests.RepoRoot(), "testdata", "chain", "tx_reference.json")))!;
+        double R(string key) => (double)refs[key]!;
+        var d = ChainDesignIo.LoadFromFile(Path.Combine(Workspace, "Linear TX.cchain"));
+        var r = ChainBudget.Evaluate(d);
+        var x = ChainTransmit.Read(r)!;
+        var iq = IqModSpec.Read(d.Stages[0]);
+        (double Budget, string Key)[] pairs =
+        [
+            (r.Totals!.GainDb, "gain_dB"), (r.Totals.NfDb, "nf_dB"), (x.PoutDbm, "pout_dBm"), (x.PoutCwDbm, "pout_cw_dBm"),
+            (x.Op1dbDbm, "op1db_dBm"), (x.BackoffP1dbDb, "backoff_op1db_dB"), (x.PsatDbm, "psat_dBm"), (x.BackoffPsatDb, "backoff_psat_dB"),
+            (x.Oip3Dbm, "oip3_dBm"), (x.AclrDbc, "aclr_dBc"), (x.NoisePsdDbmHz, "noise_psd_dBmHz"),
+            (x.RxNoisePsdDbmHz, "rx_noise_psd_dBmHz"), (x.RxNoiseDbm, "rx_noise_dBm"), (x.ImageDbc, "image_dBc"), (x.LoLeakDbc, "lo_dBc"),
+            (iq.ImageRejectionDb, "image_rejection_dB"), (iq.LoLeakDbm - (d.InputPowerDbm + r.Stages[0].Stage.GainDb), "lo_at_modulator_dBc"),
+            (CircuitRF.Core.Devices.AmplifierLaw.Rapp(37, 30, 2).Ip1dbDbm, "rapp_ip1db_root_dBm"),
+            (CircuitRF.Core.Devices.AmplifierLaw.Rapp(37, 30, 2).PsatDbm(30), "rapp_psat_at_80dBm_in_dBm"),
+            (CircuitRF.Core.Devices.AmplifierLaw.Saleh(37, 30, 10, 20).Ip1dbDbm, "saleh_ip1db_root_dBm"),
+            (CircuitRF.Core.Devices.AmplifierLaw.Saleh(37, 30, 10, 20).PsatDbm(30), "saleh_psat_peak_dBm"),
+            (CircuitRF.Core.Devices.AmplifierLaw.Saleh(37, 30, 10, 20).Iip3Dbm, "saleh_iip3_closed_dBm"),
+        ];
+        foreach (var (budget, key) in pairs)
+        {
+            output.WriteLine($"{key}: budget {budget:F9}, reference {R(key):F9}");
+            Assert.InRange(budget - R(key), -1e-6, 1e-6);
+        }
     }
 
     /// <summary>The PA bench: Rapp's AM-AM over the drive to round-off, its 1 dB point on the closed form to the
     /// three-point interpolation's 0.01 dB, its efficiency the power it adds over its 10 W; and the NR carrier's ACLR
-    /// through the PA alone, beside the budget's estimate for the whole chain.</summary>
+    /// through the PA alone 0.3 to 1.5 dB worse than the relation's estimate for it: the estimate is optimistic at a Rapp
+    /// PA, whose law clips harder than the cubic past the 1 dB point the carrier's peaks reach.</summary>
     [Fact]
     [Trait("Category", "Benchmark")]
     public void LinearTx_PA_CompressesOnTheLaw()
@@ -379,14 +402,18 @@ public sealed class ChainBudgetExampleTests(ITestOutputHelper output) : IDisposa
         Assert.InRange(M(ds, "Pout_op_err"), -1e-6, 1e-6);
         output.WriteLine($"Linear TX PA: NR carrier {M(ds, "Penv_sim"):0.##} dBm out, ACLR {M(ds, "ACLR_L_sim"):0.##} / " +
                          $"{M(ds, "ACLR_U_sim"):0.##} dBc, EVM {M(ds, "EVM_sim"):0.##} %, PAE {M(ds, "PAE_env_sim"):0.##} %");
-        Assert.InRange(M(ds, "ACLR_L_sim"), -40, -35);
+        // The relation is optimistic at the PA: the NR carrier's peaks reach its 1 dB point, past the cubic's reach.
+        output.WriteLine($"Linear TX PA: ACLR estimate {M(ds, "ACLR_calc"):0.##} dBc");
+        Assert.InRange(M(ds, "ACLR_L_sim") - M(ds, "ACLR_calc"), 0.3, 1.5);
+        Assert.InRange(M(ds, "ACLR_U_sim") - M(ds, "ACLR_calc"), 0.3, 1.5);
         Assert.InRange(M(ds, "PAE_env_sim"), 6, 8);
     }
 
     /// <summary>The 1-Tone bench: the output over the drive on the budget's CW output through each stage's compression,
     /// from 20 dB back to 18 dB over the operating point; the 1 dB point the cascade formula's; the IQ modulator's image
     /// and LO at its own output on their closed forms; and the noise in band and in the receive band 0.13 to 0.15 dB
-    /// under the budget, half of it amplitude noise, which the PA's differential gain at its operating point takes down.</summary>
+    /// under the budget, half of it amplitude noise, which the PA passes 0.2245 dB under its gain at its operating point
+    /// (0.134 dB expected).</summary>
     [Fact]
     [Trait("Category", "Benchmark")]
     public void LinearTx_1Tone_TheOutputAndItsSpurs_OnTheBudget()
@@ -403,8 +430,8 @@ public sealed class ChainBudgetExampleTests(ITestOutputHelper output) : IDisposa
     }
 
     /// <summary>The 2-Tone bench: at the operating point the IM3 at or under the budget's, the cubic with the PA's 1 dB
-    /// point being the pessimistic one for a Rapp law of p = 2; 20 dB down the PA's IM3 falls at five times the drive, and
-    /// the intercept read there is the other stages'.</summary>
+    /// point being the pessimistic one for two tones and a Rapp law of p = 2; 20 dB down the PA's IM3 falls at five times
+    /// the drive, and the intercept read there is the other stages' third order with the PA's residual fifth in phase.</summary>
     [Fact]
     [Trait("Category", "Benchmark")]
     public void LinearTx_2Tone_TheIm3AtOrUnderTheEstimate()
@@ -417,7 +444,8 @@ public sealed class ChainBudgetExampleTests(ITestOutputHelper output) : IDisposa
     }
 
     /// <summary>The Envelope bench: the NR carrier's ACLR at the operating point beside the budget's estimate from the
-    /// intercept, its output under the linear budget by the compression its peaks see.</summary>
+    /// intercept, 1 dB under it because the band filter after the PA removes 1.43 dB of the regrowth; its output under the
+    /// linear budget by the compression its peaks see.</summary>
     [Fact]
     [Trait("Category", "Benchmark")]
     public void LinearTx_Envelope_TheAclrBesideTheEstimate()

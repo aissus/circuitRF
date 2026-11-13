@@ -88,7 +88,7 @@
               "XSpec": null,
               "ExpressionFreqIndex": null,
               "XSourcePath": null,
-              "Label": "budget, 2\u00B7(Pout \u2212 OIP3) \u2212 4.77 dB",
+              "Label": "estimate, 2\u00B7(Pout \u2212 OIP3) \u2212 4.77 dB",
               "Properties": {
                 "LineEnabled": true,
                 "LineWidth": 2,
@@ -594,7 +594,7 @@
               "XSpec": null,
               "ExpressionFreqIndex": null,
               "XSourcePath": null,
-              "Label": "ACLR, the worse side, dBc: budget",
+              "Label": "ACLR, the worse side, dBc: estimate",
               "Properties": {
                 "LineEnabled": true,
                 "LineWidth": 1,
