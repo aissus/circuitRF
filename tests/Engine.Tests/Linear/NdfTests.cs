@@ -995,6 +995,11 @@ public sealed class NdfTests(ITestOutputHelper output)
         ["VcvsModel"]             = Activity.ActiveExact,   // E → 0 (the branch stays: a short)
         ["AmplifierModel"]        = Activity.ActiveExact,   // forward gain → 0, isolation kept
         ["MixerModel"]            = Activity.ActiveExact,   // conversion → 0
+        // The polar-transmitter blocks: every transfer → 0; the port conductances and the quadrature row kept.
+        ["EnvelopeDetectorModel"]   = Activity.ActiveExact,
+        ["LimiterModel"]            = Activity.ActiveExact,
+        ["PhaseModulatorModel"]     = Activity.ActiveExact,
+        ["SupplyModulatedAmpModel"] = Activity.ActiveExact,
         ["OpAmpModel"]            = Activity.ActiveExact,   // A → 0 (the output stays, 0 V behind Rout)
         ["CurticeQuadraticFetModel"] = Activity.ActiveExact,
         ["CurticeCubicFetModel"]     = Activity.ActiveExact,

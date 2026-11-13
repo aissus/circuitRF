@@ -4627,3 +4627,37 @@ the shared arithmetic: `K · e^(−jωT)` with a REAL gain `K`.
 
 Gates: `tests/Engine.Tests/Linear/DelayTests.cs`, and the Delay tile in `SystemBlockComponentTests` /
 `SystemBlockElaborationTests`.
+
+## The polar-transmitter blocks: a carrier's amplitude and phase from a quadrature node (2026-11-13)
+
+`EnvDetector`, `Limiter`, `PhaseMod` and `SupplyAmp` (`src/Core/Devices/System/CarrierBlockModel.cs` and one file each)
+are laws of a carrier's AMPLITUDE and PHASE, and the `Evaluate` contract cannot state one directly: a model sees the
+port voltages at one sample of the carrier period, and no function of `a·cos(ωt + φ)` alone returns `a` or turns `φ`.
+A rectifier or a square law reads the amplitude only on average, puts harmonics at the output, and has a kink no
+Newton step survives; a charge term `q = (sin θ/ω0)·v` turns the phase only at the harmonic it was sized for, and adds
+`(1/ω0)·d/dt` of the envelope as an error.
+
+- **The answer is one internal node per block, held at the input's Hilbert transform.** Its row is `g·v_q` at w = 0
+  plus `g·v_in` in a w = 2 bucket weighted `H₂(ω) = j·sign(ω)` — the weight `IdealSBlockModel`'s complex-S passive
+  intermod already uses — so `V_q = −j·V_in` at every harmonic and 0 at DC. With `(v, v_q)` the carrier's analytic
+  pair, `√(v² + v_q²) = a` and `cos θ·v − sin θ·v_q = a·cos(ωt + φ + θ)` at every sample: exact on any grid, no
+  harmonics. The weight is flat about each harmonic, so the envelope applies it exactly across the signal band.
+- **Which engines carry the bucket:** `HbNewton` (single-tone HB and the single envelope), `NonlinearDcEngine` (it
+  drops out at ω = 0), the S-parameter linearisation and `HbSmallSignal`. **`HbNewton2D`/`HbNewtonNd` drop every
+  w ≥ 2 term** (they read `res.I`/`res.Q` only), which is also true of an SDD's `H[w]` and of complex-S PIM there;
+  the carrier blocks are refused by name at both solvers' entry (`CarrierBlockModel.RefuseIn`), and so in two-tone
+  HB, multi-tone HB and the multi-fundamental envelope. The older silent drop for the SDD and PIM is unchanged.
+- **The grid path must carry the bucket.** The base `EvaluateGrid`'s `EvaluateInto` shortcut writes no `Terms`
+  (`IdealSBlockModel` says so too); `CarrierBlockModel` overrides `EvaluateGrid` itself. It did not make the envelope
+  faster: an envelope step's device pass costs O(N²) small FFTs of the Jacobian spectra at N interface nodes, and the
+  model's own allocations were not the cost.
+- **Output ports follow the System family:** a source behind its own impedance, open-circuit voltage twice the law,
+  so a matched load reads the law. The control ports (`PH`, `VS`) are resistive inputs. **An ideal Vdc straight onto
+  a control port does not converge in single-tone HB** — the interface admittance at a node held by an ideal source
+  is unbounded — so the gates drive it through 50 Ω, as a polar MOD_Source half does.
+- **`MOD_Source Polar=amp|phase`** (`ModSourceModel.Polar`) is the Signal Designer's signal split at baseband: the
+  amplitude half's open circuit `|Vs|·|x|`, the phase half's `2·arg x` (a matched load reads one volt per radian);
+  HB sees `|Vs|` and 0 at DC. `Polar` is a word, stored raw by `ResolveModSourceParameters`.
+
+Gates: `tests/Core.Tests/Devices/CarrierBlockModelTests.cs` (laws, every Jacobian entry by central difference, grid =
+scalar), `tests/Engine.Tests/HarmonicBalance/CarrierBlockHbTests.cs`, `tests/Engine.Tests/Envelope/PolarEnvelopeTests.cs`.

@@ -1081,6 +1081,12 @@ public sealed class Elaborator
                     resolvedNodes = [..resolvedNodes, nDrv];
                 }
 
+                // A polar-transmitter block: its quadrature node (and a detector's pole node), each an internal port
+                // against ground (CarrierBlockModel). Keyed on the instance path, as every minted node is.
+                if (model is CarrierBlockModel cb && resolvedNodes.Length == 2 * cb.ExternalPortCount)
+                    foreach (string suffix in cb.InternalNodes)
+                        resolvedNodes = [..resolvedNodes, netlist.Nodes.GetOrAssign($"__carrier_{childPath}_{suffix}"), 0];
+
                 // Match: one internal net per series arm past the first (match.md §8.3). Minted here,
                 // keyed on the instance path, so two Matches carrying the SAME design still get
                 // independent internal nets — the mechanism Tuner, P1Tone and Diode already use. The
@@ -1674,6 +1680,15 @@ public sealed class Elaborator
         // the wrong way round is a 20 dB pad, and the names are the only warning of that.
         if (inst.Reference.Equals("Amp", StringComparison.OrdinalIgnoreCase))
             return (4, "in+, in−, out+, out−");
+
+        // The polar-transmitter blocks: RF in, RF (or baseband) out, and a baseband control where there is one.
+        if (inst.Reference.Equals("EnvDetector", StringComparison.OrdinalIgnoreCase)
+            || inst.Reference.Equals("Limiter", StringComparison.OrdinalIgnoreCase))
+            return (4, "in+, in−, out+, out−");
+        if (inst.Reference.Equals("PhaseMod", StringComparison.OrdinalIgnoreCase))
+            return (6, "in+, in−, out+, out−, ph+, ph−");
+        if (inst.Reference.Equals("SupplyAmp", StringComparison.OrdinalIgnoreCase))
+            return (6, "in+, in−, out+, out−, vs+, vs−");
 
         if (inst.Reference.Equals("Filter", StringComparison.OrdinalIgnoreCase))
             return (4, "1+, 1−, 2+, 2−");
@@ -2813,8 +2828,8 @@ public sealed class Elaborator
     // Carrier[i] is a carrier DESCRIPTION ("NR;BW=20MHz;SCS=30kHz;..."), never an expression: stored
     // verbatim with its quotes removed, except that a FILE carrier's File= path resolves against the
     // workspace root exactly as an SnP's File does (the Signal Designer stores it with SnpPathPolicy).
-    // Shaping may be the word `off`. Everything else (Fc, Pavg, Z, Record, Clip, Shaping in dBc) is an
-    // ordinary numeric expression with its unit.
+    // Shaping may be the word `off`, and Polar is the word `amp` or `phase`. Everything else (Fc, Pavg, Z, Record, Clip,
+    // Shaping in dBc) is an ordinary numeric expression with its unit.
 
     private static readonly Regex RxModCarrier = new(@"^Carrier\[\d+\]$", RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
@@ -2835,6 +2850,12 @@ public sealed class Elaborator
                 raw.Trim('"').Equals("off", StringComparison.OrdinalIgnoreCase))
             {
                 result[ov.Name] = new Value("off");
+                continue;
+            }
+            // Polar is a word (amp or phase), never an expression: a global named `amp` must not answer for it.
+            if (ov.Name.Equals("Polar", StringComparison.OrdinalIgnoreCase))
+            {
+                result[ov.Name] = new Value(raw.Trim('"'));
                 continue;
             }
             // Not skipped on failure, unlike P1Tone: a skipped Fc or Pavg fell back to a default and the

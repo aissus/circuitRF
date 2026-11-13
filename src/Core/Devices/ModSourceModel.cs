@@ -33,6 +33,13 @@ namespace CircuitRF.Core.Devices;
 ///     unit (or zero) drive phasor at whatever spectral product it is assembling, and reads the carriers'
 ///     baseband records from <see cref="Signal"/>.
 /// |Vs| = sqrt(8 · Re(Z) · Pavg_W) is the peak phasor of a unit-mean-power envelope, as for P1Tone.
+///
+/// <para><b>A polar half</b> (<c>Polar=amp</c> or <c>Polar=phase</c>) plays the same signal split into its envelope and
+/// its phase, at baseband: the amplitude half's open-circuit voltage is <c>|Vs|·|x(t)|</c> (a matched load reads the
+/// peak RF envelope the source would deliver as RF), the phase half's <c>2·arg x(t)</c> (a matched load reads the phase,
+/// one volt per radian). Harmonic balance sees the unmodulated operating point at DC: <c>|Vs|</c> (|x| at its RMS of 1)
+/// and 0. The two halves of a pair state the same carriers; the run measures the signal once, through the amplitude
+/// half, whose recorded drive is the complex signal the pair stands for.</para>
 /// </summary>
 public sealed class ModSourceModel : ComponentModel, IDriveScalable
 {
@@ -49,6 +56,16 @@ public sealed class ModSourceModel : ComponentModel, IDriveScalable
 
     /// <inheritdoc/>
     public double DriveScale { get; set; } = 1.0;
+
+    /// <summary>Which half of a polar pair this source plays, or null: an ordinary RF source.</summary>
+    public PolarHalf? Polar { get; init; }
+
+    /// <summary>The product an envelope run drives this source at: the baseband for a polar half, the carrier otherwise.</summary>
+    public int EnvelopeProduct => Polar is null ? 1 : 0;
+
+    /// <summary>A polar half's baseband open-circuit voltage for one sample <paramref name="vsX"/> of the drive
+    /// (|Vs|·x(t), complex): its magnitude for the amplitude half, twice its phase for the phase half.</summary>
+    public double PolarDrive(Complex vsX) => Polar == PolarHalf.Amp ? vsX.Magnitude : 2 * vsX.Phase;
 
     /// <summary>
     /// Envelope assembly hook: when non-null the drive branch is stamped at EVERY frequency with this
@@ -105,6 +122,8 @@ public sealed class ModSourceModel : ComponentModel, IDriveScalable
 
         Complex v;
         if (EnvelopeDrive is { } ed) v = ed;
+        else if (Polar is { } half)        // the unmodulated operating point: |x| at its RMS, the phase at 0
+            v = half == PolarHalf.Amp && Math.Abs(omega) < OmegaTolRad ? new Complex(DriveScale * VsPeak, 0) : Complex.Zero;
         else v = Math.Abs(omega - 2 * Math.PI * FcHz) < OmegaTolRad ? new Complex(DriveScale * VsPeak, 0) : Complex.Zero;
 
         int br = mna.AddBranch();
@@ -178,6 +197,28 @@ public sealed class ModSourceModel : ComponentModel, IDriveScalable
         {
             throw new InvalidOperationException($"MOD_Source '{name}': {ex.Message}");
         }
-        return new ModSourceModel(name, z, Required("Pavg", "average power in dBm"), Required("Fc", "centre frequency"), spec);
+        PolarHalf? polar = null;
+        if (p.TryGetValue("Polar", out var pv))
+        {
+            string w = pv.Kind == ValueKind.String ? pv.AsString().Trim() : pv.ToString();
+            polar = w.ToLowerInvariant() switch
+            {
+                "amp" => PolarHalf.Amp,
+                "phase" => PolarHalf.Phase,
+                "" or "rf" => null,
+                _ => throw new ParameterRefusalException(CarrierBlockDiagnostics.PolarWord(name, w).Render()),
+            };
+        }
+        return new ModSourceModel(name, z, Required("Pavg", "average power in dBm"), Required("Fc", "centre frequency"), spec)
+        {
+            Polar = polar,
+        };
     }
+}
+
+/// <summary>The two halves of a polar pair of MOD_Sources (<c>Polar=</c>): the signal's envelope and its phase.</summary>
+public enum PolarHalf
+{
+    Amp,
+    Phase,
 }

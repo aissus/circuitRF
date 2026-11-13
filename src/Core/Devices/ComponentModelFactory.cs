@@ -116,6 +116,9 @@ public static class ComponentModelFactory
             // The ideal delay (issue 55): a matched, reciprocal two-port whose through path is
             // e^(−jωT). The controlled sources' T is the same delay on a different element.
             "Delay",
+            // The polar-transmitter blocks: laws of a carrier's amplitude and phase, each with an internal quadrature node
+            // (CarrierBlockModel).
+            "EnvDetector", "Limiter", "PhaseMod", "SupplyAmp",
             // The op-amp: Pins (3 or 5) sets how many nets the line binds, so it is known at
             // construction rather than read at stamp time.
             "OpAmp",
@@ -279,6 +282,8 @@ public static class ComponentModelFactory
             return CreateAttenuatorModel(parameters);
         if (typeName.Equals("Delay", StringComparison.OrdinalIgnoreCase))
             return CreateDelayModel(parameters);
+        if (CreateCarrierBlock(typeName, parameters) is { } carrier)
+            return carrier;
         if (typeName.Equals("Switch", StringComparison.OrdinalIgnoreCase))
             return CreateSwitchModel(parameters);
         if (typeName.Equals("Circulator", StringComparison.OrdinalIgnoreCase))
@@ -1919,6 +1924,11 @@ public static class ComponentModelFactory
         ("Filter",     n => Is(n, "Zin", "Zout"),              "Zin, Zout"),
         ("Duplexer",   n => Is(n, "Zant", "TxZ", "RxZ"),       "Zant, TxZ, RxZ"),
         ("Delay",      n => Is(n, "Z0"),                       "Z0"),
+        // The polar-transmitter blocks are real throughout: their laws are written on real port voltages.
+        ("EnvDetector", _ => false,                            ""),
+        ("Limiter",    _ => false,                             ""),
+        ("PhaseMod",   _ => false,                             ""),
+        ("SupplyAmp",  _ => false,                             ""),
         // The controlled sources' phase comes from their delay T alone (issue 55); a complex gain
         // used to be read as zero by the VCCS and as its real part by the VCVS, both silently.
         ("VCCS",       _ => false,                             ""),
@@ -2013,6 +2023,30 @@ public static class ComponentModelFactory
     {
         double t = parameters.TryGetValue("T", out var v) && v.Kind == ValueKind.Real ? v.AsReal() : 0.0;
         return new DelayModel(t, ImpedanceParam(parameters, "Z0", 50.0));
+    }
+
+    /// <summary>
+    /// The polar-transmitter blocks (<see cref="CarrierBlockModel"/>), or null for any other type. Each fallback is the
+    /// tile's own default, and a port impedance that is not positive is refused by name: these blocks divide by it.
+    /// </summary>
+    private static CarrierBlockModel? CreateCarrierBlock(string typeName, IReadOnlyDictionary<string, Value> parameters)
+    {
+        double P(string name, double fallback) =>
+            parameters.TryGetValue(name, out var v) && v.Kind == ValueKind.Real ? v.AsReal() : fallback;
+        double Z(string name)
+        {
+            double z = P(name, 50.0);
+            return z > 0 ? z : throw new ParameterRefusalException(CarrierBlockDiagnostics.ImpedanceNotPositive(typeName, name, z).Render());
+        }
+        return typeName.ToLowerInvariant() switch
+        {
+            "envdetector" => new EnvelopeDetectorModel(P("Kd", 1.0), P("BW", 0.0), Z("Zin"), Z("Zout")),
+            "limiter"     => new LimiterModel(P("Pout", 0.0), P("Knee", -100.0), Z("Zin"), Z("Zout")),
+            "phasemod"    => new PhaseModulatorModel(P("Kp", 1.0), P("Gain", 0.0), Z("Zin"), Z("Zout"), Z("Zph")),
+            "supplyamp"   => new SupplyModulatedAmpModel(P("Ks", 1.0), P("Vsat", 0.0), P("AMPM", 0.0), P("Knee", -100.0),
+                                                         Z("Zin"), Z("Zout"), Z("Zs")),
+            _ => null,
+        };
     }
 
     /// <summary>

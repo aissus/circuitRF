@@ -96,6 +96,8 @@ public static class InstanceNetContract
         IdealSBlockModel sb                                                                   => 2 * sb.PortCount,
         DuplexerModel dx                                                                      => 2 * dx.PortCount,
         MixerModel mx                                                                         => 2 * mx.PortCount,
+        // The polar-transmitter blocks: their external ports only. The quadrature (and pole) node is minted, not bound.
+        CarrierBlockModel cb                                                                  => 2 * cb.ExternalPortCount,
 
         // ── Semiconductor families. The count is what the USER DRAWS, before the elaborator expands
         // it into the model's internal port pairs — which is the only count an instance line states.
