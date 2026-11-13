@@ -180,6 +180,7 @@ public static class ChainBudget
         // A transmit chain's input is its drive, not a signal a receiver takes: no ceiling, but its output's compression.
         var result = new ChainBudgetResult(rows, totals, [], notes) { Design = d, Images = images };
         notes.AddRange(d.IsTransmit ? ChainTransmit.Notes(result) : ChainCapacity.Notes(d, rows, totals));
+        notes.AddRange(ChainBlocking.Notes(result));
         return result;
     }
 
@@ -284,6 +285,7 @@ public static class ChainBudget
         ChainCapacity.AddTo(ds, r, stage);
         ChainLink.AddTo(ds, r);
         ChainTransmit.AddTo(ds, r);
+        ChainBlocking.AddTo(ds, r);
         return ds;
     }
 

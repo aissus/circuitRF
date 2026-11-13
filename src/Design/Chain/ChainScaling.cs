@@ -97,7 +97,7 @@ public static class ChainScaling
         if (ChainParts.Find(raw.Part) is not { } part) return s;
         foreach (var p in part.Parameters)
         {
-            if (p.IsFile || p.Options is { Count: > 0 } || IsFrequency(p)) continue;
+            if (p.IsFile || p.Options is { Count: > 0 } || IsFrequency(p) || p == ChainParts.LoPhaseNoise) continue;
             string text = raw.Get(p.Name);
             if (!IsScaled(text)) continue;
             if (At(text, fHz, baseDirectory, out string why) is { } v) s.Parameters[p.Name] = v.ToString("R", CultureInfo.InvariantCulture);
@@ -124,7 +124,8 @@ public static class ChainScaling
             if (ChainParts.Find(s.Part) is not { } part) continue;
             foreach (var p in part.Parameters)
             {
-                if (p.IsFile || p.Options is { Count: > 0 }) continue;
+                // A choice, a file and an LO's mask are text, never a value of the frequency ("10kHz -90" would read as one).
+                if (p.IsFile || p.Options is { Count: > 0 } || p == ChainParts.LoPhaseNoise) continue;
                 string text = s.Get(p.Name);
                 if (!IsScaled(text)) continue;
                 if (At(text, f, d.BaseDirectory, out string why) is { } v) s.Parameters[p.Name] = v.ToString("R", CultureInfo.InvariantCulture);

@@ -1,6 +1,7 @@
 // .cchain file format — rev 1: an RF receive chain as a budget, an ordered list of stages, each a part from the
 // System library with that part's own parameters, plus the system inputs a budget is read against. Rev 3 adds the
 // transmit direction, an IQ modulator, an amplifier's law and a converter's sideband.
+// Rev 5 adds an LO's phase-noise mask, the dynamic-range checks and the noise records a bench averages.
 //
 // System.Text.Json, WriteIndented, WhenWritingNull, reject-on-newer-format-version, AtomicFile write — the .csmith
 // and .crail spelling of the same thing. The system inputs are numbers whose NAMES carry their unit (FrequencyHz,
@@ -114,6 +115,17 @@ public sealed class ChainDesign
     /// its constellation, and its EVM against the input power.</summary>
     public bool Demo { get; set; }
 
+    /// <summary>Transfer also writes the dynamic-range checks: the SFDR bench (two tones swept to where their IM3 meets the
+    /// noise floor) and, with blockers, each blocker's desensitisation of the signal on the Blockers bench.</summary>
+    public bool DynamicRange { get; set; }
+
+    /// <summary>The noise records the Envelope and Demo benches average, each its own seed: the SNR's spread from one
+    /// record's statistics falls as 1/√Records. 1, the default: one record, as before.</summary>
+    public int Records { get; set; } = 1;
+
+    /// <summary>The most records a bench averages: each is a whole envelope run.</summary>
+    public const int MaxRecords = 64;
+
     /// <summary>The directory a stage's relative file reference (an SnP stage's <c>File</c>) resolves against: the
     /// workspace the <c>.cchain</c> belongs to, or its own folder when it belongs to none, by the rule a schematic's
     /// references resolve by. Not stored in the file; set by <see cref="ChainDesignIo.LoadFromFile"/> and by whoever
@@ -149,6 +161,7 @@ public sealed class ChainDesign
         if (Streams < 1) r.Add("Streams must be 1 or more.");
         if (!(NfAllowanceDb > 0)) r.Add("The NF allowance must be above 0 dB.");
         if (!double.IsFinite(RxBackoffDb)) r.Add("The receiver back-off must be a number of dB.");
+        if (Records is < 1 or > MaxRecords) r.Add($"Records is 1 to {MaxRecords} noise records, and it is {Records}.");
         if (!Direction.Equals(Receive, StringComparison.OrdinalIgnoreCase) && !IsTransmit)
             r.Add($"The direction is {Receive} or {Transmit}, not '{Direction}'.");
         if (IsTransmit && Link is not null)
@@ -182,6 +195,7 @@ public sealed class ChainDesign
                     : $"Stage '{s.Name}': GainPerStage is {ChainValue.Format(gps)} dB at {ChainSnp.Hz(inputHz[si])}: no number of stages " +
                       "reaches the gain at this frequency.");
             if (r.Count == before && ChainParts.LawRefusal(s) is { } law) r.Add($"Stage '{s.Name}': {law}");
+            if (ChainParts.MaskRefusal(s) is { } mask) r.Add($"Stage '{s.Name}': {mask}");
             if (ChainParts.Converts(part.Token) && s.Get("Sideband").Trim() is { Length: > 0 } sb
                 && !sb.Equals(ChainParts.Lower, StringComparison.OrdinalIgnoreCase) && !sb.Equals(ChainParts.Upper, StringComparison.OrdinalIgnoreCase))
                 r.Add($"Stage '{s.Name}': Sideband = '{sb}' is {ChainParts.Lower} or {ChainParts.Upper}.");
@@ -225,7 +239,7 @@ public sealed class ChainDesign
         FractionalBandwidth = FractionalBandwidth, Streams = Streams, NfAllowanceDb = NfAllowanceDb, RxBackoffDb = RxBackoffDb,
         Link = Link?.Clone(), Sweeps = [.. Sweeps],
         Direction = Direction, RxBandOffsetHz = RxBandOffsetHz, RxBandHz = RxBandHz,
-        Response = Response, Mismatch = Mismatch,
+        Response = Response, Mismatch = Mismatch, DynamicRange = DynamicRange, Records = Records,
     };
 }
 
@@ -290,14 +304,15 @@ public static class ChainValue
 public static class ChainDesignIo
 {
     public const string Extension = ".cchain";
-    public const int CurrentFormatVersion = 4;
+    public const int CurrentFormatVersion = 5;
 
     /// <summary>A chain is written as version 2, 3 or 4 only when it uses what the version before did not have, so an older
     /// reader refuses it rather than dropping it on save, and every other chain stays readable there. Version 3: a
     /// transmit chain, an IQ modulator, an amplifier's law, a converter's sideband. Version 4: an in-band response, the
-    /// cascade with mismatch.</summary>
+    /// cascade with mismatch. Version 5: an LO's phase-noise mask, the dynamic-range checks, more than one noise record.</summary>
     private static int VersionOf(ChainDesign d) =>
-        d.Response is not null || d.Mismatch ? 4
+        d.DynamicRange || d.Records != 1 || d.Stages.Any(s => s.Part == ChainParts.Mixer && s.Get(ChainParts.LoPhaseNoise.Name).Trim().Length > 0) ? 5
+        : d.Response is not null || d.Mismatch ? 4
         : d.IsTransmit || d.RxBandOffsetHz is not null
         || d.Stages.Any(s => s.Part == ChainParts.IqMod || s.Parameters.Keys.Any(k => k is "Law" or "Psat" or "P" or "PhiSat" or "PhiMax" or "Sideband")) ? 3
         : d.FractionalBandwidth is not null || d.Streams != 1 || d.Link is not null || d.Sweeps.Count > 0 || d.NfAllowanceDb != 1 || d.RxBackoffDb != 10
@@ -335,6 +350,8 @@ public static class ChainDesignIo
         public double? RxBandHz { get; set; }
         public ChainResponse? Response { get; set; }
         public bool? Mismatch { get; set; }
+        public bool? DynamicRange { get; set; }
+        public int? Records { get; set; }
     }
 
     public static string Serialize(ChainDesign d) => JsonSerializer.Serialize(new CchainFile
@@ -349,6 +366,7 @@ public static class ChainDesignIo
         Link = d.Link, Sweeps = d.Sweeps.Count > 0 ? d.Sweeps : null,
         RxBandOffsetHz = d.RxBandOffsetHz, RxBandHz = d.RxBandOffsetHz is not null ? d.RxBandHz : null,
         Response = d.Response, Mismatch = d.Mismatch ? true : null,
+        DynamicRange = d.DynamicRange ? true : null, Records = d.Records != 1 ? d.Records : null,
     }, JsonOpts);
 
     /// <summary>The design as written, unvalidated: a half-built chain still opens, and
@@ -380,6 +398,8 @@ public static class ChainDesignIo
         d.RxBandHz = f.RxBandHz ?? d.RxBandHz;
         d.Response = f.Response;
         d.Mismatch = f.Mismatch ?? false;
+        d.DynamicRange = f.DynamicRange ?? false;
+        d.Records = f.Records ?? 1;
         if (f.Link is { } l)
             d.Link = new ChainLink { Tx = new(l.Tx ?? [], StringComparer.Ordinal), Path = new(l.Path ?? [], StringComparer.Ordinal) };
         foreach (var s in f.Stages ?? [])

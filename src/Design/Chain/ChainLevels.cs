@@ -28,7 +28,28 @@ namespace CircuitRF.Design.Chain;
 /// before anything is nonlinear.</param>
 public sealed record ChainNodeLevel(string Node, double SignalDbm, double NoiseDbm, double NfDb, double Im3Dbm,
                                     IReadOnlyList<double> BlockerDbm, double InterferenceDbm, double MarginDb, double SnrDb,
-                                    double CompressionDbm, double SensitivityDbm, double SfdrDb);
+                                    double CompressionDbm, double SensitivityDbm, double SfdrDb)
+{
+    /// <summary>Each blocker's frequency at the node, Hz: a mixer moves it.</summary>
+    public IReadOnlyList<double> BlockerHz { get; init; } = [];
+
+    /// <summary>The LOs' phase noise in the channel at the node, dBc (<see cref="ChainBlocking"/>); −∞ before a mixer with
+    /// a mask.</summary>
+    public double PhaseNoiseDbc { get; init; } = double.NegativeInfinity;
+
+    /// <summary>Each blocker's reciprocal mixing at the node, dBm in the bandwidth; −∞ before a mixer with a mask.</summary>
+    public IReadOnlyList<double> ReciprocalDbm { get; init; } = [];
+
+    /// <summary>Each blocker's desensitisation by reciprocal mixing at the node, dB: the noise floor it raises.</summary>
+    public IReadOnlyList<double> DesenseRmDb { get; init; } = [];
+
+    /// <summary>Each blocker's desensitisation by compression at the node, dB: the signal's small-signal gain it takes.</summary>
+    public IReadOnlyList<double> DesenseCompDb { get; init; } = [];
+
+    /// <summary>The EVM at the node, %: its SNR, the LOs' phase noise, the blockers' reciprocal mixing and the cubic's
+    /// in-channel distortion.</summary>
+    public double EvmPct { get; init; } = double.NaN;
+}
 
 public static class ChainLevels
 {
@@ -49,7 +70,7 @@ public static class ChainLevels
         double inMargin = double.IsFinite(r.Totals.Ip1dbDbm) ? r.Totals.Ip1dbDbm - (nb > 0 ? Math.Max(d.InputPowerDbm, blk.Max()) : d.InputPowerDbm) : double.NaN;
         double sens = r.Totals.SensitivityDbm;
         nodes.Add(new ChainNodeLevel("IN", d.InputPowerDbm, inNoise, 0, double.NaN, [.. blk], double.NaN, inMargin,
-                                     d.InputPowerDbm - inNoise, double.NaN, sens, double.NaN));
+                                     d.InputPowerDbm - inNoise, double.NaN, sens, double.NaN) { BlockerHz = [.. fb] });
         for (int i = 0; i < r.Stages.Count; i++)
         {
             var st = d.Stages[i];
@@ -72,9 +93,9 @@ public static class ChainLevels
                 row.PoutDbm - row.NoiseOutDbm,
                 double.IsFinite(row.Op1dbDbm) ? row.Op1dbDbm : double.NaN,
                 sens + row.GainDb,
-                double.IsFinite(row.Oip3Dbm) ? 2.0 / 3.0 * (row.Oip3Dbm - row.NoiseOutDbm) : double.NaN));
+                double.IsFinite(row.Oip3Dbm) ? 2.0 / 3.0 * (row.Oip3Dbm - row.NoiseOutDbm) : double.NaN) { BlockerHz = [.. fb] });
         }
-        return nodes;
+        return ChainBlocking.Annotate(d, r, nodes);
     }
 
     /// <summary>
@@ -139,6 +160,16 @@ public static class ChainLevels
         if (nodes.Any(n => double.IsFinite(n.InterferenceDbm))) Per("Int_dBm", "dBm", n => n.InterferenceDbm);
         Per("Margin_dB", "dB", n => n.MarginDb);
         Per("SNR_dB", "dB", n => n.SnrDb);
+        Per("EVM_pct", "%", n => n.EvmPct);
+        if (nodes.Any(n => double.IsFinite(n.PhaseNoiseDbc))) Per("PN_dBc", "dBc", n => n.PhaseNoiseDbc);
+        for (int k = 0; k < nodes[0].BlockerDbm.Count; k++)
+        {
+            int kk = k;
+            static double At(IReadOnlyList<double> v, int i) => i < v.Count ? v[i] : double.NaN;
+            Per($"RM{k + 1}_dBm", "dBm", n => At(n.ReciprocalDbm, kk));
+            Per($"DesRM{k + 1}_dB", "dB", n => At(n.DesenseRmDb, kk));
+            Per($"DesC{k + 1}_dB", "dB", n => At(n.DesenseCompDb, kk));
+        }
         return ds;
     }
 }

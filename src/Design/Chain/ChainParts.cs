@@ -202,6 +202,28 @@ public static class ChainParts
         return new(gDb, gDb, nf, double.PositiveInfinity, double.PositiveInfinity, 1, []);
     }
 
+    /// <summary>A Mixer's LO phase noise: the mask a source's <c>PhaseNoise</c> takes, which the benches put on the LO and
+    /// the budget integrates (<see cref="ChainBlocking"/>). Not on the Mixer's own line.</summary>
+    public static readonly ChainParam LoPhaseNoise = new("PhaseNoise", "", "", Numeric: false, BlankAllowed: true, BudgetOnly: true,
+        Help: "the LO's phase noise, single-sided, offset:level in dBc/Hz (1kHz:-90, 100kHz:-90, 1MHz:-115); integrated from its " +
+              "first offset; blank: a clean LO");
+
+    /// <summary>A Mixer's LO mask, read; null when it states none or it does not read (<see cref="MaskRefusal"/>).</summary>
+    public static RfCore.Signals.PhaseNoiseMask? MaskOf(ChainStage s)
+    {
+        if (s.Part != Mixer || s.Get(LoPhaseNoise.Name).Trim().Length == 0) return null;
+        try { return RfCore.Signals.PhaseNoiseMask.Parse(s.Get(LoPhaseNoise.Name)); }
+        catch (FormatException) { return null; }
+    }
+
+    /// <summary>Why a Mixer's LO mask cannot be read, or null.</summary>
+    public static string? MaskRefusal(ChainStage s)
+    {
+        if (s.Part != Mixer || s.Get(LoPhaseNoise.Name).Trim().Length == 0) return null;
+        try { RfCore.Signals.PhaseNoiseMask.Parse(s.Get(LoPhaseNoise.Name)); return null; }
+        catch (FormatException ex) { return $"PhaseNoise = '{s.Get(LoPhaseNoise.Name).Trim()}': {ex.Message}"; }
+    }
+
     /// <summary>Every part's DC power, which only the budget's power readout reads.</summary>
     public static readonly ChainParam Pdc = new("Pdc", "", "W", BlankAllowed: true, BudgetOnly: true,
         Help: "DC power, W or with its unit (5 mW); with GainPerStage, per amplifier stage; blank: none");
@@ -263,10 +285,12 @@ public static class ChainParts
              Reg(SymbolKind.Mixer, "Plo"),
              new("Flo", "2.1 GHz", "Hz", Help: "the LO frequency; the output is the difference |f − Flo|, or the sum"),
              new("Sideband", Lower, "", Numeric: false, Options: [Lower, Upper], BudgetOnly: true, Implied: Lower,
-                 Help: "the sideband the chain goes on with: Lower, the difference |f − Flo|; Upper, the sum f + Flo")],
+                 Help: "the sideband the chain goes on with: Lower, the difference |f − Flo|; Upper, the sum f + Flo"),
+             LoPhaseNoise],
             "An ideal multiplier: the chain goes on at its difference |f − Flo|, or at its sum f + Flo. Its noise is its " +
             "single-sideband figure, the image at T0, and what the stages before it really pass at the image is added when it " +
-            "moves the NF by 0.001 dB or more.",
+            "moves the NF by 0.001 dB or more. Its LO's phase-noise mask, when stated, is integrated over the channel and " +
+            "mixes every blocker's own share into it.",
             (s, _) =>
             {
                 var notes = new List<string>();
