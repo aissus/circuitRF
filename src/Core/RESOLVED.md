@@ -4647,13 +4647,16 @@ Newton step survives; a charge term `q = (sin θ/ω0)·v` turns the phase only a
   intermod already uses — so `V_q = −j·V_in` at every harmonic and 0 at DC. With `(v, v_q)` the carrier's analytic
   pair, `√(v² + v_q²) = a` and `cos θ·v − sin θ·v_q = a·cos(ωt + φ + θ)` at every sample: exact on any grid, no
   harmonics. The weight is flat about each harmonic, so the envelope applies it exactly across the signal band.
-- **Which engines carry the bucket:** `HbNewton` (single-tone HB and the single envelope), `NonlinearDcEngine` (it
-  drops out at ω = 0), the S-parameter linearisation and `HbSmallSignal`. On this branch's base, **`HbNewton2D` and
-  `HbNewtonNd` drop every w ≥ 2 term** (they read `res.I`/`res.Q` only), which is also true of an SDD's `H[w]` and of
-  complex-S PIM there. While they do, the carrier blocks are refused by name at both solvers' entry
-  (`CarrierBlockModel.RefuseIn`), and so in two-tone HB, multi-tone HB and the multi-fundamental envelope; once a
-  solver carries weighted terms, its call to `RefuseIn` goes, and a two-tone gate against single-tone takes its place.
-  The polar-half refusal in the multi-fundamental envelope stays either way: it has no one baseband to drive.
+- **Which engines carry the bucket:** every one. `HbNewton` (single-tone HB and the single envelope),
+  `NonlinearDcEngine` (it drops out at ω = 0), the S-parameter linearisation and `HbSmallSignal` always did;
+  `HbNewton2D`, `HbNewtonNd` and so the multi-fundamental envelope do since HB-TERMS (merged here 2026-11-13). Before it
+  they read `res.I`/`res.Q` only, and the blocks were refused by name at both solvers' entry
+  (`CarrierBlockModel.RefuseIn`, now deleted with its diagnostic). Its gates became agreement tests:
+  `CarrierBlockHbTests.TwoToneHarmonicBalance_IsTheSingleToneAnswer` (each block on two tones against single-tone HB at
+  10 MHz, both paths: 1.2e-15 on the FFT path, 1.4e-5 to 2.2e-5 on the lattice at order 9, its truncation; the Phase
+  Modulator, linear in its RF input, 1.2e-15 on both), `ThreeToneHarmonicBalance_TurnsEachToneAsSingleToneDoes` and
+  `PolarEnvelopeTests.TheMultiFundamentalEnvelope_TurnsEachCarrier_ByKpTimesThePhaseInput` (3.9e-11 of the peak). The
+  polar-half refusal in the multi-fundamental envelope stays: it has no one baseband to drive.
 - **The grid path must carry the bucket.** The base `EvaluateGrid`'s `EvaluateInto` shortcut writes no `Terms`
   (`IdealSBlockModel` says so too); `CarrierBlockModel` overrides `EvaluateGrid` itself. It did not make the envelope
   faster: an envelope step's device pass costs O(N²) small FFTs of the Jacobian spectra at N interface nodes, and the

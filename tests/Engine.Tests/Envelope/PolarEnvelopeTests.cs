@@ -439,23 +439,54 @@ public sealed class PolarEnvelopeTests(ITestOutputHelper output)
         }
     }
 
-    /// <summary>The multi-fundamental envelope drops weighted (w ≥ 2) terms, so it refuses a carrier block, and it has no
-    /// one baseband for a polar half to drive, so it refuses that too — each by name.</summary>
-    [Theory]
-    [InlineData("Limiter:LIM7 x 0 y 0 Pout=0", "", "quadrature")]
-    [InlineData("R:R0 x y R=1", "MOD_Source:SA7 a 0 Fc=1e9 Pavg=-10 Z=50 Polar=amp " + Lte + "\nR:RA a 0 R=50", "polar half")]
-    public void TheMultiFundamentalEnvelope_RefusesWhatItCannotRun(string part, string extra, string why)
+    /// <summary>The multi-fundamental envelope has no one baseband for a polar half to drive, so it refuses one by name.</summary>
+    [Fact]
+    public void TheMultiFundamentalEnvelope_RefusesAPolarHalfByName()
     {
         var (lib, tb) = new CnlReader().Read($"""
             MOD_Source:S1 x 0 Fc=1e9 Pavg=-10 Z=50 Carrier[1]="LTE;BW=1.4MHz;Off=-100MHz;P=0;Seed=3" Carrier[2]="LTE;BW=1.4MHz;Off=100MHz;P=0;Seed=4" Record=0.5e-3
-            {part}
-            {extra}
+            R:R0 x y R=1
+            MOD_Source:SA7 a 0 Fc=1e9 Pavg=-10 Z=50 Polar=amp {Lte}
+            R:RA a 0 R=50
             R:R1 y 0 R=50
             """);
         using var nl = new Elaborator(lib).Elaborate(tb);
         var ex = Assert.ThrowsAny<InvalidOperationException>(() => new EnvelopeEngineMt(nl).Run(new EnvelopeParams { StopS = 1e-6 }, 3));
-        Assert.Contains(why, ex.Message);
-        Assert.Contains(part.Contains("LIM7") ? "LIM7" : "SA7", ex.Message);
+        Assert.Contains("polar half", ex.Message);
+        Assert.Contains("SA7", ex.Message);
+    }
+
+    /// <summary>
+    /// The multi-fundamental envelope carries a carrier block's quadrature: two carriers 200 MHz apart, each on its own
+    /// fundamental, through a Phase Modulator at a DC phase come out sample for sample as they went in, each turned by
+    /// <c>Kp·V(PH)</c> and scaled by its gain — the single-tone law, which the block holds in harmonic balance to 1e-9.
+    /// Measured 3.9e-11 of the peak at worst.
+    /// </summary>
+    [Fact]
+    public void TheMultiFundamentalEnvelope_TurnsEachCarrier_ByKpTimesThePhaseInput()
+    {
+        var (lib, tb) = new CnlReader().Read("""
+            MOD_Source:S1 x 0 Fc=1e9 Pavg=-10 Z=50 Carrier[1]="LTE;BW=1.4MHz;Mod=64QAM;Off=-100MHz;P=0;Seed=3" Carrier[2]="LTE;BW=1.4MHz;Mod=64QAM;Off=100MHz;P=0;Seed=4" Record=0.5e-3
+            Vdc:VP phs 0 Vdc=1.4
+            R:RP phs ph R=50
+            PhaseMod:PM1 x 0 y 0 ph 0 Kp=1.5 Gain=3
+            R:R1 y 0 R=50
+            """);
+        using var nl = new Elaborator(lib).Elaborate(tb);
+        var r = new EnvelopeEngineMt(nl).Run(new EnvelopeParams { StopS = 5e-6, WarmupS = 1e-6, Oversample = 1, MaxHarm = 1, Probes = ["x", "y"] }, 3);
+        var s21 = Math.Pow(10, 3.0 / 20) * Complex.FromPolarCoordinates(1, 1.5 * 0.7);
+        int ix = Array.IndexOf(r.ProbeNames, "x"), iy = Array.IndexOf(r.ProbeNames, "y");
+        foreach (int m in r.CarrierMix.Distinct())
+        {
+            double worst = 0, peak = 0;
+            for (int n = 0; n < r.Time.Length; n++)
+            {
+                peak = Math.Max(peak, r.Probe[n][ix][m].Magnitude);
+                worst = Math.Max(worst, (r.Probe[n][iy][m] - s21 * r.Probe[n][ix][m]).Magnitude);
+            }
+            output.WriteLine($"product {r.MixLabels![m]} at {r.MixFreqHz![m] / 1e9:F3} GHz: worst {worst / peak:E2} of the peak");
+            Assert.True(worst < 1e-6 * peak, $"product {r.MixLabels[m]}: {worst / peak:E2} of the peak");
+        }
     }
 
     /// <summary>

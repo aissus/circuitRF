@@ -274,11 +274,11 @@ at every sample and `cos θ·v − sin θ·v_q` the carrier turned by `θ`, so e
 and **makes no harmonics**: `MaxHarm=1` is enough unless something else in the circuit needs more. It is the same
 frequency-domain weight, `j·sign(ω)`, that a block with a complex S uses for its [passive intermod](#pim).
 
-That weight is carried by **single-tone harmonic balance and a single envelope**. Two-tone and multi-tone harmonic
-balance and the multi-fundamental envelope (`Envelope=lattice`, or carriers far enough apart to get their own
-fundamentals) refuse these blocks by name for as long as their solvers drop weighted terms of this kind, rather than
-run them without it. An S-parameter run sees each block
-linearised at no drive.
+That weight is carried by **every harmonic-balance solver and both envelope modes**: single-tone, two-tone and
+multi-tone harmonic balance, a single envelope and the multi-fundamental one (`Envelope=lattice`, or carriers far
+enough apart to get their own fundamentals). On two or more tones each block reads the amplitude and phase of the
+tones' combined carrier, so a limiter or a detector makes the mixing products that envelope implies, and a Phase
+Modulator at a steady phase turns every tone alike. An S-parameter run sees each block linearised at no drive.
 
 ### Baseband beside the carrier
 

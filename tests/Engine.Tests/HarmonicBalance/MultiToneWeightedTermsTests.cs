@@ -70,7 +70,7 @@ public class MultiToneWeightedTermsTests(ITestOutputHelper output)
     /// conjugated onto |f| and products that coincide are summed: what the waveform holds at f, and the only form in
     /// which a lattice spectrum and a harmonic one can be compared.
     /// </summary>
-    private static Dictionary<long, Complex> Spectrum(DataSet ds, string cube, string row)
+    internal static Dictionary<long, Complex> Spectrum(DataSet ds, string cube, string row)
     {
         var c = ds[cube];
         int r = Array.IndexOf(c.Axes[0].Labels!, row);

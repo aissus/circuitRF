@@ -1,7 +1,6 @@
 using System.Numerics;
 using FftFlat;
 using CircuitRF.Core;
-using CircuitRF.Core.Devices;
 using CircuitRF.Core.Elaboration;
 
 namespace CircuitRF.Engine.HarmonicBalance;
@@ -124,7 +123,6 @@ public static class HbNewton2D
         double             lambda     = 1.0,
         int                guardOrder = 0)
     {
-        CarrierBlockModel.RefuseIn(netlist, "two-tone harmonic balance");
         int M        = grid.MixCount;
         int unknowns = 2 * N * M;
         int maxIter  = settings.HbMaxIter;

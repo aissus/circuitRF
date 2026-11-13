@@ -1,6 +1,5 @@
 using System.Numerics;
 using CircuitRF.Core;
-using CircuitRF.Core.Devices;
 using CircuitRF.Core.Elaboration;
 
 namespace CircuitRF.Engine.HarmonicBalance;
@@ -140,7 +139,6 @@ public static class HbNewtonNd
         double             lambda     = 1.0,
         int                guardOrder = 0)
     {
-        CarrierBlockModel.RefuseIn(netlist, "multi-tone harmonic balance");
         var lattice  = apft.Lattice;
         int M        = lattice.MixCount;
         int unknowns = 2 * N * M;

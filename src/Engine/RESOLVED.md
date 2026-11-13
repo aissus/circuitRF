@@ -4420,8 +4420,8 @@ envelope did need:
   between two nonlinear ports (nothing but gmin on its nodes) read as a pole of tens of seconds: Amp → 5 ns → Amp
   "remembers 50 s" and ran as one segment, on main too. The held stamp has none of the S-block's branch unknowns, so
   `HeldError` is not asked (it only sizes a warning, on a netlist the estimate discards).
-- **The multi-fundamental envelope refuses** polar halves (it has no one baseband to drive), and carrier blocks for as
-  long as its solver drops weighted terms.
+- **The multi-fundamental envelope refuses** polar halves (it has no one baseband to drive). It refused carrier blocks
+  too while its solver dropped weighted terms; since HB-TERMS (the next section) it carries them and runs the blocks.
 
 Findings worth keeping:
 
