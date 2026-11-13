@@ -209,9 +209,10 @@ of 2, since a real uneven tree has unequal paths.
 
 **The sweeps** (`ChainBudget.Sweep`) evaluate the whole design again at every point, from the unresolved design, so the
 expressions and tables move. A point is one chain: its own copy drops the sweeps, or an Mrx of 1 (no combiner left)
-would be refused for sweeping a combiner it no longer has. Every Filter at a point is its own response there
-(`ChainStageContext.Response`), so a band written as numbers rolls off as the carrier leaves it; until §2.6 it was its
-IL at every carrier and a note said so.
+would be refused for sweeping a combiner it no longer has. At a point of a `Frequency` sweep every Filter is its own
+response there (`ChainStageContext.Response`), so a band written as numbers rolls off as the carrier leaves it, and an
+in-band point carries its ripple; until §2.6 it was its IL at every carrier and a note said so. An array's sweeps move
+no frequency and keep each Filter's IL, so their point at the design's own size is the budget.
 
 ### 2.4 The level diagram
 
@@ -358,7 +359,10 @@ the benches carry the budget's numbers round-trip, so every shipped bench would 
 counted when it moves the NF by `ChainImage.ThresholdDb` = 0.001 dB or more: below the window's precision and every
 tolerance a bench is read to, above what the shipped preselectors let through (`ChainFidelityTests`, which prints them:
 the 26 GHz link's 4.36×10⁻⁴ dB, the dual conversion's second image 5.96×10⁻⁵ dB, the superhet's 8.66×10⁻⁶ dB). Every
-shipped chain and bench is the same to the byte.
+shipped chain and bench is the same to the byte. The price is a step: across a response or a sweep an image that crosses
+the threshold between two points moves the NF by 0.001 dB at once (on a slope of 10⁻⁵ dB per MHz, measured), and two
+mixers each just under it are both left out. A file read outside its range at an image is taken at its nearest
+frequency, as the block takes it, and noted, as a blocker outside a file is.
 
 **The cascade with mismatch** (`ChainMismatch`). Each stage a two-port at its own input frequency: S at 50 Ω and its
 chain correlation matrix C_A (RfCore's `NoiseMetrics`: `ChainCorrelation` from noise parameters, Bosma's
@@ -378,7 +382,9 @@ noise bench read 1.6×10⁻⁴ dB off: the attenuator after the second file sent
 its nonlinearity between 50 Ω, which is the input of every block (matched) and the amplifier after an SnP file; the
 per-element view of an array's combiner is a unilateral two-port of its noise gain, its coherent gain the array's; an
 image whose mixer has a converter before it is walked between 50 Ω. A level at a node between two reflecting stages is
-the chain up to it into 50 Ω, and the Levels bench reads that node's voltage, which holds the reflected wave as well.
+the chain up to it into 50 Ω, and the Levels bench reads that node's voltage, which holds the reflected wave as well:
+20·log10|(1 + Γ_L)/(1 − S22·Γ_L)| above the budget's level, the reflected wave and the multiple reflection between the
+stage (S22) and its load (Γ_L), and |1 + Γin| at the input.
 
 ## 3. The benches, and what was found building them
 

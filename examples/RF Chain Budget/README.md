@@ -327,7 +327,7 @@ the image goes; set `IsoLO_IF` to 200 and so does the LO.
 ## The wideband receiver
 
 `Wideband.cchain` is built of two modules as their data sheets give them, two Touchstone files beside it (illustrative
-data, of this example's own), and two System blocks:
+data, of this example's own, which `Wideband.gen.py` regenerates), and two System blocks:
 
 | Stage | Part | Gain | NF | Intercept |
 |---|---|---|---|---|
@@ -341,9 +341,11 @@ Its system inputs have **with mismatch** ticked, and its Link tab's **Response**
 
 **The image.** With the LO 70 MHz below the signal, the mixer's image is at 2.31 GHz, inside the preselector's band:
 the LNA's noise reaches the mixer there as well as at the signal, and the budget counts it. It adds 2.21 dB: the NF is
-4.62 dB, 2.41 dB without the image. The Notes say so, and so does the level diagram's key. A preselector whose band
-stops short of 2.31 GHz takes it back. The cascade table's F−1 shares sum to 58 %: the rest is the source's own noise at
-the image, which is no stage's.
+4.62 dB, 2.40 dB without the image. The Notes say so, and so does the level diagram's key. A narrower preselector does
+not take it back: the LNA comes after it, and the LNA's own noise at 2.31 GHz reaches the mixer whatever the preselector
+passes there, so one that stops short of 2.31 GHz still leaves about 0.9 dB (a 2.4 to 2.6 GHz Chebyshev, 0.88 dB). Only a
+filter between the LNA and the mixer that rejects 2.31 GHz takes it back. The cascade table's F−1 shares sum to 58 %:
+the rest is the source's own noise at the image, which is no stage's.
 
 **The mismatch.** Matched, the budget multiplies the modules' gains between 50 Ω: 32.91 dB and an NF of 5.15 dB. The
 preselector's output reflects into the LNA's input, and the LNA's noise parameters see the preselector's S22 as their
@@ -367,13 +369,17 @@ adds:
 
 - **`Wideband 1-Tone`**: harmonic-balance noise with the LO running, the image sideband in the run behind the isolator in
   front of the mixer: the NF on the budget to 2×10⁻⁵ dB and the gain to −1.1×10⁻⁴ dB (the drive), every stage's NF from
-  the run's shares to 3×10⁻⁵ dB. The run's files reflect as the budget's do.
+  the run's shares to 3×10⁻⁵ dB. The run's files reflect as the budget's do. With an image counted, the bench's budget
+  NF at a stage is the sum of the stages' shares up to it, as the run builds its own (1.24 dB at PRE, which also holds
+  what PRE sends through the image), where the cascade table's row is the chain cut at the stage (0.73 dB).
 - **`Wideband 2-Tone`**: two tones 50 dB under the predicted IIP3: the IIP3 on the budget to 2.2×10⁻⁴ dB and the OIP3 to
   7×10⁻⁴ dB, the intercept sum taking each stage's gain to it with the mismatch in it.
 - **`Wideband Levels`**: the signal and its IM3 at every node from the LNA's output on, on the budget to 7×10⁻⁴ and
   1.4×10⁻³ dB. Two nodes read off it, and by the mismatch: a node's voltage is the wave going forward and the one the next
-  file reflects, and the budget's level is the forward wave into 50 Ω. The input reads 0.29 dB low, the preselector's
-  input reflection; the node between the preselector and the LNA 2.44 dB high, the LNA's.
+  file reflects, where the budget's level is the forward wave into 50 Ω. The node between the preselector and the LNA
+  reads 2.44 dB high, 20·log10\|(1 + Γ_L)/(1 − S22·Γ_L)\|: 1.68 dB of it the LNA's reflected wave, \|1 + Γ_L\| with Γ_L its
+  S11, and 0.76 dB the multiple reflection between the two files, 1/\|1 − S22·Γ_L\| with S22 the preselector's. The input
+  reads 0.29 dB low, \|1 + Γin\|, the chain's input reflection.
 - **`Wideband Envelope`**: the SNR in the carrier's 4.5 MHz 0.14 dB under the budget, one noise record's statistics.
 
 ## What the displays show
