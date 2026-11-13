@@ -1106,8 +1106,8 @@ Three things that took deciding:
   20·log10(3.15). A different seed or record wants its own (the Signal Designer's PAPR is the envelope's, 10.2 dB, not
   the rails').
 - **The net between the mixers and the PA is unlabelled.** Labelled, the seam check read it up to ~36 % of its RMS apart
-  across a parallel segment's seam at a few steps, warning on 11 of the 20 points, while the PA's output agreed to
-  2e-4 and EVM and ACLR to 0.1 % against one segment; the same with the DACs replaced by wires
-  (`src/Engine/RESOLVED.md`). Unlabelled it is not recorded, and the run is clean.
+  across a parallel segment's seam at a few steps, warning on 11 of the 20 points, while the PA's output agreed and EVM
+  and ACLR agreed to 0.1 % against one segment. That is a recording artefact of a net only nonlinear ports touch, the
+  same on main with RF amplifiers alone (`src/Engine/RESOLVED.md`); unlabelled it is not recorded, and the run is clean.
 - **The pictures for the pull request** were `circuitrf render` output: the schematic, and the display against the CLI's
   results with their cubes moved into an `ENV1` group (the CLI writes them ungrouped).

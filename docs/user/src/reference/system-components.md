@@ -350,7 +350,8 @@ steps, which six bits already is. With no equaliser in the EVM measurement, the 
 
 - **A single circuit envelope:** the DAC and the rails, as above.
 - **The multi-fundamental envelope** refuses a rail and a DAC by name: it has no one baseband for them to drive.
-- **Harmonic balance** refuses a DAC by name, at any tone count: it has no stream to sample, and a held tone's images
+- **Harmonic balance** refuses a DAC by name, at any tone count, and so do loadpull and the oscillator analysis, which
+  run it: it has no stream to sample, and a held tone's images
   `k·Fs ± f` are harmonics of the tone only when `Fs` is a whole multiple of it. A rail alone plays its unmodulated
   operating point there, `|Vs|` (I) or 0 (Q) at DC.
 - **S-parameters and DC** see the DAC's matched, unilateral through path, `S21 = 10^(Gain/20)`.

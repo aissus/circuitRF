@@ -759,7 +759,10 @@ the source's properties.</li>
 <li><code>Baseband</code> — <code>i</code> or <code>q</code> plays one rail of the signal at baseband: the open-circuit voltage is <code>|Vs|·Re x(t)</code> or
 <code>|Vs|·Im x(t)</code>, so a matched load reads that rail of the RF envelope the source would deliver. It is the digital
 stream a <a href="#dac">DAC</a> converts. The two rails of one signal state the same carriers, and the run measures the signal
-once, through the I rail (a Q rail alone is refused). Not with <code>Polar</code>. Add it as a row in the source's properties.</li>
+once, through the I rail (a Q rail alone is refused). Pin and Gt are against the RF-equivalent power, <code>Pavg</code>, as for a
+polar pair: each rail delivers <code>Pavg</code> into a matched load, so Gt is 3 dB above a baseband-in, RF-out transducer gain.
+A rail is its signal about its own <code>Fc</code>, whatever source sets the run's fundamental. Not with <code>Polar</code>. Add it as a row
+in the source's properties.</li>
 <li><code>Record</code> — periodic record length (s), whole 0.5 ms slots. <code>Clip</code> — target PAPR (dB) for
 clip-and-filter; absent means <strong>unclipped</strong> (the natural OFDM PAPR, about 11–12 dB).
 <code>Shaping</code> — out-of-channel spectral floor (dBc), or <code>off</code>.</li>
@@ -5280,7 +5283,9 @@ images at <code>k·Fs ± f</code> at <code>|H(k·Fs ± f)|</code>;</li>
 <p>Over a busy signal the quantisation error is <code>Δ²/12</code> spread evenly from <code>−Fs/2</code> to <code>Fs/2</code>, so a full-scale sine reads
 <code>SNR = 6.02·Bits + 1.76 dB</code>, and a complex signal of RMS <code>x_rms</code> on two DACs loses its back-off from full scale,
 <code>6.02·Bits + 1.76 − 20·log10(FS/x_rms)</code>, of which the share <code>B/Fs</code> falls in an occupied band <code>B</code>.</p>
-<p>It runs in a <strong>single circuit envelope</strong>, which converts the whole record exactly before the first step. Harmonic
+<p>It runs in a <strong>single circuit envelope</strong>, which converts the whole record exactly before the first step, and the
+rail's source plays the converted record: a probe on the DAC's input net shows the converted waveform (the droop, the
+half-sample delay of the hold, the images), not the raw stream. Harmonic
 balance has no stream to sample and refuses it by name; an S-parameter or DC run sees its matched, unilateral
 through path, <code>S21 = 10^(Gain/20)</code>.</p>
 <p>In depth: <a href="system-components.html#digital">System Components › Digital transmitters</a>.</p>

@@ -391,7 +391,10 @@ source impedance `Z`.
 - `Baseband` — `i` or `q` plays one rail of the signal at baseband: the open-circuit voltage is `|Vs|·Re x(t)` or
   `|Vs|·Im x(t)`, so a matched load reads that rail of the RF envelope the source would deliver. It is the digital
   stream a [DAC](#dac) converts. The two rails of one signal state the same carriers, and the run measures the signal
-  once, through the I rail (a Q rail alone is refused). Not with `Polar`. Add it as a row in the source's properties.
+  once, through the I rail (a Q rail alone is refused). Pin and Gt are against the RF-equivalent power, `Pavg`, as for a
+  polar pair: each rail delivers `Pavg` into a matched load, so Gt is 3 dB above a baseband-in, RF-out transducer gain.
+  A rail is its signal about its own `Fc`, whatever source sets the run's fundamental. Not with `Polar`. Add it as a row
+  in the source's properties.
 - `Record` — periodic record length (s), whole 0.5 ms slots. `Clip` — target PAPR (dB) for
   clip-and-filter; absent means **unclipped** (the natural OFDM PAPR, about 11–12 dB).
   `Shaping` — out-of-channel spectral floor (dBc), or `off`.
@@ -2569,7 +2572,9 @@ Over a busy signal the quantisation error is `Δ²/12` spread evenly from `−Fs
 `SNR = 6.02·Bits + 1.76 dB`, and a complex signal of RMS `x_rms` on two DACs loses its back-off from full scale,
 `6.02·Bits + 1.76 − 20·log10(FS/x_rms)`, of which the share `B/Fs` falls in an occupied band `B`.
 
-It runs in a **single circuit envelope**, which converts the whole record exactly before the first step. Harmonic
+It runs in a **single circuit envelope**, which converts the whole record exactly before the first step, and the
+rail's source plays the converted record: a probe on the DAC's input net shows the converted waveform (the droop, the
+half-sample delay of the hold, the images), not the raw stream. Harmonic
 balance has no stream to sample and refuses it by name; an S-parameter or DC run sees its matched, unilateral
 through path, `S21 = 10^(Gain/20)`.
 

@@ -581,7 +581,7 @@ into the adjacent channel; at 61.44 MHz it starts at 52.3 MHz, past the second a
 **0.168 %**, the record's own 0.169 % (the 0.001 pp it reads below is the filter's: the chain with the DACs replaced by
 wires reads 0.166 % behind a 100 MHz filter, and 0.169 % with no filter).
 
-**EVM and ACPR1 against resolution** (rows: the sample rate; ACPR1 is the lower channel, the upper agrees to 0.2 dB):
+**EVM and ACPR1 against resolution** (rows: the sample rate; ACPR1 is the lower channel, the upper agrees to 0.2 dB below 16 bits and to 0.4 dB at 16):
 
 | `Fs` | EVM 6 bits | 8 | 10 | 12 | 16 | ACPR1 6 bits | 8 | 10 | 12 | 16 |
 |---|---|---|---|---|---|---|---|---|---|---|
@@ -600,7 +600,7 @@ EVM_q = 10^(−(6.02·N + 1.76 − BO + 10·log10(Fs/B)) / 20)
 
 That is 1.554 %, 0.389 %, 0.097 % and 0.024 % at 6, 8, 10 and 12 bits and 122.88 MHz, and half as much per 6 dB of
 oversampling (0.777 % at 6 bits and 491.52 MHz). Added in quadrature to the bench's own floor (its 16-bit column),
-**it predicts every point of the EVM table to within 0.7 %**: 1.588 against 1.585 %, 0.509 against 0.509 % at
+**it predicts every point of the EVM table to within 0.8 %**: 1.588 against 1.585 %, 0.509 against 0.509 % at
 122.88 MHz; 2.504 against 2.522 % at 61.44 MHz and 6 bits, the worst. In an adjacent channel the same noise reads
 `20·log10(EVM_q)` dBc, less the hold's droop there: −36.55, −48.59 and −60.63 dBc at 6, 8 and 10 bits and
 122.88 MHz against the run's −36.51, −48.56 and −60.63; at 12 bits the PA's own −81.7 dBc adds to it (−72.16 dBc
@@ -634,5 +634,6 @@ delay is not equalised either.
 
 Things to try: `Mode=rz` with a `Duty` on both DACs (half the signal and stronger images), an `FS` below the rails'
 peak (`Rail` < 3.15: the DAC clips), `OIP3` to bring in the PA, `Order` and `Fbw` against an image. The net between the
-mixers and the PA is left unlabelled: labelled, it reads a few steps apart across a parallel segment's seam while the
-PA's output agrees (`src/Engine/RESOLVED.md`).
+mixers and the PA is left unlabelled: only nonlinear ports touch it, so its recorded value can sit far from the solution
+at a few steps while the solution itself is within tolerance, and labelled it trips the seam check across parallel
+segments while every output agrees (`src/Engine/RESOLVED.md`).
