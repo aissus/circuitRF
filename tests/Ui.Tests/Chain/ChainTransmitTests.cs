@@ -419,7 +419,7 @@ public sealed class ChainTransmitTests(ITestOutputHelper output) : IDisposable
         Assert.Empty(w.Refusals);
         string cell = ChainBenches.CellName(chain, which);
         var (model, _, _) = SchematicPersistence.LoadFromFile(Path.Combine(_ws, cell, "schematic", cell + ".csch"));
-        // Its envelope run is the TX display's, minutes on a loaded machine: left out here, the HB sweep is what is read.
+        // Its envelope run is the TX display's and takes minutes: left out here, the HB sweep is what is read.
         string text = string.Join("\n", SchematicCircuit.CnlTextOf(model, cell).Split('\n')
                                          .Where(l => !l.StartsWith("analysis ENV", StringComparison.Ordinal) && !l.Contains("ENVP.", StringComparison.Ordinal)
                                                      && !(hbOnly && (l.StartsWith("analysis HBN", StringComparison.Ordinal) || l.Contains("HBN.", StringComparison.Ordinal) || l.Contains("Noise_", StringComparison.Ordinal)))));
