@@ -794,6 +794,12 @@ public static class FigureCatalog
           + "combiner selected here and in the stage list (the Schematic tab draws the same chain as it transfers); "
           + "each stage's parameters; and the cascade as a Data Display table, one row per stage."),
 
+        new("chain-budget-subarrays", DocChainFixtures.IfArray, 1300, 960,
+            WindowFrame.Titled("RF Chain Budget — IF Array.cchain"),
+            "The example's IF array, two sub-arrays of three: each element's branch once and marked × 6, the sub-array "
+          + "combiner as its two levels (a 2:1 and a pass-through, then a 2:1) with an amplifier after each, the sub-array "
+          + "amplifier once and marked × 2, and the outer 2:1; the sub-array combiner selected, its per-path budget under it."),
+
         new("chain-budget-link", DocChainFixtures.Link, 1300, 960,
             WindowFrame.Titled("RF Chain Budget — 26 GHz Link.cchain"),
             "The example's 26 GHz link: a 16-element transmitter, 200 m and an 8-element receiver whose stages scale with "

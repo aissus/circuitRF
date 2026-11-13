@@ -100,7 +100,7 @@ to the chain as it was opened or last saved leaves it unchanged, with nothing to
 A value the budget cannot use is never taken. While you type one, its box is outlined in red, the reason is under the
 chain's totals, and everything else keeps showing the last chain that worked; leave the box (or press Enter) with the
 value still refused and it goes back to the last one that worked. A choice from a list that the budget refuses, such
-as a tree combiner whose N is not a power of 2, is not made, and the reason is shown.
+as an active combiner whose gains are listed for more levels than it has, is not made, and the reason is shown.
 
 ## The system inputs {#inputs}
 
@@ -141,7 +141,7 @@ is **data**: an [S-parameter data](#snp) stage is a Touchstone file.
 | Canceller (composed) | A Directional Coupler whose isolated port takes a reference path that subtracts a copy of an interference from the main path. See [The canceller](#canceller). | G = −(`IL` − 10·log10(1 − c)), NF from the reference path's noise |
 | N-way splitter | The [Combiner](system-components.html#combiner) from its common port, one output followed and the others terminated. | G = −(10·log10 N + `IL`), NF = −G |
 | S-parameter data (`SnP`) | A Touchstone file on the [SnP](components.html#snp) block, read from port `In` to port `Out`. See [S-parameter data](#snp). | G = \|S(`Out`,`In`)\|² at the stage's frequency; NF from the file's noise data, or its own loss when passive; `NF` and `IIP3` when stated |
-| N-way array combiner | The [Combiner](system-components.html#combiner), every input an element's branch: one N:1, or a tree of 2:1s, passive or active. See [Arrays](#array) and [the variants](#variants). | Direct, passive: signal +10·log10 N − `IL`, noise −`IL`, NF = `IL` |
+| N-way array combiner | The [Combiner](system-components.html#combiner), every input an element's branch (or a sub-array's): one N:1, or a tree of 2:1s or of each level's own ways, passive or active. See [Arrays](#array), [the variants](#variants) and [Sub-arrays](#subarrays). | Direct, passive: signal +10·log10 N − `IL`, noise −`IL`, NF = `IL` |
 
 Every part also takes a `Pdc`, its DC power (W, or with its unit: `5 mW`), which only the [power readout](#readouts)
 reads; on an Amplifier with `GainPerStage` it is each amplifier stage's. Neither is written onto a bench.
@@ -379,7 +379,10 @@ input, and the input power is per element.
 `Steer` is the phase step of the arriving wave between adjacent elements. Transfer draws the wave's extra path to
 element k as a line of (k − 1)·`Steer` in front of it, and sets element k's phase shifter to `Phase` + (N − k)·`Steer`,
 which brings every element to the combiner in phase. Without a phase shifter before the combiner a non-zero `Steer`
-misaligns the elements, and the budget says so: its coherent sum assumes they are aligned.
+misaligns the elements, and the budget says so: its coherent sum assumes they are aligned. A phase shifter after a
+mixer whose LO is above the signal works on an IF whose phase is the RF's negated, so there it is set to
+`Phase` + (k − 1)·`Steer` instead; Transfer follows each element's spectrum through the chain and picks the one that
+aligns it.
 
 ## The combiner's variants {#variants}
 
@@ -388,36 +391,41 @@ A Combiner stage is one of four, chosen by two parameters:
 | | `Kind` = Passive | `Kind` = Active |
 |---|---|---|
 | **`Topology` = Direct** | one N:1 combiner of loss `IL` | the N:1 combiner, then an amplifier of `Gain`, `NF` and `IIP3` |
-| **`Topology` = Tree** | log2 N levels of 2:1 combiners, each of loss `IL` | each level's 2:1 combiners each followed by an amplifier |
+| **`Topology` = Tree** | levels of 2:1 combiners (or each level's `Ways`), each of loss `IL`, a remainder passed through | each level's combiners each followed by an amplifier |
 | **`Topology` = Levels** | one N:1 combiner, any N, with the loss of the ⌈log2 N⌉ levels a tree would take: ⌈log2 N⌉·`IL` | that combiner, then an amplifier |
 
-`Levels` is the tree's budget for any number of elements, which a [receive array swept](#sweeps) over 6 or 11 elements
+`Levels` is a tree's loss for any number of elements, which a [receive array swept](#sweeps) over 6 or 11 elements
 needs: an ideal N-way sum through ⌈log2 N⌉ lossy levels. It is transferred as one N:1 combiner of that loss, which its
-benches check as they check a direct one. A real tree of 6 has unequal paths, which `PathIL` states.
+benches check as they check a direct one. A real tree of 6 is a `Tree`, with its unequal paths (see
+[Sub-arrays](#subarrays)).
 
 | Parameter | Meaning |
 |---|---|
-| `N` | The number of elements. A tree combines in pairs, so its N is a power of 2; any other N is refused, with Direct as the remedy. |
+| `N` | The number of elements: any, for every topology. |
 | `Topology` | `Direct`, `Tree` or `Levels`. |
+| `Ways` | Tree only: each level's ways, the first level (next to the elements) first, `2, 3`. Blank: 2 at every level, ⌈log2 N⌉ of them. Level by level the inputs go into parts of that many; a remainder of one is passed through, of more a smaller part. The ways must bring the N inputs to one output. |
 | `Kind` | `Passive` or `Active`. |
 | `IL` | Each combiner's loss above the ideal split, dB. A tree takes one value for every level, or one per level, the first level (next to the elements) first: `0.3, 0.4`. |
-| `PathIL` | Passive only: each element path's own extra loss, N values, dB — an amplitude taper, or an imbalance. Blank: none. |
+| `PathIL` | Each input path's own extra loss, N values, dB — an amplitude taper, or an imbalance. Passive or active; in an active combiner each level's amplifier then sees its own path's power. Blank: none. |
 | `Gain`, `NF`, `IIP3` | Active only: each combiner's amplifier; one value, or one per level. Its 1 dB compression point is its intercept's, IIP3 − 8.96 dB, as every amplifier's here. |
 | `Steer` | The arriving wave's phase step between elements (see above). |
 
-**Each variant's budget is the cascade of its own levels**, and every number is referred to one element's input:
+**Each variant's budget follows every path through its own levels**, and every number is referred to one element's
+input:
 
-- The element paths first. With amplitudes a_k = 10^(−`PathIL`_k/20), N in-phase inputs of power P combine to
-  (Σa_k)²·P/N and their uncorrelated noise to (Σa_k²/N)·n²; the weighting itself is a matched passive network at T0,
-  adding T0·(N/Σa_k² − 1) of noise. With equal paths all three are N·P, n² and nothing.
-- Then each level: a passive n-way level of loss L gains n·(1/L) in signal and 1/L in noise and adds T0·(L − 1) of
-  noise; an active level's amplifier follows it with its own gain, noise figure and intercept.
-- Signal and noise gains, noise temperatures and intercepts cascade through the levels exactly as they do through a
-  chain: Friis with the noise gains, the intercept sum with the signal gains. The amplifiers of one level are in
-  parallel, each fed by its own pair, and identical, so together they behave as one amplifier seeing the combined
-  power.
-- The **array gain** is the signal gain over the noise gain: (Σa_k)²/Σa_k², which is N for equal paths and less with a
-  taper.
+- The element paths first. With amplitudes a_k = 10^(−`PathIL`_k/20), element k enters with amplitude a_k, noise gain
+  a_k² and, its weight being a matched pad at T0, T0·(1 − a_k²) of noise.
+- Then each part of each level: a passive part of n inputs and loss L sums their amplitudes times √(1/(n·L)), their
+  noise gains and noise temperatures times 1/(n·L), and adds T0·(1 − 1/L) of its own; a part of one input passes it
+  through. An active level's amplifier follows each part with its own gain, noise figure and intercept, and its
+  third-order product, (its input amplitude)³ over its IIP3, adds in phase with every other amplifier's.
+- At the output: the signal gain is the coherent amplitude squared, the noise gain the summed noise gains, the NF from
+  the noise temperature over the noise gain, and the IIP3 the amplitude over the third-order sum. The **array gain**
+  is the signal gain over the noise gain, (Σt_k)²/Σt_k² with t_k each element's own amplitude to the output: N for
+  equal paths, less with a taper or an uneven tree.
+- With equal paths every part of a level sees the same, and this is the cascade of the levels exactly as a chain's:
+  Friis with the noise gains, the intercept sum with the signal gains. The amplifiers of one level are in parallel,
+  each fed by its own part, and identical, so together they behave as one amplifier seeing the combined power.
 
 So a passive tree's loss accumulates level by level, and its noise figure is its whole loss; a direct combiner has one
 loss. An active combiner's noise figure is set by its first level, and its intercept by its last, which sees the most
@@ -432,6 +440,54 @@ IIP3 10 dBm), at the combiner's output and per element:
 | Tree, passive | 18.02 dB | 1.35 dB | −9.19 dBm | 8.83 dBm | 6.02 dB |
 | Direct, active | 28.52 dB | 1.43 dB | −11.88 dBm | 16.64 dBm | 6.02 dB |
 | Tree, active | 38.02 dB | 1.45 dB | −18.77 dBm | 19.26 dBm | 6.02 dB |
+
+## Sub-arrays, uneven trees and unequal paths {#subarrays}
+
+**A chain may have more than one Combiner.** The stages before the first are one element's branch, those between two
+Combiners one sub-array's, and those after the last the receiver. Every number is still referred to one element's
+input: each Combiner adds its own signal and noise gains to the cascade, and the array gain is the product of each
+one's. The array has as many elements as the Combiners' N multiplied, and the [DC power](#readouts) counts each stage
+as many times as the array has it. `Steer` is the step between adjacent elements, across the whole array, and is the
+first Combiner's; a later Combiner's is 0. A later Combiner's `PathIL` weights its sub-arrays. The
+[RxElements sweep](#sweeps) sizes a chain of one Combiner only.
+
+**A tree takes any N.** Level by level its inputs go into parts of `Ways` inputs each (2 at every level when blank);
+when they do not divide, a remainder of one is passed through, with no combiner and no loss, and a remainder of more is
+a smaller part. Three elements in 2:1 levels are a 2:1 and a pass-through, then a 2:1; six in `Ways` = `2, 3` are three
+2:1s, then a 3:1. **An uneven tree loses coherence**: the pass-through and a combined pair reach the next equal-split
+combiner with unequal amplitudes, and N unequal inputs sum to less than their total power. Three elements into a
+lossless 2:1 tree give (1 + 1/√2)² = 2.91 times one element's power, not 3, an array gain of 4.65 dB instead of 4.77 dB,
+while their noise, uncorrelated, keeps its whole power. The budget follows each path (see [the variants](#variants)),
+so it has this, and the benches show it.
+
+**An active combiner takes a taper too.** With `PathIL`, each level's amplifier sees its own path's power: the
+amplifier after a strong pair compresses first, and the combiner's IIP3 is the in-phase sum of every amplifier's
+third-order product, each at its own input power.
+
+The example's `IF Array.cchain` has all three: six elements, each an LNA (18 dB, NF 1.2 dB, OIP3 10 dBm), a preselector,
+a mixer to 350 MHz, an IF filter and a phase shifter at the IF; two sub-arrays of three, each an active tree with a
+pass-through (0.5 dB, the amplifiers 10 dB, NF 2 dB, IIP3 10 dBm, `PathIL` = `1, 0, 1`) and a sub-array amplifier; and a
+2:1 combiner of the two, then an IF amplifier. Per element:
+
+| Stage | Its own gain | NF | IIP3 | Cumulative gain | NF | Array gain |
+|---|---|---|---|---|---|---|
+| LNA, RFBPF, MIX, IFBPF, PS | | | | 5.50 dB | 2.00 dB | |
+| SUB, 3 into a tree | 23.15 dB | 3.19 dB | −3.41 dBm | 28.65 dB | 2.77 dB | 4.64 dB |
+| SA, × 2 | 10 dB | 3 dB | OIP3 25 dBm | 38.65 dB | 2.77 dB | 4.64 dB |
+| ARR, 2 into one | 2.71 dB | 0.30 dB | | 41.36 dB | 2.77 dB | 7.65 dB |
+| IFA | 10 dB | 4 dB | OIP3 30 dBm | 51.36 dB | 2.78 dB | 7.65 dB |
+
+The whole: IIP3 −22.53 dBm, IP1dB −31.49 dBm, MDS −112.32 dBm in 4.5 MHz, SNR 32.32 dB at −80 dBm, SFDR 59.86 dB. The
+array gain is 7.65 dB of six elements' 7.78: 0.13 dB to the sub-array's pass-through and its taper. The pair's
+amplifier in each sub-array sees 3.0 dB more than the pass-through's. The IF filter is in each element, right after its
+mixer: the sub-array's amplifiers are broadband, and without it they see the mixer's sum product at 4.55 GHz as well as
+the IF, and the chain compresses 0.22 dB before its budget.
+
+{{ui: chain-budget-subarrays}}
+
+Transfer places each Combiner once for each copy the array has of it, and a sub-array's stages once a sub-array, named
+`SA_1`, `SA_2`; a pass-through is a wire, or an Atten when its path has a loss. The block view draws the branch once,
+marked × 6, and the sub-array's stages once, marked × 2.
 
 ## A link in front of the chain {#link}
 
@@ -530,8 +586,9 @@ that point. `circuitrf chain -o` writes each sweep as a group of the DataSet, na
 
 **Transfer to Schematic** saves the chain and writes its test-bench cells beside the `.cchain`, named after it, each
 with a Data Display of the same name that Simulate opens on the bench's own result. Every chain gets 1-Tone, 2-Tone,
-Envelope and Levels; a chain with blockers a Blockers bench; a chain with a canceller a Canceller bench; an array whose
-branch has no mixer Steering (when the branch has a phase shifter) and Combiners; and, when asked, the Demo. A chain
+Envelope and Levels; a chain with blockers a Blockers bench; a chain with a canceller a Canceller bench; an array
+Steering (when the branch has a phase shifter) and Combiners, as harmonic balance when the branch has a mixer; and,
+when asked, the Demo. A chain
 with more than one mixer gets most of them once per [conversion](#conversions):
 
 | Bench | Source | Analyses | Measures |
@@ -539,8 +596,8 @@ with more than one mixer gets most of them once per [conversion](#conversions):
 | `<chain> 1-Tone` | a P1Tone per element (port 1 … N), a Port at the output | without a mixer, an [S-parameter run](simulations.html#sp-noise) with `Noise=yes`; with one, [harmonic-balance noise](simulations.html#hb-noise) with the LO running. And a harmonic-balance drive sweep at the predicted IP1dB | gain, NF, each stage's cumulative NF from the run's own shares, IP1dB, OP1dB |
 | `<chain> 2-Tone` | a PnTone per element, 1 MHz apart, 50 dB below the predicted IIP3 | [multi-tone harmonic balance](simulations.html#two-tone) | gain, IIP3, OIP3, and each stage's gain and OIP3 at its output |
 | `<chain> Envelope` | a MOD_Source per element: an NR carrier, its source noisy at the source temperature | [envelope](simulations.html#envelope-noise) with `Noise=yes` and `EvmSplit=yes` | in-channel SNR, the EVM's noise part, output power and output noise |
-| `<chain> Steering` | a plane wave: one Port into a Combiner used as a splitter, path k delayed by the wave's extra path; the elements and the combiner, a Port at its output | an S-parameter run with `Noise=yes` in a sweep of `theta_in` (−90° to 90°) within a sweep of `theta_steer` (−30°, 0°, 30°) | the pattern against the arriving angle beside the closed-form array factor; at each beam's peak the gain, the NF and the array gain. See [Steering](#steering) |
-| `<chain> Combiners` | the same elements into each of the four [variants](#variants), each fed by its own wave at broadside | one S-parameter run with `Noise=yes` | each variant's gain and NF, beside its budget, intercepts and array gain |
+| `<chain> Steering` | a plane wave: one Port into a Combiner used as a splitter, path k delayed by the wave's extra path; the elements and the combiners, level by level, a Port at the last one's output | an S-parameter run with `Noise=yes` in a sweep of `theta_in` (−90° to 90°) within a sweep of `theta_steer` (−30°, 0°, 30°); through a mixer, harmonic balance with one LO split to every mixer, `theta_in` in 5° steps, and a noise run at each beam's peak | the pattern against the arriving angle beside the closed-form array factor; at each beam's peak the gain, the NF and the array gain. See [Steering](#steering) |
+| `<chain> Combiners` | the same elements into each of the four [variants](#variants) of the first combiner (one sub-array's in [sub-arrays](#subarrays)), each fed by its own wave at broadside | one S-parameter run with `Noise=yes`; through a mixer, one harmonic-balance noise run a variant, the LO split to every mixer | each variant's gain and NF, beside its budget, intercepts and array gain |
 | `<chain> Levels` | a PnTone per element, two tones 1 MHz apart, each at the input power | multi-tone harmonic balance, on the 2-Tone bench's mixing order | the signal and its IM3 at every node. See [Levels](#levels) |
 | `<chain> Blockers` | a PnTone per element with every blocker, an isolator after every stage | harmonic balance | every blocker at every node |
 | `<chain> Canceller` | the canceller on its own: a wanted signal and an interference from MOD_Sources | envelope runs, swept | the depth against each error, the wanted signal's EVM, SNR and constellation with and without cancellation. See [The canceller](#canceller) |
@@ -678,6 +735,18 @@ peak. Change `d_over_lambda` to 1 and the grating lobes appear at ±90°.
 
 Edit a sweep's values, or delete the sweeps and set `theta_in` and `theta_steer` by hand: everything is an ordinary
 variable.
+
+**Through a mixer** no S-parameter run reaches the combiner, so the bench is harmonic balance: the wave is a P1Tone of
+`Pw`, 40 dB under the array's compression, every mixer of a stage is driven from one LO, a P1Tone into a Combiner used as
+a splitter at `Plo` plus the split, and the gain is read on the IF product. Each point is a harmonic-balance run of
+every element's mixer, about a second, so `theta_in` steps 5°. The NF is a harmonic-balance noise run from the wave's
+port, swept over `theta_steer`; its VAR block sets `theta_in = theta_steer`, so each of those runs is at its beam's
+peak. A phase shifter at the IF after an LO above the signal steers the inverted phase: its line is
+(k − 1)·(360° + `dphi`) long.
+
+In [sub-arrays](#subarrays) the wave reaches every element, the phase step runs across the whole array, and the
+closed-form array factor weighs each element by its own amplitude to the output: its taper, its tree's parts and
+amplifiers, and its sub-array's path.
 
 ## Levels at every node {#levels}
 
@@ -935,6 +1004,16 @@ to 10⁻⁶ dB down to −60 dB, and its gain, NF and array gain at each peak on
 reads each variant's gain and NF to 10⁻¹⁴ dB; each variant's intercepts and compression point, transferred on its own,
 read as the table above does.
 
+[Sub-arrays](#subarrays) at RF, two of three, each an active tree with a pass-through and a taper: the 1-Tone bench
+reads gain and NF, and every stage's NF, exactly (an S-parameter run), the compression point 0.028 dB late, the 2-Tone
+bench IIP3 +1.7×10⁻⁴ dB and OIP3 −8.7×10⁻⁵ dB, and the Steering bench the pattern on the array factor of every element's
+own amplitude and the gain, NF and array gain at each peak to 10⁻¹⁴ dB. Through a mixer, six elements on one LO: the
+Steering bench reads the gain at each peak 2.8×10⁻⁴ dB low (the wave's own slight compression, 40 dB under the
+array's), the NF and array gain within 1.1×10⁻⁴ dB, and the pattern on the array factor to 2.8×10⁻⁴ dB within 40 dB of
+the peak, with the LO below the signal or above it; the Combiners bench each variant's gain within 2.2×10⁻⁴ dB and NF
+within 1.2×10⁻⁴ dB. The budget of each combiner is an independent calculation's (`testdata/chain/arrays_reference.py`,
+which sums the network source by source) to 10⁻⁹ dB.
+
 The linear transmitter's benches are tabled with it, in [A linear transmitter](#linear-tx): its output over 38 dB of
 drive on the budget's CW output to 5×10⁻⁴ dB, its PA's AM-AM and AM-PM on Rapp's law to 10⁻⁹, its modulator's image and
 LO on their closed forms, its noise 0.13 to 0.15 dB under the budget (0.134 dB expected), its two-tone IM3 4.1 dB under
@@ -964,7 +1043,7 @@ as the part's netlist line carries them.
 
 | Key | Meaning |
 |---|---|
-| `FormatVersion` | 1; 2 for a chain that uses a value of the frequency, a budget-only parameter, a `Levels` combiner, a link, a sweep or a readout input; 3 for a transmit chain, an IQ modulator, an Amplifier's `Law`, `Psat`, `P`, `PhiSat` or `PhiMax`, or a converter's `Sideband`. A file from a newer circuitRF is refused, not read in part. |
+| `FormatVersion` | 1; 2 for a chain that uses a value of the frequency, a budget-only parameter, a `Levels` combiner, a link, a sweep or a readout input; 3 for a transmit chain, an IQ modulator, an Amplifier's `Law`, `Psat`, `P`, `PhiSat` or `PhiMax`, or a converter's `Sideband`; 4 for [sub-arrays](#subarrays) (a second Combiner), a tree's `Ways` or one whose N is not a power of 2, or `PathIL` on an active combiner. A file from a newer circuitRF is refused, not read in part. |
 | `Direction` | Optional: `"Transmit"` for a [transmit chain](#transmit). Absent: a receive chain. |
 | `RxBandOffsetHz`, `RxBandHz` | Optional: a transmit chain's receive band, its centre's offset from the carrier at the output and its width. |
 | `FrequencyHz`, `BandwidthHz`, `InputPowerDbm`, `TemperatureK`, `RequiredSnrDb` | The [system inputs](#inputs). Absent: 2.45 GHz, 1 MHz, −70 dBm, 290 K, 10 dB. |
@@ -977,7 +1056,7 @@ as the part's netlist line carries them.
 | `Link` | Optional: `{"Tx": {"Psat": "…", …}, "Path": {"Distance": "200 m", …}}`, the [link](#link)'s inputs by name, as a stage's parameters are. |
 | `Sweeps` | Optional: `[{"Of": "Frequency", "From": 20e9, "To": 40e9, "Points": 41}, …]`, `Of` one of `Frequency`, `TxElements`, `RxElements`. See [Sweeps](#sweeps). |
 
-A chain has at most one Combiner. An `SnP` stage's `File` is a path; a relative one resolves from the workspace the
+A second Combiner makes [sub-arrays](#subarrays). An `SnP` stage's `File` is a path; a relative one resolves from the workspace the
 `.cchain` belongs to, or its own folder when it belongs to none, and so does a [table](#scaling)'s.
 
 ## From the command line {#cli}

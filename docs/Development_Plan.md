@@ -294,6 +294,15 @@ before or Rapp's and Saleh's bandpass laws, in the budget and the simulation ali
 node, with the back-off, the noise floor and the ACLR estimate in its key. The example is a 3.5 GHz linear transmitter
 for a 100 MHz NR carrier.
 
+**Arrays of sub-arrays (2026-11).** A chain may have more than one Combiner: the stages between two are a
+sub-array's, and every number stays referred to one element. A tree takes any N, each level its own `Ways` (2:1 and
+3:1 mixed) and a remainder passed through; an active combiner takes a `PathIL` taper, each level's amplifier on its own
+path's power. The combiner's budget follows every path node by node, which for equal paths is the cascade of its levels
+it replaced, and an independent source-by-source sum (`testdata/chain/arrays_reference.py`) agrees to 10⁻⁹ dB. Transfer
+builds the benches level by level, and an array whose branch has a mixer now has its Steering and Combiners benches,
+as harmonic balance with one LO split to every element; a phase shifter after a mixer whose LO is above the signal is
+set for the IF's inverted phase. The example is a six-element IF array, two sub-arrays of three.
+
 **Deferred:**
 
 - **Image noise from earlier stages.** The budget takes each mixer's image as filtered of the stages before it, and the
@@ -313,13 +322,15 @@ for a 100 MHz NR carrier.
 - **The PA's compression in the link budget.** The budget takes Pout = Psat − Backoff; the TX bench measures how far an
   NR carrier comes out below it (0.92 dB at 8 dB on the example), and that is not fed back.
 - **Optimising array sizes or the carrier.** The sweeps show the trade; choosing a point is the user's.
-- **More than one combiner stage** (sub-arrays of their own), and a tree whose N is not a power of 2 (refused; Direct,
-  with `PathIL` for its unequal paths, or Levels for a tree's loss on one combiner, is the remedy).
-- **Unequal paths in an active combiner.** `PathIL` is a passive combiner's; an active one's level amplifiers would see
-  unequal powers, which the per-element budget does not follow.
+- **Steering per sub-array.** `Steer` is the element-to-element step on the first Combiner, and the Steering bench steers
+  every element with it; a phase shifter between two Combiners (a sub-array's own) keeps its own phase there, and the
+  Combiners bench shows the first Combiner's variants only.
+- **The harmonic-balance Steering bench's resolution.** Through a mixer each point is a harmonic-balance run with every
+  element's mixer, about a second, so the arriving angle steps 5° (111 runs) where the S-parameter bench steps 1°; its NF
+  is a noise run at each beam's peak, not over the pattern.
 - **A canceller's own nonlinearity and its adaptation.** The canceller is linear and its settings are variables to sweep
   or tune by hand; there is no loop that adapts them, and no stage of the budget follows a residual through a later
   nonlinearity other than as a level.
 - **Per-node EVM.** The demo reads EVM at the output only; a probe at every node would give it node by node.
-- **The Steering bench through a mixer.** It needs an S-parameter run to reach the combiner, so an array whose branch
-  has a mixer gets no Steering or Combiners bench.
+- **An IQ modulator in an array's branch.** Its quadrature LO is not split to the elements, so such an array gets no
+  Steering or Combiners bench.

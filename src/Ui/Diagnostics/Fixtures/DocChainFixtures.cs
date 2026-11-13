@@ -19,6 +19,9 @@ public static class DocChainFixtures
     /// <summary>The example's four-element steered array.</summary>
     public static FigureScene Array() => Window("Array");
 
+    /// <summary>The example's IF array: two sub-arrays of three elements, each a tree with a pass-through.</summary>
+    public static FigureScene IfArray() => Window("IF Array");
+
     /// <summary>The example's 26 GHz link, on its Frequency sweep tab.</summary>
     public static FigureScene Link() => Window("26 GHz Link", "Frequency sweep");
 

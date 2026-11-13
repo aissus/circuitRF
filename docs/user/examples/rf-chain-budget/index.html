@@ -33,7 +33,7 @@
   </div>
 
   <h1>RF Chain Budget</h1>
-  <p class="lede">A receive chain as a budget, stage by stage: a 2.45 GHz superhet, a four-element steered array into a combiner, a front end with a canceller and a dual-conversion receiver, each with its gain, NF, intercepts, compression, sensitivity and SFDR in closed form, and transferred to test benches whose S-parameter, harmonic-balance and envelope runs put a simulated number beside every one of them, the dual-conversion one conversion by conversion. And a 26 GHz link whose stages scale with the frequency: EIRP, the path, SNR, rate and DC power, swept over the carrier and both arrays. And a 3.5 GHz linear transmitter, an IQ modulator to a PA with Rapp&#39;s law: its output power, back-off, ACLR estimate and noise.</p>
+  <p class="lede">A receive chain as a budget, stage by stage: a 2.45 GHz superhet, a four-element steered array into a combiner, a front end with a canceller and a dual-conversion receiver, each with its gain, NF, intercepts, compression, sensitivity and SFDR in closed form, and transferred to test benches whose S-parameter, harmonic-balance and envelope runs put a simulated number beside every one of them, the dual-conversion one conversion by conversion. And a 26 GHz link whose stages scale with the frequency: EIRP, the path, SNR, rate and DC power, swept over the carrier and both arrays. And a 3.5 GHz linear transmitter, an IQ modulator to a PA with Rapp&#39;s law: its output power, back-off, ACLR estimate and noise. And an array of sub-arrays steered at the IF, two of three elements, each an active combining tree with a pass-through and a taper, its array benches harmonic balance through the six mixers on one LO.</p>
 
 <div class="callout note">
 <span class="label">Open this example</span>
@@ -59,6 +59,9 @@ one simulation run holds, so most of its benches are written once per conversion
 dual-conversion receiver has one blocker on each mixer's image, and asks for the demo bench too.</p>
 <p>And a link: <strong><code>26 GHz Link.cchain</code></strong>, a 16-element transmitter 200 m from an 8-element receiver at 26 GHz, in NR band
 n258 (24.25 to 27.5 GHz), whose stages scale with the frequency. See <a href="#the-26-ghz-link">The 26 GHz link</a>.</p>
+<p>And an array of sub-arrays: <strong><code>IF Array.cchain</code></strong>, six elements each down-converted to 350 MHz and phase-shifted at the
+IF, in two sub-arrays of three, each an active combining tree with a pass-through and a taper. See
+<a href="#the-if-array">The IF array</a>.</p>
 <p>And a transmitter: <strong><code>Linear TX.cchain</code></strong>, a 3.5 GHz chain for a 100 MHz NR carrier at 30 kHz subcarrier spacing, from an
 IQ modulator to a PA with Rapp's law and a band filter. See <a href="#the-linear-transmitter">The linear transmitter</a>.</p>
 <p>The formulas, the parts and the benches are in <em>Reference ▸ RF Chain Budget</em>.</p>
@@ -711,6 +714,74 @@ bench a few (two fundamentals, the carrier and the LO).</p>
 back-off, and the budget's estimate rises with its cubic. Set <code>Law</code> to Saleh with <code>PhiSat</code> 10° and <code>PhiMax</code> 20°, and
 its intercept takes the AM-PM into its third-order term. Set the IQ modulator's <code>PhaseImb</code> to 0 and <code>GainImb</code> to 0 and
 the image goes; set <code>IsoLO_IF</code> to 200 and so does the LO.</p>
+<h2 id="the-if-array">The IF array</h2>
+<p><strong><code>IF Array.cchain</code></strong> is an array of sub-arrays, steered at the IF. Each of six elements is the superhet's front end to
+its mixer (an LNA of 18 dB, NF 1.2 dB and OIP3 10 dBm, the RF filter, the mixer to 350 MHz), an IF filter and a phase
+shifter at the IF (3 dB, IIP3 15 dBm). Three elements make a sub-array, combined by an active tree: a 2:1 and a
+pass-through, then a 2:1, each followed by an amplifier (10 dB, NF 2 dB, IIP3 10 dBm), with a taper of 1, 0 and 1 dB on
+its three inputs. A sub-array amplifier (10 dB, OIP3 25 dBm) follows each, then a 2:1 combiner of the two sub-arrays and
+an IF amplifier (10 dB, NF 4 dB, OIP3 30 dBm).</p>
+<table>
+<thead>
+<tr>
+<th>Per element</th>
+<th>At the sub-array combiner</th>
+<th>At the array combiner</th>
+<th>Whole chain</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Gain</td>
+<td>28.65 dB</td>
+<td>41.36 dB</td>
+<td>51.36 dB</td>
+</tr>
+<tr>
+<td>NF</td>
+<td>2.77 dB</td>
+<td>2.77 dB</td>
+<td>2.78 dB</td>
+</tr>
+<tr>
+<td>IIP3</td>
+<td>−12.74 dBm</td>
+<td>−16.23 dBm</td>
+<td>−22.53 dBm</td>
+</tr>
+<tr>
+<td>Array gain</td>
+<td>4.64 dB</td>
+<td>7.65 dB</td>
+<td>7.65 dB</td>
+</tr>
+<tr>
+<td>SNR at −80 dBm</td>
+<td>29.32 dB</td>
+<td>32.32 dB</td>
+<td>32.32 dB</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Two sub-arrays of three are six elements, and the array gain is the two combiners' together</strong>: 4.64 dB for the
+sub-array and 3.01 dB for the pair. Six equal paths would give 7.78 dB; the sub-array's pass-through and its taper cost
+0.13 dB of it. The pass-through reaches the second 2:1 with one element's amplitude and the first 2:1's pair with
+more, and an equal-split combiner sums unequal inputs to less than their total power, while their noise keeps its
+whole. <strong>Each amplifier sees its own path's power</strong>: in each sub-array the pair's amplifier sees 3.0 dB more than the
+pass-through's, and the sub-array combiner's IIP3, −3.41 dBm, is the in-phase sum of all three amplifiers' third order.</p>
+<p>The window draws the element's branch once, marked × 6, the sub-array combiner as its two levels with an amplifier
+after each, and the sub-array amplifier once, marked × 2. Its level diagram:</p>
+<p><img class="readme-picture" src="pictures/level-diagram-if-array.png" alt="The IF array's level diagram: each element's levels to the sub-array combiner, the sub-array's to the array combiner, and the array's after it, the signal rising by each combiner's array gain over the noise" width="1236"></p>
+<p>Its benches place every element, both sub-arrays (<code>SUB_1</code>, <code>SUB_2</code>, each with its levels' parts and amplifiers, the
+pass-through an Atten for its 1 dB) and both sub-array amplifiers (<code>SA_1</code>, <code>SA_2</code>). Its Steering and Combiners benches
+reach the combiners through the mixers, so they are harmonic balance: one LO, a P1Tone into a 6-way Combiner used as a
+splitter at Plo + 7.78 dB, drives every mixer in phase. The Steering bench sweeps the arriving angle in 5° steps, each
+point a harmonic-balance run of all six mixers.</p>
+<p><strong>Try it.</strong> Move the LO to 2.8 GHz, above the signal: the IF is the same 350 MHz but its phase is the RF's negated, and
+Transfer sets the phase shifters to steer the other way. Move the IF filter after the array combiner, and the
+sub-arrays' broadband amplifiers see the mixers' sum product at 4.55 GHz as well as the IF: the 1-Tone bench's
+compression point then reads 0.22 dB under the budget. Set the sub-array combiner's <code>Ways</code> to 3: one 3:1 level, equal
+paths, and the array gain rises to 7.78 dB less the taper's share.</p>
 <h2 id="what-the-displays-show">What the displays show</h2>
 <p>Every number below is the simulation minus the budget.</p>
 <table>

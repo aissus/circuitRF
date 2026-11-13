@@ -112,20 +112,38 @@ has no phase shifter or limiter; those two are composed of parts it does have, a
 | Limiter | `Amp` (gain −IL, NF = IL, IIP3 = P1dB + 8.9625 dB) |
 | Splitter | `Combiner` from its common port, output 1 followed, outputs 2…N terminated in Z0 |
 | Combiner, Direct | one `Combiner` of N ways, `IL`, each path's `PathIL` as its `IL[k]` |
-| Combiner, Tree | log2 N levels of 2:1 `Combiner`s, level l's part j fed by parts 2j−1 and 2j of level l−1 |
+| Combiner, Tree | levels of 2:1 `Combiner`s (or each level's `Ways`), level l's part j fed by the next `Ways` outputs of level l−1; a remainder of one passed through (an `Atten` when its path has a loss), of more a smaller part |
 | Combiner, Active | either topology, an `Amp` (`Gain`, `NF`, `IIP3`, `IP3Ref=Input`) after each combiner |
 | SnP | `SnP` on the file, other ports terminated in Z0; a stated NF or IIP3 an `Amp` of 0 dB after it (§2.1) |
 
 An active combiner is a composition rather than a block of its own because the composition gives the same answers
 with no new model: its noise, gain and intercept are an Amp's, after a passive combiner's.
 
-**The variants' budget** is the cascade of their levels (`CombinerSpec.Budget`): the paths' weights a_k first —
-coherent (Σa_k)²/N², incoherent Σa_k²/N, T0·(N/Σa_k² − 1) of noise by Bosma on the weighting network — then each
-level's passive part (n·g signal, g noise, T0·(1/g − 1)) and, active, its amplifier, cascaded with Friis on the noise
-gains and the intercept sum on the signal gains. The stage then enters the chain's cascade with that signal gain,
-noise gain, noise figure and intercept, and the chain's array gain becomes the product of each stage's signal over
-noise gain, (Σa_k)²/Σa_k² for the combiner. A tree with N not a power of 2 is refused, Direct named as the remedy,
-rather than given uneven levels: an uneven tree's paths have unequal losses, which is what `PathIL` already states.
+**The variants' budget follows every path** (`CombinerSpec.Budget`). Each node carries four numbers per unit element
+amplitude: the coherent amplitude s, the noise gain n from the elements, the noise temperature T with the elements at
+0 K, and the third-order amplitude q. Element k starts at (a_k, a_k², T0·(1 − a_k²), 0), its weight a matched pad. A
+passive part of m inputs and gain g takes √(g/m)·Σs, (g/m)·Σn, (g/m)·ΣT + T0·(1 − g) (Bosma on its S) and √(g/m)·Σq;
+a part of one input passes through. An amplifier (G, F, IIP3) takes √G·s, G·n, G·(T + T0·(F − 1)) and
+√G·(q + s³/IIP3): its own IM3 is its input power over its intercept relative to its fundamental, and every
+amplifier's adds in phase because every fundamental does. At the output the stage is signal gain s², noise gain n,
+noise temperature T/n referred to its input, IIP3 s/q, and the chain's cascade takes it as any stage. The array gain
+is s²/n = (Σt_k)²/Σt_k², t_k each element's own amplitude to the output.
+
+For equal paths every part of a level sees the same node, and the walk is the level-by-level cascade it replaced
+(Friis on the noise gains, the intercept sum on the signal gains) to rounding: the shipped benches, which carry the
+budget's numbers to the last bit, are unchanged within the 10⁻¹² their test allows. What the walk adds is the
+**unequal** path: an uneven tree, whose pass-through and a combined pair reach the next equal-split part with unequal
+amplitudes and so sum to less than their total power ((1 + 1/√2)² of 3 for a lossless tree of three, 0.13 dB), and an active
+combiner with a taper, whose level amplifiers each see their own path's power. `testdata/chain/arrays_reference.py`
+sums the same networks source by source instead (each pad, part and amplifier times its own gain to the output) and
+agrees to 10⁻⁹ dB.
+
+**Sub-arrays are a second Combiner.** The stages before the first are one element's branch, those between two
+Combiners a sub-array's, those after the last the receiver; every number stays referred to one element's input, so
+the chain's cascade needs nothing new: each Combiner contributes its signal and noise gains and the array gain is
+their product. The elements are the product of the Ns (`ChainDesign.Copies`), which is also how many times the DC
+power counts each stage. `Steer` stays the element-to-element step on the first Combiner; a later one's is refused,
+since it would be a second wave.
 
 ### 2.1 S-parameter data
 
@@ -385,6 +403,22 @@ from its own antenna. The NF from that Port at the beam's peak is then one eleme
 paths it is the budget's plus the taper's loss, 10·log10 N − (Σa_k)²/Σa_k², because the splitter shares the wave equally
 where the combiner weighs it unequally.
 
+**Sub-arrays are emitted level by level** (`Emitter.Combine`): each Combiner takes its N consecutive inputs once for
+every copy the array has of it, a stage between two Combiners is placed once a sub-array on that sub-array's row and
+named with its number, and the per-stage nets the measurements read are sub-array 1's while the noise run's shares are
+every copy's. The array's NF from one element's (`PathWeight`) is Σt_k²/t_1² over every element, the sub-arrays'
+amplitudes multiplied in, which is N for equal paths and what an uneven tree or a taper makes it otherwise.
+
+**The array benches through a mixer are harmonic balance with one LO.** No S-parameter run reaches a combiner behind a
+mixer, which is why such an array had no Steering or Combiners bench. Harmonic balance does: the wave is a P1Tone, every
+mixer of a stage is driven from one P1Tone through a Combiner used as a splitter at `Plo` plus the split (so each sees
+`Plo`, in phase), the gain is read on the IF product the emitter tracks, and the NF from a harmonic-balance noise run
+from the wave's port. Two things follow. A phase shifter at the IF after an LO above the signal works on the RF's phase
+negated (the tracked product's RF index turns negative there), so it is set to `Phase` + (k − 1)·`Steer`, and on the
+Steering bench to a line of (k − 1)·(360° + Δφ). And a harmonic-balance point costs a second where an S-parameter one
+costs milliseconds, so the arriving angle steps 5°; the NF is a noise run swept over the steer angle at
+`theta_in = theta_steer`, set in the VAR block so that the gain sweep overrides it and the noise sweep follows it.
+
 **More than one mixer: what one run holds, and the conversions.** Each LO is a tone, and three limits stop a
 dual-conversion chain's benches as one run each, measured on a 2.45 GHz → 350 MHz → 10.7 MHz receiver before the fix:
 the 1-Tone bench's harmonic-balance noise run takes one or two tones (three refused); the 2-Tone and Levels runs on
@@ -511,6 +545,16 @@ the PA 0.44 dB under Psat at 10 dB of overdrive. Two points of a frequency sweep
 
 Two quantities are not exact and are said to be: the cascaded compression point is a formula of the intercept's form
 and reads 0.02 to 0.06 dB early, and the envelope SNR is one record of noise, ±0.12 dB from seed to seed.
+
+**Sub-arrays, uneven trees and unequal active paths.** `testdata/chain/arrays_reference.py` sums each combiner source by
+source (every pad, part and amplifier times its own gain to the output) for a 2:1-then-3:1 active tree with a taper, a
+tree of five with pass-throughs and the example's sub-array, and the example's IF array stage by stage; the budget agrees
+to 10⁻⁹ dB (`ChainArraysTests`). Sub-arrays at RF, two of three: gain, NF and every stage's NF exact, the compression
+point 0.028 dB late, IIP3 +1.7×10⁻⁴ dB, the Steering bench to 10⁻¹⁴ dB. Through a mixer, six elements on one LO, below
+and above the signal: the gain at each peak 2.8×10⁻⁴ dB low (the wave's drive), NF and array gain within 1.1×10⁻⁴ dB, the
+pattern on the array factor to 2.8×10⁻⁴ dB; the Combiners bench gain within 2.2×10⁻⁴ dB and NF within 1.2×10⁻⁴ dB. With
+the IF filter after the array combiner the IF array's 1-Tone bench read its compression point 0.22 dB early, the
+sub-arrays' broadband amplifiers seeing the mixers' sum product; the example has the filter in each element.
 
 **The linear transmitter.** A standard-library calculation reproduces its budget (Pout, the CW output, both
 back-offs, OIP3 and the ACLR, the noise floor and the receive band's noise, the image and the LO) to 10⁻⁶ dB, and each
