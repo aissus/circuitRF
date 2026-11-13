@@ -648,7 +648,7 @@
       "EnvStep": "auto",
       "EnvAccuracy": "standard",
       "EnvSegments": "auto",
-      "EnvWarmup": "1e-6",
+      "EnvWarmup": "auto",
       "EnvStart": "0",
       "EnvSaveWaveforms": "no"
     },

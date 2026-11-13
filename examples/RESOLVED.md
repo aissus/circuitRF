@@ -1087,7 +1087,11 @@ Three things that took deciding:
 - **The CLI's envelope cubes are ungrouped.** `circuitrf env -o` writes `EVM_pct`, Simulate writes `ENV1.EVM_pct`, and
   `PolarTx.cdd` reads the latter, as every envelope display here does. Checking it headlessly took a copy of the
   display with the prefix removed.
-- **`Warmup` is stated** (1 µs): the warm-up estimate reads the Delay between the phase modulator and the amplifier
-  as a memory of seconds (`src/Engine/RESOLVED.md`) and would run the record as one segment.
+- **`Warmup` is auto.** The first version stated 1 µs, because the warm-up estimate read the Delay between the phase
+  modulator and the amplifier as a memory of seconds; it now holds a steppable Delay as the line it is
+  (`src/Engine/RESOLVED.md`).
+- **ACPR1's −74.7 dBc at dT = 0, 1 GHz is the step's, not the transmitter's:** the 0.32 ns alignment delay is a
+  fraction of the 2 ns step and is interpolated. `fine` reads −82.5 dBc, and with the filter and the alignment taken
+  out the recombination reads the source's own −86.5 dBc.
 - **`SaveWaveforms=no`**: sixteen points of 0.25 ms at the standard step with every labeled net recorded is ~0.6 GB
   of waveforms; the display reads only EVM, ACLR and the spectra.

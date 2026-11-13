@@ -62,7 +62,7 @@ same name. Measured wall clock for the whole sweep, release build:
 | `RxDirectConversion` | 15 points | 4.9 s |
 | `TxFetFinal` | 29 points | 3.0 s |
 | `CascadeBudget` | 601 points | 0.2 s |
-| `PolarTx` | 16 envelope points | 14 min 46 s (CLI, a shared and loaded 64-core machine) |
+| `PolarTx` | 16 envelope points | 16 min 5 s (CLI, on a shared and loaded machine) |
 
 They render headlessly too, which is how the pictures in this file were checked:
 
@@ -510,14 +510,13 @@ two halves by a pair of `MOD_Source`s with the same carrier, `SA` (`Polar=amp`, 
   are aligned at `dT = 0` whatever the bandwidth: `dT` is the mismatch, and `Fam` is the bandwidth alone.
 
 The envelope is `Accuracy=standard` (2 ns steps): the delays are fractions of a step and are interpolated, and the
-filter is stepped too. At `draft`'s 8 ns the ideal case reads 0.211 % and −56 dBc instead of 0.169 % and −74.7 dBc. `Warmup=1 µs` is
-stated because the warm-up estimate does not see a polar block's own ports and reads the line `DPM` between two of
-them as a memory of seconds; the real memory is the filter's, a few nanoseconds, and the seam error reads 0.
+filter is stepped too. At `draft`'s 8 ns the ideal case reads 0.211 % and −56 dBc instead of 0.169 % and −74.7 dBc.
 
 **The ideal case reads the source's own EVM.** At `dT = 0` and `Fam = 1 GHz` the output's EVM is **0.169 %**,
 which is the signal's own (the same record through a matched pad reads 0.169 %). The recombination is exact: with
-the filter and `DPM` taken out, ACPR1 is the source's own −86.5 dBc; with them in, the 0.32 ns alignment is
-interpolated and ACPR1 reads −74.7 dBc.
+the filter and `DPM` taken out, ACPR1 is the source's own −86.5 dBc. With them in, the 0.32 ns alignment is a
+fraction of the 2 ns step and is interpolated between steps, and ACPR1 reads −74.7 dBc: that is the step's floor,
+not the transmitter's (`fine` reads −82.5 dBc).
 
 **EVM and ACPR1 against the delay mismatch** (rows: the AM bandwidth `Fam`; columns: `dT`):
 
@@ -546,6 +545,7 @@ interpolated and ACPR1 reads −74.7 dBc.
   the same ACPR1 to 0.4 dB.
 
 Things to try: `AMPM` on `PA` (degrees per volt of supply) adds AM-PM, which the recombination cannot take out;
-`Vsat` adds AM-AM compression; a phase-noise mask on `SP` is the phase path's own phase noise. `MaxHarm=1` is
+`Vsat` adds AM-AM compression; a phase-noise mask on `SP` is the phase path's own phase noise. A Delay or a filter
+can sit on the phase path too: `SP` plays the phase unwrapped, continuous over the record, so 1 ns there (half a step)
+reads as 1 ns on the amplitude path does (1.097 % against 1.122 %, ACPR1 −42.9 dBc both), not as a cut across 2π wraps. `MaxHarm=1` is
 enough here because none of these blocks makes harmonics.
-
