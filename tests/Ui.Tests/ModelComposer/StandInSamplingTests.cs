@@ -139,6 +139,26 @@ public sealed class StandInSamplingTests(ITestOutputHelper output) : IDisposable
         Assert.Single(Outside(sweep));
     }
 
+    /// <summary>A loadpull's grid on two workers: each load runs on a worker's own copy of the netlist, which is drained
+    /// before its diagnostics are taken, so the stand-in's warning reaches <c>circuitrf lp</c>, once (without the drain the
+    /// parallel grid printed none). The gate swing at the top rungs leaves the sampled vgs −2 to 0 V.</summary>
+    [Fact]
+    public void TheWarning_SurvivesAParallelLoadpullGrid_Once()
+    {
+        string model = SmallStandIn();
+        File.WriteAllLines(Path.Combine(_root, "grid.gam"), ["# gamma Z0=50 mag_ang", "0 0", "0.2 0", "0.2 90", "0.2 180", "0.2 270", "0.4 45"]);
+        File.WriteAllText(Path.Combine(_root, "lp.cnl"), $"""
+            ComposedFET:X1 g d 0 File="{model}"
+            Tuner:Src g 0 Zdefault=50 Z0=50 BiasTee=on Vbias=-1 Z[1]=50
+            Tuner:Load d 0 Zdefault=50 Z0=50 BiasTee=on Vbias=3 Z[1]=50
+            analysis LP1 type=loadpull Tone=1e8 MaxHarm=3 LoadTuner=Load SourceTuner=Src Grid="grid.gam" Sweep=Load TuneHarm=1 Compression=3 GainType=Gt PinStart=-10 PinStep=5 PinMax=10 MaxIter=100 Workers=2
+            """);
+        var run = ModelCliFixture.Run(_root, "lp", "lp.cnl");
+        output.WriteLine(run.StdErr);
+        Assert.Equal(0, run.ExitCode);
+        Assert.Single(System.Text.RegularExpressions.Regex.Matches(run.StdErr, System.Text.RegularExpressions.Regex.Escape(ComposedCoreModel.OutsideSentence)));
+    }
+
     /// <summary>One sampled instance: N other than N0 is refused whether the stand-in is placed as a ComposedFET or as its bare
     /// core; the simulator's multiplier M still multiplies whole devices.</summary>
     [Fact]

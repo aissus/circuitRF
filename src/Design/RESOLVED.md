@@ -30943,8 +30943,12 @@ run, and a count read at a stamp was a snapshot of part of the run whose first c
 is therefore an `IReportsRunWarnings`, read only by `ElaboratedNetlist.DrainAllModelWarnings` once the run is over:
 `CircuitEvaluation`, the CLI's `PrintWarnings` (every run verb and MCP `run`), and `MergeDiagnosticsFrom` on the netlist
 it folds in (a parametric sweep's points). Before the review the CLI and sweeps lost it. LP-1's parallel loadpull
-replays each copy through `TakeRunDiagnostics` instead, so whichever lands second calls `DrainAllModelWarnings` on the
-copy first. harmonicaRF shows no run warnings at all.
+replays each copy through `TakeRunDiagnostics` instead; with LP-1 merged here (2026-11-13) its per-load `finally` calls
+`DrainAllModelWarnings` on the copy first. Gate: `StandInSamplingTests.TheWarning_SurvivesAParallelLoadpullGrid_Once`
+(`circuitrf lp`, six loads on two workers: one warning, and none without the drain). Its counts are the running
+totals of the worker that ran the first warning load (19 of 484 operating points in one run), so on a parallel grid
+they depend on which loads each worker took, and are not the serial run's grid totals: the one place a parallel
+loadpull's warning text is not bit-identical to the serial one. The key, and so the single warning, is. harmonicaRF shows no run warnings at all.
 
 **Review fixes (2026-11-12).** Two stand-ins in one folder shared `sampled/tables.npy`, the second silently replacing the
 first's data under the first's record: each document now has `sampled/<name>/`. `N ≠ N0` was refused only in the

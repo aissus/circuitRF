@@ -660,6 +660,9 @@ public sealed class LoadpullEngine
                     finally
                     {
                         Publish(gi, null);   // a load that failed, or solved nothing, must not leave a later one waiting
+                        // What the load's evaluations accrued (a stand-in leaving its sampled region) reaches the copy's
+                        // warnings only when drained, and the copy is gone before the caller drains its own netlist.
+                        copy.DrainAllModelWarnings();
                         diags[gi] = copy.TakeRunDiagnostics();
                         lock (gate) logs[gi] = log.ToString();
                         Flush();
