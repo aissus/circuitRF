@@ -57,11 +57,13 @@ public static class ChainBudget
     public static ChainBudgetResult Evaluate(ChainDesign d) => Evaluate(d, response: false);
 
     /// <summary>The budget; with <paramref name="response"/>, of a point off the carrier (<see cref="Response"/>, a
-    /// sweep), where every Filter is its own response rather than its passband loss.</summary>
-    private static ChainBudgetResult Evaluate(ChainDesign d, bool response)
+    /// frequency sweep), where every Filter is its own response rather than its passband loss. <paramref name="raw"/>: the
+    /// design as written when <paramref name="d"/> is a point already resolved (a response's), so that an image still
+    /// reads its values of the frequency at its own frequency.</summary>
+    private static ChainBudgetResult Evaluate(ChainDesign d, bool response, ChainDesign? raw = null)
     {
         // Expressions and tables first, each read at its stage's frequency; then the resolved design's own refusals.
-        var raw = d;
+        raw ??= d;
         var unread = new List<string>();
         d = d.Resolve(unread);
         if (unread.Count > 0) return new([], null, unread, []);
@@ -114,7 +116,7 @@ public static class ChainBudget
         // stage that made it, and the source's at Ts for the floor. The source's own noise in the image band is no stage's,
         // as it is no part's in a noise run's shares: those then sum to less than all of F − 1.
         var images = ChainImage.Terms(raw, d, budgets, m => m == 0 ? 1 : gnRow[m - 1], te,
-                                      d.Mismatch ? (k, f) => TwoPortsAt(raw, d, k, f) : null);
+                                      d.Mismatch ? (k, f) => TwoPortsAt(raw, d, k, f) : null, notes);
         var srcRow = new double[n];
         foreach (var im in images.Where(x => x.Counted))
         {
@@ -311,7 +313,7 @@ public static class ChainBudget
     /// <summary>
     /// One sweep of the design (<see cref="ChainSweep"/>): at each point a copy with the carrier, the transmit elements or
     /// the receive Combiner's N set, budgeted again, every expression and table read there and every Filter its own
-    /// response there (a band written as numbers stays put while the carrier moves through it). A cube a quantity over the
+    /// response there for a sweep of the carrier (a band written as numbers stays put while the carrier moves through it). A cube a quantity over the
     /// sweep's axis (<c>freq</c> in Hz, <c>Mtx</c>, <c>Mrx</c>). A point the budget refuses is NaN, and one note gives
     /// how many and the first reason; a receive array of one has no Combiner. Nothing here is a bench: a sweep point is
     /// verified by transferring the design at that point.
@@ -334,7 +336,9 @@ public static class ChainBudget
                     else c.Stages[cmb].Parameters["N"] = ChainValue.Format(v);
                     break;
             }
-            return Evaluate(c, response: true);
+            // A carrier's in-band filters carry their ripple; an array's size moves no frequency, so its points keep the IL
+            // the design point has.
+            return Evaluate(c, response: s.Of == ChainSweep.Frequency);
         }).ToList();
         var refused = points.Where(p => p.Totals is null).ToList();
         if (refused.Count > 0)
@@ -401,7 +405,7 @@ public static class ChainBudget
             var why = new List<string>();
             var hz = c.StageInputFrequencies();
             for (int i = 0; i < c.Stages.Count; i++) c.Stages[i] = ChainScaling.At(d.Stages[i], at.Stages[i], hz[i], d.BaseDirectory, why);
-            return why.Count > 0 ? new ChainBudgetResult([], null, why, []) : Evaluate(c, response: true);
+            return why.Count > 0 ? new ChainBudgetResult([], null, why, []) : Evaluate(c, response: true, raw: d);
         }).ToList();
         var refused = points.Where(p => p.Totals is null).ToList();
         if (refused.Count > 0)

@@ -273,7 +273,11 @@ exactly as before. Every chain the examples ship keeps its images under that: th
 4.4×10⁻⁴ dB through, the dual-conversion receiver's second image 6×10⁻⁵ dB, the superhet's 9×10⁻⁶ dB. A counted image is
 said in the Notes with what it adds (`MIX: its image at 2.31 GHz adds 2.21 dB to the NF`), the [level
 diagram](#level-diagram)'s key gives it, and the DataSet has it as `NFimage_dB`. The NF, as the IEEE defines it, takes
-the source at T0 in the image band too; the noise floor, the MDS and the SNR take it at the source temperature.
+the source at T0 in the image band too; the noise floor, the MDS and the SNR take it at the source temperature. A
+threshold is a step: across a [response](#response) or a [sweep](#sweeps), an image that crosses 0.001 dB between two
+points moves the NF by that much at once, where the curve beside it moves by far less (and two mixers' images each just
+under it are both left out). A file the walk reads outside its frequencies is read at its nearest one, as the SnP block
+holds it, and the Notes say so.
 
 The cascade table's **F−1 share** puts the noise each stage sends through an image on that stage, as a noise run's
 shares do. The source's own noise in the image band is no stage's, in the budget as in a run, so with an image counted
@@ -576,9 +580,11 @@ The **Sweeps** row of the Link tab takes up to three sweeps, each one line, as t
 Each point is the whole chain budgeted again there, every expression and table read at that point's carrier. Each sweep
 has its own tab: the link levels (EIRP, the received power at each element, the chain's input, the ceiling and the
 noise, the MDS), the SNR and margin, the rate and the DC power, over its own axis, a log one for an array's sizes. A point the budget refuses (a table read
-outside its range) is left out, and one note gives how many and why. A Filter is its own response at each carrier, so a
-band written as numbers rolls off as the carrier leaves it, and one written as a value of the frequency
-(`F1 = freq - 1.5GHz`) follows it.
+outside its range) is left out, and one note gives how many and why. In a `Frequency` sweep a Filter is its own
+response at each carrier, so a band written as numbers rolls off as the carrier leaves it, and one written as a value
+of the frequency (`F1 = freq - 1.5GHz`) follows it; a point in its band carries its passband ripple, which the budget's
+IL leaves out. An array's size moves no frequency, so a `TxElements` or `RxElements` sweep takes each Filter's IL, and
+its point at the design's own size is the budget.
 
 {{ui: chain-budget-link}}
 
@@ -1021,7 +1027,9 @@ The wideband receiver, its budget taken with mismatch and counting its image, re
 2.2×10⁻⁴ dB; its envelope SNR 0.14 dB under, one record's statistics; and its Levels bench every node from the LNA's output
 on to 7×10⁻⁴ dB. Its input and the node between its two modules read 0.29 dB under and 2.44 dB over: a node's voltage
 holds the wave the next file reflects as well as the one going forward, and the budget's level is the forward one into
-50 Ω. Matched, the same budget is 0.76 dB under the run's gain and 0.53 dB over its NF, and without its image 2.21 dB under
+50 Ω. Between the two files that is 20·log10\|(1 + Γ_L)/(1 − S22·Γ_L)\|, the LNA's reflected wave (Γ_L its S11, 1.68 dB)
+and the multiple reflection between them (S22 the preselector's, 0.76 dB); at the input \|1 + Γin\|, the chain's input
+reflection. The bench reads both on these to 2×10⁻³ dB. Matched, the same budget is 0.76 dB under the run's gain and 0.53 dB over its NF, and without its image 2.21 dB under
 its NF. An S-parameter noise bench of two reflecting amplifier files, a filter and a pad reads the budget with mismatch to
 10⁻¹⁴ dB in gain and NF, and an independent standard-library calculation (`testdata/chain/fidelity_reference.py`, Friis on
 available gains) the same to 10⁻⁹ dB.

@@ -694,9 +694,11 @@ public sealed class ChainBudgetExampleTests(ITestOutputHelper output) : IDisposa
 
     /// <summary>
     /// The wideband receiver's levels and intercepts. From the LNA's output on, every node's signal and IM3 sit on the
-    /// budget; the input and the node between the preselector and the LNA read their voltage, which holds the wave the
-    /// next file reflects as well as the one going forward, so they read off the budget's forward level by that
-    /// reflection (−0.29 and +2.44 dB), which the README says.
+    /// budget. The input and the node between the preselector and the LNA read their voltage, which is the wave going
+    /// forward and the one the next file reflects, where the budget's level is the forward wave into 50 Ω: at the node
+    /// between them 20·log10|(1 + Γ_L)/(1 − S22·Γ_L)|, Γ_L the LNA's S11 and S22 the preselector's (the reflected wave and the
+    /// multiple reflection between the two), and at the input 20·log10|1 + Γin|, Γin the chain's input reflection; both at
+    /// the tone the bench reads, 0.5 MHz under the carrier, where the preselector's |S21| is not quite the carrier's.
     /// </summary>
     [Fact]
     [Trait("Category", "Benchmark")]
@@ -708,7 +710,16 @@ public sealed class ChainBudgetExampleTests(ITestOutputHelper output) : IDisposa
             Assert.InRange(M(lev, $"Psig_{k}_err"), -2e-3, 2e-3);
             Assert.InRange(M(lev, $"IM3_{k}_err"), -3e-3, 3e-3);
         }
-        Assert.InRange(M(lev, "Psig_1_err"), 2, 3);
+        var d = ChainDesignIo.LoadFromFile(Path.Combine(Workspace, "Wideband.cchain"));
+        double f1 = d.FrequencyHz - 0.5e6;
+        var pre = ChainSnp.FileAt(d.Stages[0], d.BaseDirectory, f1)!.S;
+        double slope = 20 * Math.Log10(pre[1, 0].Magnitude / ChainSnp.FileAt(d.Stages[0], d.BaseDirectory, d.FrequencyHz)!.S[1, 0].Magnitude);
+        var gl = ChainSnp.FileAt(d.Stages[1], d.BaseDirectory, f1)!.S[0, 0];
+        var gin = pre[0, 0] + pre[0, 1] * pre[1, 0] * gl / (1 - pre[1, 1] * gl);
+        double node1 = slope + 20 * Math.Log10((1 + gl).Magnitude / (1 - pre[1, 1] * gl).Magnitude), node0 = 20 * Math.Log10((1 + gin).Magnitude);
+        output.WriteLine($"node 0: {M(lev, "Psig_0_err"):F4} dB against |1 + Γin| {node0:F4} dB; node 1: {M(lev, "Psig_1_err"):F4} dB against {node1:F4} dB");
+        Assert.InRange(M(lev, "Psig_0_err") - node0, -2e-3, 2e-3);
+        Assert.InRange(M(lev, "Psig_1_err") - node1, -2e-3, 2e-3);
         var two = Simulate("Wideband 2-Tone");
         Assert.InRange(M(two, "IIP3_err"), -1e-3, 1e-3);
         Assert.InRange(M(two, "OIP3_err"), -1e-3, 1e-3);

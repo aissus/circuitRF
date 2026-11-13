@@ -267,6 +267,59 @@ public sealed class ChainFidelityTests(ITestOutputHelper output) : IDisposable
         Assert.Contains(ChainBudget.Evaluate(d).Refusals, x => x.StartsWith("The response runs from", StringComparison.Ordinal));
     }
 
+    /// <summary>A response point's image reads the design's values of the frequency at the image too, as the budget's
+    /// does: with an LNA whose gain follows the frequency, the response at the carrier is the budget (to the RF filter's
+    /// own response there, 6×10⁻⁸ dB, which a point off the carrier takes and the budget's IL does not).</summary>
+    [Fact]
+    public void TheResponseAtTheCarrier_IsTheBudget_WithAValueOfTheFrequencyBeforeAnImage()
+    {
+        var d = WideSuperhet();
+        d.Stages[0].Parameters["Gain"] = "16 + (f_GHz - 2.45)*10";
+        d.Response = new ChainResponse(0, 1e6, 2);
+        var r = ChainBudget.Evaluate(d);
+        Assert.True(Assert.Single(r.Images).Counted);
+        var ds = ChainBudget.Response(d);
+        Assert.Equal(r.Totals!.NfDb, ds["NF_dB"].RealValues[0], 6);
+        Assert.Equal(r.Totals.GainDb, ds["Gain_dB"].RealValues[0], 6);
+    }
+
+    /// <summary>An array's size moves no frequency: its sweep's points take each filter's IL, as the design point does,
+    /// so the design's own size is the budget; a sweep of the carrier takes each filter's response, its ripple in band.</summary>
+    [Fact]
+    public void AnElementSweep_AtTheDesignPoint_IsTheBudget_AndACarrierSweepCarriesTheRipple()
+    {
+        var d = ChainBudgetTests.RfArray();
+        d.Stages[3].Parameters["Response"] = "Chebyshev";
+        d.Stages[3].Parameters["Order"] = "4";
+        d.Stages[3].Parameters["Ripple"] = "0.5";
+        var r = ChainBudget.Evaluate(d);
+        var rx = ChainBudget.Sweep(d, new ChainSweep(ChainSweep.RxElements, 2, 8, 3));
+        Assert.Equal([2, 4, 8], rx["Gain_dB"].Axes[0].Values);
+        Assert.Equal(r.Totals!.GainDb, rx["Gain_dB"].RealValues[1], 12);
+        Assert.Equal(r.Totals.NfDb, rx["NFtot_dB"].RealValues[1], 12);
+        var f = ChainBudget.Sweep(d, new ChainSweep(ChainSweep.Frequency, 2.4e9, 2.5e9, 3));
+        double s21 = ChainLevels.FilterOf(r.Design!.Stages[3]).At(2 * Math.PI * 2.45e9).S21.Magnitude;
+        Assert.Equal(r.Totals.GainDb + 20 * Math.Log10(s21) + 1.5, f["Gain_dB"].RealValues[1], 9);
+        Assert.True(Math.Abs(f["Gain_dB"].RealValues[1] - r.Totals.GainDb) > 0.1, "a 0.5 dB Chebyshev's ripple at the carrier");
+    }
+
+    /// <summary>A file the image walk reads outside its range is read at its nearest frequency, and the notes say so.</summary>
+    [Fact]
+    public void AnImageOutsideAFile_IsReadAtItsEdge_AndSaid()
+    {
+        Directory.CreateDirectory(_ws);
+        var sb = new System.Text.StringBuilder("# GHz S MA R 50\n");
+        foreach (double g in new[] { 2.3, 2.45, 2.6 }) sb.AppendLine(FormattableString.Invariant($"{g} 0.1 0 0.9 0 0.9 0 0.1 0"));
+        File.WriteAllText(Path.Combine(_ws, "pre.s2p"), sb.ToString());
+        var d = ChainBudgetTests.Superhet();
+        d.BaseDirectory = _ws;
+        d.Stages[1] = S("PRE", "SnP", ("File", "pre.s2p"));
+        var r = ChainBudget.Evaluate(d);
+        Assert.Contains(r.Notes, n => n.StartsWith("PRE: a mixer's image reaches it at 1.75 GHz, outside its file's range", StringComparison.Ordinal));
+        d.Mismatch = true;
+        Assert.Single(ChainBudget.Evaluate(d).Notes, n => n.StartsWith("PRE: a mixer's image reaches it", StringComparison.Ordinal));
+    }
+
     // ── the window, the verb and the diagram ─────────────────────────────────
 
     /// <summary>The window reads a response like a sweep, a row of its own, and shows its tab; the mismatch is a box, a

@@ -64,7 +64,8 @@ public static class ChainImage
     /// </summary>
     public static IReadOnlyList<ChainImageTerm> Terms(ChainDesign raw, ChainDesign d, IReadOnlyList<StageBudget> budgets,
                                                       Func<int, double> gnTo, double teK,
-                                                      Func<int, double, IReadOnlyList<ChainTwoPort>?>? twoPorts = null)
+                                                      Func<int, double, IReadOnlyList<ChainTwoPort>?>? twoPorts = null,
+                                                      List<string>? notes = null)
     {
         var walk = new Walk(raw, d);
         var inputHz = d.StageInputFrequencies();
@@ -77,8 +78,10 @@ public static class ChainImage
             double flo = ChainValue.Or(s.Get("Flo"), 0), fin = inputHz[m], fo = ChainParts.OutputHz(s, fin);
             double fim = Math.Abs(fo + flo - fin) <= 1e-9 * fin ? Math.Abs(fo - flo) : fo + flo;
             if (!(fim > 0)) continue;
-            double[]? t = twoPorts is not null && !d.Stages.Take(m).Any(x => ChainParts.Converts(x.Part))
-                ? Exact(m, fim, twoPorts, d.Stages.Count) : null;
+            bool single = !d.Stages.Take(m).Any(x => ChainParts.Converts(x.Part));
+            double[]? t = twoPorts is not null && single ? Exact(m, fim, twoPorts, d.Stages.Count) : null;
+            if (t is not null)
+                for (int k = 0; k < m; k++) walk.Outside(k, fim);   // the exact cascade reads the same files there
             t ??= walk.Into(m, fim, isolated: true);
             t[1 + m] -= T0;   // the T0 the SSB figure already holds
             double gn = gnTo(m);
@@ -86,6 +89,11 @@ public static class ChainImage
             terms.Add(new ChainImageTerm(m, s.Name, fim, te,
                                          Math.Abs(te.Sum()) >= (Math.Pow(10, ThresholdDb / 10) - 1) * (T0 + teK)));
         }
+        // A file the walk read outside its range is taken at its nearest frequency, as the SnP block takes it: said once a
+        // stage, as a blocker outside a file is.
+        foreach (var (k, f) in walk.OutsideFiles)
+            notes?.Add($"{d.Stages[k].Name}: a mixer's image reaches it at {ChainSnp.Hz(f)}, outside its file's range; its gain and " +
+                       "noise there are taken at the file's nearest frequency, as the SnP block takes them in a simulation.");
         return terms;
     }
 
@@ -113,6 +121,17 @@ public static class ChainImage
     {
         private readonly int _n = d.Stages.Count;
         private readonly IReadOnlyList<double> _hz = d.StageInputFrequencies();
+
+        /// <summary>Each SnP stage first read outside its file, and the frequency.</summary>
+        public readonly List<(int Stage, double Hz)> OutsideFiles = [];
+
+        /// <summary>Notes stage <paramref name="k"/> when it is an SnP stage whose file does not reach <paramref name="f"/>.</summary>
+        public void Outside(int k, double f)
+        {
+            if (d.Stages[k].Part == ChainParts.Snp && OutsideFiles.All(x => x.Stage != k)
+                && ChainSnp.FileAt(d.Stages[k], d.BaseDirectory, f) is { Outside: true })
+                OutsideFiles.Add((k, f));
+        }
 
         /// <summary>The noise delivered into stage <paramref name="k"/> at <paramref name="f"/>; with
         /// <paramref name="isolated"/>, through the isolator a bench places in front of a mixer.</summary>
@@ -178,6 +197,7 @@ public static class ChainImage
                 }
                 case ChainParts.Snp when ChainSnp.FileAt(s, d.BaseDirectory, f) is { } a:
                 {
+                    if (a.Outside) Outside(j, f);
                     double g = a.S[1, 0].Magnitude * a.S[1, 0].Magnitude, r2 = a.S[1, 1].Magnitude * a.S[1, 1].Magnitude;
                     double n = a.Noise is { } p
                         ? g * T0 * (NoiseMetrics.NoiseFactor(p, new System.Numerics.Complex((ChainSnp.Z0 - p.R) / (ChainSnp.Z0 + p.R), 0)) - 1)

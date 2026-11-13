@@ -31044,8 +31044,14 @@ After review:
   reference; the reference design takes the example's own carrier-following preselector, which keeps it under the
   threshold at all five cases.
 - **A Levels bench node between two reflecting files reads the reflected wave too**: the wideband example's node between
-  its preselector and its LNA reads 2.44 dB over the budget's forward level, its input 0.29 dB under; every node from the
+  its preselector and its LNA reads 2.44 dB over the budget's forward level, 20·log10|(1 + Γ_L)/(1 − S22·Γ_L)| (the
+  reflected wave 1.68 dB, the multiple reflection 0.76 dB), its input 0.29 dB under, |1 + Γin|; every node from the
   LNA's output on, 7×10⁻⁴ dB.
+- **(review) A response point is already numbers.** `Response` budgets a resolved copy of the design, so its image walk
+  found no value of the frequency to read at the image, and a superhet with a frequency-dependent LNA gain before an
+  image-passing filter read 4.50 dB at the carrier against the budget's 2.98 dB. The point's budget now gets the design
+  as written beside it. And an array's sweep took each filter's response too, its ripple moving every point (0.5 dB on a
+  4th-order Chebyshev, the NF 4.09 → 4.33 dB): only a sweep of the carrier does now.
 
 Gates: `tests/Ui.Tests/Chain/ChainFidelityTests.cs`, `tests/Ui.Tests/Examples/ChainBudgetExampleTests.cs` (`Wideband_*`),
 `testdata/chain/fidelity_reference.py`.
