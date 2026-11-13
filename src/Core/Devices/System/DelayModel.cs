@@ -24,8 +24,12 @@ namespace CircuitRF.Core.Devices;
 ///
 /// <para>A negative <c>T</c> is accepted: non-causal, but in the frequency domain still only a phase
 /// slope, and the ordinary way to cancel a known delay elsewhere in a chain.</para>
+///
+/// <para>It is also a lossless line of impedance <c>Z0</c> and delay <c>T</c> (<see cref="IUniformLine"/>), which is how
+/// a circuit envelope steps it: as its delay, exactly at every product, the baseband included. A negative delay or a
+/// complex <c>Z0</c> is no causal line, and keeps its stamp there.</para>
 /// </summary>
-public sealed class DelayModel : IdealSBlockModel
+public sealed class DelayModel : IdealSBlockModel, IUniformLine
 {
     private readonly double _delay;
 
@@ -34,10 +38,20 @@ public sealed class DelayModel : IdealSBlockModel
     public DelayModel(double delaySeconds, Complex z0) : base([z0, z0])
     {
         _delay = delaySeconds;
+        Z0 = z0;
     }
 
     /// <summary>The delay this block applies, seconds.</summary>
     public double DelaySeconds => _delay;
+
+    /// <summary>The reference impedance of both ports, ohms.</summary>
+    public Complex Z0 { get; }
+
+    /// <summary>Whether the envelope can step it as a line: a causal delay in a real <c>Z0</c>.</summary>
+    public bool IsCausalLine => _delay >= 0 && Z0.Imaginary == 0 && Z0.Real > 0;
+
+    /// <inheritdoc/>
+    public (double Z0, Complex GammaLength) LineAt(double freqHz) => (Z0.Real, new Complex(0, 2 * Math.PI * freqHz * _delay));
 
     /// <summary>Two interchangeable ports, numbered as the attenuator's are.</summary>
     public override string[] TerminalNames => ["1", "2"];

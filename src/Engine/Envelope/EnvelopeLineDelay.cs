@@ -4,7 +4,8 @@
 //  A line's response turns by 360° per 1/τ Hz, so neither its value and
 //  slope at a harmonic nor a rational fit from DC to the top of the run
 //  follows it (src/Engine/RESOLVED.md, ENV-FIT).  For an envelope run a
-//  two-conductor line (IUniformLine) is stepped as what it is, a delay:
+//  two-conductor line (IUniformLine) — and a System Delay, a lossless line
+//  between its ports' + nets — is stepped as what it is, a delay:
 //  each end is its Zc in series with the wave that left the other end τ
 //  earlier (the method of characteristics),
 //
@@ -151,9 +152,11 @@ public static class EnvelopeLineDelay
         internal void Add(Line l)
         {
             _lines.Add(l);
-            // the multiplier is in the model's Zc (a branch cannot be multiplied)
+            // the multiplier is in the model's Zc (a branch cannot be multiplied); a System Delay's two ends are its
+            // ports' + nets, which the line's stamp reads as its first two
             _nl.Components[l.Index] = new ElaboratedComponent(
-                l.Original.ComponentType, l.Original.InstancePath, l.Original.Nodes, l.Original.Parameters, l.Model);
+                l.Original.ComponentType, l.Original.InstancePath,
+                l.Original.Model is DelayModel ? [l.Na, l.Nb] : l.Original.Nodes, l.Original.Parameters, l.Model);
         }
 
         public bool Any => _lines.Count > 0;
@@ -326,7 +329,7 @@ public static class EnvelopeLineDelay
         for (int i = 0; i < nl.Components.Count; i++)
         {
             var ec = nl.Components[i];
-            if (ec.IsNonlinear || ec.Model is not IUniformLine || ec.Nodes.Length < 2) continue;
+            if (ec.IsNonlinear || Ends(ec) is not var (na, nb)) continue;
             var model = new DelayLineModel(ec.Model, ec.Multiplicity);
             var P = new Coeffs[productHz.Count];
             double worst = 0;
@@ -337,7 +340,7 @@ public static class EnvelopeLineDelay
                 worst = Math.Max(worst, Error(model, p, productHz[k], bandHz));
                 if (p.SlopeDropped) dropped.Add(productHz[k]);
             }
-            run.Add(new Line { Index = i, Original = ec, Model = model, Na = ec.Nodes[0], Nb = ec.Nodes[1], P = P });
+            run.Add(new Line { Index = i, Original = ec, Model = model, Na = na, Nb = nb, P = P });
             string who = $"{ec.ComponentType} '{ec.InstancePath}'";
             nl.AddNoteOnce("env-line-delay:" + ec.InstancePath, string.Format(inv,
                 "{0}: stepped as its delay ({1:0.####} ns) with its loss to first order around each harmonic; {2:0.##} % (RMS) " +
@@ -353,6 +356,18 @@ public static class EnvelopeLineDelay
         }
         return run;
     }
+
+    /// <summary>
+    /// The two ends <paramref name="ec"/> is stepped between, each against ground, or null when it is not a line here. A
+    /// two-conductor line binds them as its first two nets. A System Delay binds four (1+, 1−, 2+, 2−) and is stepped
+    /// only as a causal line whose ports return to ground; otherwise it keeps its stamp.
+    /// </summary>
+    private static (int A, int B)? Ends(ElaboratedComponent ec) => ec.Model switch
+    {
+        DelayModel d => d.IsCausalLine && ec.Nodes.Length == 4 && ec.Nodes[1] == 0 && ec.Nodes[3] == 0 ? (ec.Nodes[0], ec.Nodes[2]) : null,
+        IUniformLine when ec.Nodes.Length >= 2 => (ec.Nodes[0], ec.Nodes[1]),
+        _ => null,
+    };
 
     /// <summary>One product's Zc, delay and residual. The baseband takes the line's low-frequency delay and H~ = 1.</summary>
     private static Coeffs Of(DelayLineModel m, double fk, double h, double nyq)

@@ -244,6 +244,7 @@ public sealed class EnvelopeEngine
         foreach (var ec in _nl.Components)
             if (ec.Model is SddModel sdd && sdd.ControlRefs.Length > 0)
                 throw new InvalidOperationException($"Envelope analysis does not support SDD control currents yet ('{ec.InstancePath}').");
+        PolarPair(sources);
 
         // ── fundamental and envelope rate ─────────────────────────────────
         double f0 = sources[0].FcHz;
@@ -290,15 +291,25 @@ public sealed class EnvelopeEngine
         long i0 = (long)Math.Round(p.StartS / h) - nWarm;
         int nDrive = nWarm + nSteps + 1;
         var drive = new Complex[sources.Length][];
+        var signalDrive = new Complex[sources.Length][];      // what each source's drive stands for: the complex signal
         for (int s = 0; s < sources.Length; s++)
         {
             var x = signals[s].CompositeWindow(recordRate, f0 - sources[s].FcHz, i0, nDrive);
             double vs = sources[s].VsPeak;
             for (int i = 0; i < x.Length; i++) x[i] *= vs;
             phase?.Apply(sources[s], x, i0);
-            drive[s] = x;
+            signalDrive[s] = x;
+            if (sources[s].Polar is not null)
+            {
+                // A polar half drives the baseband with its share of the signal: |x| or arg x (ModSourceModel.PolarDrive).
+                var b = new Complex[x.Length];
+                for (int i = 0; i < x.Length; i++) b[i] = sources[s].PolarDrive(x[i]);
+                drive[s] = b;
+            }
+            else drive[s] = x;
         }
         Complex Drv(int s, int step) => drive[s][step];
+        int[] productOf = [.. sources.Select(src => src.EnvelopeProduct)];
 
         // ── linear partition ──────────────────────────────────────────────
         var extractor = new HbLinearExtractor(_nl, _settings);
@@ -359,7 +370,7 @@ public sealed class EnvelopeEngine
                 var bUnit = new Complex[sources.Length][];
                 for (int s = 0; s < sources.Length; s++)
                 {
-                    if (k != 1) { bUnit[s] = new Complex[bStatic.Length]; continue; }
+                    if (k != productOf[s]) { bUnit[s] = new Complex[bStatic.Length]; continue; }
                     var b = RhsAt(extractor, mna, w, sources, s);
                     for (int r = 0; r < b.Length; r++) b[r] -= bStatic[r];
                     bUnit[s] = b;
@@ -445,7 +456,7 @@ public sealed class EnvelopeEngine
             }
             iOut[o] = ic;
             ivOut[o] = iv;
-            for (int s = 0; s < sources.Length; s++) dOut[s][o] = Drv(s, step);
+            for (int s = 0; s < sources.Length; s++) dOut[s][o] = signalDrive[s][step];
         }
         Record(0);
 
@@ -486,13 +497,13 @@ public sealed class EnvelopeEngine
                 sg.Lu.Solve(bh, xh);
                 var x = xoc[k] = new Complex[n];
                 for (int r = 0; r < n; r++) x[r] = sg.Xs[r] + xh[r];
-                if (k == 1)
-                    for (int s = 0; s < sources.Length; s++)
-                    {
-                        Complex a = drv(s);
-                        var u = sg.Xu[s];
-                        for (int r = 0; r < n; r++) x[r] += a * u[r];
-                    }
+                for (int s = 0; s < sources.Length; s++)
+                {
+                    if (productOf[s] != k) continue;
+                    Complex a = drv(s);
+                    var u = sg.Xu[s];
+                    for (int r = 0; r < n; r++) x[r] += a * u[r];
+                }
                 AddTonePhase(phase, sg.Xu, sources.Length, k * f0, sample, x);
                 var voc = new Complex[N];
                 for (int j = 0; j < N; j++) voc[j] = x[ifNodes[j] - 1];
@@ -617,18 +628,22 @@ public sealed class EnvelopeEngine
 
         if (prof)
             Console.Error.WriteLine($"[env-profile] steps {total - 1}  linear {swL.Elapsed.TotalSeconds:0.00}s  eval {swE.Elapsed.TotalSeconds:0.00}s  F {swF.Elapsed.TotalSeconds:0.00}s  J {swJ.Elapsed.TotalSeconds:0.00}s ({newton.JacobianBuilds})  update {swU.Elapsed.TotalSeconds:0.00}s  newton {(double)newton.Iterations / Math.Max(1, total - 1):0.00}");
+        // A polar pair's signal is measured once, through its amplitude half: the phase half is the same signal.
+        int[] measured = [.. Enumerable.Range(0, sources.Length).Where(s => sources[s].Polar != PolarHalf.Phase)];
+        var mSources = measured.Select(s => sources[s]).ToArray();
+        var mSignals = measured.Select(s => signals[s]).ToArray();
         var res = new EnvelopeRunResult
         {
             Time = tOut, ProbeNames = probeNodes.Select(x => x.name).ToArray(), Probe = pOut,
             SupplyNames = supplies.Select(c => c.InstancePath).ToArray(), SupplyCurrent = sOut, SupplyVoltage = supplyV,
             IProbeNames = iprobes, IProbeCurrent = iOut, IProbeVoltage = ivOut, WBondPaths = wbonds, WBondCurrent = wOut,
-            Drive = dOut, DriveRe = sources.Select(s => s.Z.Real).ToArray(),
-            F0Hz = f0, StepS = h, MaxHarm = K, SignalRateHz = rate, Sources = sources,
+            Drive = [.. measured.Select(s => dOut[s])], DriveRe = mSources.Select(s => s.Z.Real).ToArray(),
+            F0Hz = f0, StepS = h, MaxHarm = K, SignalRateHz = rate, Sources = mSources,
             WallSeconds = sw.Elapsed.TotalSeconds, MeanNewton = (double)newton.Iterations / Math.Max(1, total - 1),
             JacobianBuilds = newton.JacobianBuilds, WorstTangentError = tanErrWorst, SnpFits = snpFit.Reports,
-            CarrierMix = sources.SelectMany((s, si) => signals[si].Carriers.Select(_ => 1)).ToArray(),
-            CarrierOffsetHz = sources.SelectMany((s, si) => signals[si].Carriers.Select(c => s.FcHz + c.OffsetHz - f0)).ToArray(),
-            CarrierLabels = sources.SelectMany((s, si) => signals[si].Carriers.Select(c => $"{s.InstanceName}:{c.Spec.Label} @ {(s.FcHz + c.OffsetHz) / 1e9:0.####} GHz")).ToArray(),
+            CarrierMix = mSources.SelectMany((s, si) => mSignals[si].Carriers.Select(_ => 1)).ToArray(),
+            CarrierOffsetHz = mSources.SelectMany((s, si) => mSignals[si].Carriers.Select(c => s.FcHz + c.OffsetHz - f0)).ToArray(),
+            CarrierLabels = mSources.SelectMany((s, si) => mSignals[si].Carriers.Select(c => $"{s.InstanceName}:{c.Spec.Label} @ {(s.FcHz + c.OffsetHz) / 1e9:0.####} GHz")).ToArray(),
         };
         if (splitSteps > 0)
             res.Notes.Add($"envelope: {splitSteps} step(s) did not converge at the full step and were retaken as up to {finestSplit} sub-steps");
@@ -636,6 +651,27 @@ public sealed class EnvelopeEngine
     }
 
     // ── helpers ──────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Refuses polar MOD_Sources (<c>Polar=</c>) that are not one pair of one signal: every half states the same carriers
+    /// at the same Fc, and an amplitude half is there to measure it through. A phase half alone would play a phase with
+    /// nothing to say what signal it belongs to, and two signals' halves would be recombined across each other.
+    /// </summary>
+    internal static void PolarPair(ModSourceModel[] sources)
+    {
+        var halves = sources.Where(s => s.Polar is not null).ToArray();
+        if (halves.Length == 0) return;
+        var first = halves[0];
+        foreach (var h in halves.Skip(1))
+            if (h.FcHz != first.FcHz || h.Spec.CacheKey() != first.Spec.CacheKey())
+                throw new InvalidOperationException(CarrierBlockDiagnostics.PolarMismatch(
+                    h.InstanceName, Word(h.Polar), first.InstanceName, Word(first.Polar)).Render());
+        if (!halves.Any(s => s.Polar == PolarHalf.Amp))
+            throw new InvalidOperationException(CarrierBlockDiagnostics.PolarPhaseAlone(first.InstanceName).Render());
+    }
+
+    /// <summary>A polar half's <c>Polar=</c> word, as the netlist spells it.</summary>
+    internal static string Word(PolarHalf? half) => half?.ToString().ToLowerInvariant() ?? "rf";
 
     /// <summary>
     /// The node voltages a run records (brief ENV-MEAS-3): every labeled net (<see cref="NodeMap.LabeledNames"/>, the set
@@ -845,7 +881,7 @@ public sealed class EnvelopeEngine
         {
             for (int k = 0; k <= K; k++)
             {
-                for (int s = 0; s < srcs.Length; s++) srcs[s].EnvelopeDrive = k == 1 ? (at ?? drive0)(s) * scale : Complex.Zero;
+                for (int s = 0; s < srcs.Length; s++) srcs[s].EnvelopeDrive = k == srcs[s].EnvelopeProduct ? (at ?? drive0)(s) * scale : Complex.Zero;
                 baseband.Holding = k == 0;
                 if (k == 0) (yNN[0], iSrc[0]) = ex.ExtractDC();
                 else (yNN[k], iSrc[k]) = ex.Extract(k * w0);

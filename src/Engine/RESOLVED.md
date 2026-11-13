@@ -4381,3 +4381,45 @@ gate 5 lists only diode/BJT shot and series-R thermal.
 - `OscEngine.Startup` linearises every device at its DC point (`StampLinearized`) and never called `BiasFreeze`, so an
   oscillator built on a composed FET with `LinearC=true` would have met the unfrozen core's refusal. It freezes at the DC
   solution it has just solved, as `SParameterEngine` does. Gate: `BiasFreezeTests.EveryEngineEntryPointThatReadsCharge_Freezes`.
+
+## A baseband beside the carrier: polar MOD_Source halves, the System Delay as a line (2026-11-13)
+
+The single-fundamental envelope already stepped the k = 0 product as a real, time-varying envelope (a supply's current
+is read from it), and a nonlinear device couples it to the carrier through its time samples, so a polar transmitter
+needed no new engine mechanism for its blocks — only the quadrature bucket `src/Core/RESOLVED.md` describes. What the
+envelope did need:
+
+- **A source at baseband.** `EnvelopeEngine` drives each MOD_Source at `ModSourceModel.EnvelopeProduct`: 1 for an RF
+  source, 0 for a polar half, with the window turned into `|x|·|Vs|` or `2·arg x` after any phase-noise rotation
+  (`PolarDrive`). The unit right-hand side, the drive added in `Advance` and the harmonic-balance start all follow it.
+  `PolarPair` refuses halves that play different signals (`Spec.CacheKey`, `Fc`) and a phase half alone.
+- **Measured once.** The result's `Sources`, `Drive` and carrier lists leave out every phase half, and an amplitude
+  half records the complex signal `|Vs|·x` as its drive, so Pin, Gt, ACLR and EVM at the output are against the
+  signal the pair stands for. `explain` lists the carriers the same way.
+- **The System Delay is stepped as its delay** (`EnvelopeLineDelay.Ends`): a causal `DelayModel` in a real `Z0`
+  whose ports return to ground is a lossless line between its + nets (`IUniformLine.LineAt = (Z0, jωT)`). Before,
+  it reached the envelope as its tangent at each harmonic and at baseband — `S21 ≈ 1 − jωT`, which over a polar
+  envelope's band (`ωT` ≈ 1.6 at 50 MHz and 5 ns) is neither a delay nor passive. A whole number of steps is now exact
+  to 2e-11 at both products (`PolarEnvelopeTests.ADelay_IsExactAtTheBasebandAndAtTheCarrier`). A negative `T` or a
+  complex `Z0` keeps the old path.
+- **The multi-fundamental envelope refuses** polar halves (it has no one baseband to drive) and carrier blocks.
+
+Findings worth keeping:
+
+- **The warm-up estimate does not see a nonlinear block's own ports.** `EnvelopeMemory.LinearPole` reads the linear
+  partition only, so a Delay between two carrier blocks floats on gmin and its C/G reads as 3.18 s: the run goes to
+  one segment. The polar example states `Warmup` (1 µs) instead, which the runner obeys without asking, and its seam
+  error reads 0. A series capacitor between two FET gates with no bias path would read the same way.
+- **The EVM measurement splits an AM/PM mismatch.** `SignalEvm.Evaluate` fits one delay (the peak of the in-band
+  cross-correlation) before its gain, and against `a(t − Δτ)·e^(jφ)` that delay lands at Δτ/2 for an NR signal,
+  whose amplitude and phase move equally fast. A prediction that fits only a gain reads 1.6× high at small Δτ. The
+  gate (`EvmAgainstDelayMismatch_FollowsTheRecombinationError`) forms the error from the record the run plays and
+  applies both fits in band: within 0.3 % of the run at 2 and 6 steps of an LTE 1.4 MHz record. On the 3.5 GHz NR
+  20 MHz example the same construction is within 1.3 % at 1, 2 and 4 ns (1.108 / 2.188 / 4.312 % against
+  1.122 / 2.198 / 4.327 %).
+- **Fractional delays want `standard`.** A delay that is not a whole number of steps is interpolated (quadratic
+  Lagrange), and on a polar envelope's wideband content at `draft`'s 8 ns step that costs the ideal example 0.04 pp
+  of EVM and 30 dB of ACPR1 against `standard`.
+- **The device pass, not the model, is an envelope step's cost.** On the 9-interface-node polar chain, ~90 % of a
+  step is `HbNewton.EvaluateNonlinear`'s O(N²) small FFTs of the Jacobian spectra; making the blocks
+  allocation-free (`EvaluateGrid`) did not change it.

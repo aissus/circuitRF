@@ -154,6 +154,10 @@ public sealed class EnvelopeEngineMt
         var sw = Stopwatch.StartNew();
         var srcEcs = _nl.Components.Where(c => c.Model is ModSourceModel).ToArray();
         var sources = srcEcs.Select(c => (ModSourceModel)c.Model).ToArray();
+        CarrierBlockModel.RefuseIn(_nl, "the multi-fundamental envelope");
+        if (sources.FirstOrDefault(s => s.Polar is not null) is { } polar)
+            throw new InvalidOperationException(
+                CarrierBlockDiagnostics.PolarMultiFundamental(polar.InstanceName, EnvelopeEngine.Word(polar.Polar)).Render());
         var toneSources = ToneSources(_nl);
         var plan = Plan(sources, toneSources, sources[0].FcHz, p.MaxHarm, maxMixOrder);
         if (plan.Count != 2)
