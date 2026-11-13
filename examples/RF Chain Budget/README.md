@@ -281,9 +281,11 @@ clear the 100 MHz carrier's adjacent channels; the band filters then take both d
 **The PA's intercept is the cubic's at its 1 dB point.** Rapp's law at `P` = 2 has no third-order term: its IM3 rises
 5 dB per dB. The budget gives it the intercept a cubic compressing where it does would have, 15.47 dBm in, and the ACLR
 estimate follows from that. The benches show what the law does instead: the 2-Tone bench's IM3 at the operating point
-is −43.41 dBc against the estimate's −39.32, and 20 dB down the IM3 is the driver's and the mixers', their
-intercept 57.15 dBm; the Envelope bench's NR carrier reads −39.07 dBc of ACLR against the estimate's −38.07,
-1.0 dB better: the estimate errs on the pessimistic side here too, by less, since the carrier's peaks reach the 1 dB point where the cubic is close to the law.
+is −43.41 dBc against the estimate's −39.32; 20 dB down it reads an intercept of 57.15 dBm, the driver's and the
+mixers' third order (57.64 dBm on their own) with the PA's residual fifth-order IM3 in phase. For an NR carrier the
+estimate is optimistic at the PA: its own bench reads −37.73 and −37.86 dBc of ACLR against −38.51 estimated, the
+carrier's peaks reaching past the 1 dB point, where Rapp clips harder than the cubic. At the chain's output the Envelope
+bench reads −39.07 dBc against −38.07: the band filter after the PA removes 1.43 dB of the regrowth.
 
 **Its benches**, each against the budget:
 
@@ -291,10 +293,10 @@ intercept 57.15 dBm; the Envelope bench's NR carrier reads −39.07 dBc of ACLR 
   5×10⁻⁴ dB, the Chebyshev filter's ripple at 3.5 GHz; the 1 dB point 0.10 dB later than the cascaded formula's; the
   modulator's image and LO on their closed forms at its own output (behind an isolator, the bench's: the filter
   reflects both); the noise 0.15 dB under the budget 1 MHz off the carrier and 0.13 dB in the receive band, half of it
-  amplitude noise, which the PA's differential gain at its operating point takes down 0.25 dB.
+  amplitude noise, which the PA passes 0.2245 dB under its gain at its operating point: 0.134 dB expected.
 - **`Linear TX 2-Tone`**: two tones at three levels, the IQ modulator's LO the third tone of the run: at the operating
-  point the IM3 4.1 dB under the cubic's estimate, and 20 dB down the other stages' third order, an intercept of
-  57.15 dBm.
+  point the IM3 4.1 dB under the cubic's estimate, and 20 dB down an intercept of 57.15 dBm, the driver's and mixers'
+  third order (57.64 dBm) with the PA's residual fifth-order IM3 in phase.
 - **`Linear TX Envelope`**: the NR carrier at the operating point and 3 dB either side: at the operating point 27.65 dBm,
   0.35 dB under the linear budget as its peaks compress, ACLR −39.07 dBc and 4.09 % EVM, the IQ modulator's 35 dB image
   rejection in it.

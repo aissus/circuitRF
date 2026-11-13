@@ -31041,8 +31041,11 @@ After review:
   figure as its loss at every frequency, and read 2.3 dB over the run: a reflective filter feeds the driver after it
   almost no noise where the loss rule put T0. A filter now adds T0·(1 − |S21|² − |S22|²) (Bosma), its loss in band.
 - **Noise under compression is half amplitude.** The TX noise floor reads 0.13 to 0.15 dB under the budget 0.05 dB into
-  the PA's compression: the PA's differential gain there is about five times its compression for a Rapp law of p = 2,
-  and half the noise sees it.
+  the PA's compression: the amplitude half of the noise sees the PA's AM gain there, 0.2245 dB under its small-signal
+  gain, the phase half its CW gain; 0.134 dB expected.
+- **The ACLR estimate is optimistic at a Rapp PA.** An NR carrier's peaks reach past the PA's 1 dB point, where Rapp
+  clips harder than the cubic: the PA alone reads 0.8 dB worse than the estimate. At the example's output it reads 1 dB
+  better, because the band filter after the PA removes 1.43 dB of the regrowth, which the estimate does not see.
 - **Rapp has no third-order term at p ≠ 1.** Its intercept in the cascade is the cubic's at its 1 dB point; two tones at
   the linear transmitter's operating point read their IM3 under it, and 20 dB down the PA's products fall at 5:1.
 

@@ -320,8 +320,10 @@ Communications, 1981.
 **A bandpass law acts on the envelope.** The two laws are stated for a narrowband signal, as an amplitude and a phase
 against its envelope, so the amplifier applies them to the input's analytic signal: the input and its quadrature, which a
 linear companion holds on a net of its own (a frequency-flat &minus;90&deg;, as the [90&deg; Hybrid](#hybrid90)'s). One
-tone's envelope is constant, so its output is the law at that drive exactly, and nothing else: **a bandpass law makes
-no harmonics**. Two tones beat, and their products are the law's own intermodulation, Saleh's AM-PM in it. Every
+tone's envelope is constant, so its output is the law at that drive exactly, and nothing else: **one tone through a
+bandpass law makes no harmonics**. Two tones beat, and their products are the law's own intermodulation, Saleh's AM-PM
+in it, all in the first zone; what a multi-tone run shows outside it is the run's truncation (−63.5 dBc at +3 dBm a
+tone, `P` = 2, MaxMixOrder 9). Every
 analysis carries it — single- and multi-tone harmonic balance, the envelope, and an S-parameter run, where the law is
 its gain. Saleh's third-order intercept is s_sat &minus; 5&middot;log10(1 + a&sup2;); Rapp has no third-order term
 unless `P` is 1 (its IM3 rises 2`P` + 1 dB per dB), which is why the [RF Chain Budget](chain-budget.html#laws) gives

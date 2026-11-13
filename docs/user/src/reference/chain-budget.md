@@ -265,7 +265,8 @@ as a receive chain's; the totals add the transmitter's own, and leave out a rece
 **The ACLR relation, and what it assumes.** Take a memoryless nonlinearity to third order on the complex envelope,
 y = a₁x + a₃x\|x\|², driven by a signal x that is complex Gaussian with power P and a flat spectrum of width B — OFDM
 is close to one, by the central limit theorem. By Isserlis' theorem (L. Isserlis, "On a formula for the product-moment
-coefficient of any order of a normal frequency distribution in any number of variables", Biometrika, 1918), E\|x\|⁴ = 2P² and E\|x\|⁶ = 6P³, so the
+coefficient of any order of a normal frequency distribution in any number of variables", Biometrika, 1918, and for a
+complex Gaussian I. S. Reed, "On a moment theorem for complex Gaussian processes", IRE Transactions on Information Theory, 1962), E\|x\|⁴ = 2P² and E\|x\|⁶ = 6P³, so the
 third-order output's part correlated with x is a gain change, 2a₃P·x, and the rest, of power 2\|a₃\|²P³, spreads as the
 threefold convolution of the flat spectrum over 3B: two thirds of it in the channel and a sixth in each neighbour of
 the same width, one bandwidth away. The two-tone intercept of the same nonlinearity is IIP3 = \|a₁/a₃\| per tone, so the
@@ -316,9 +317,11 @@ amplifier's own gain and a saturated power in place of their normalised constant
 **What Rapp's intercept is.** Rapp's law has no third-order term unless `P` is 1: at small drive its IM3 rises 2`P` + 1 dB
 for every dB, and no intercept describes it. The budget gives it the cubic's with the same small-signal gain and the same
 1 dB point — the textbook IP3 = P1dB + 9.64 dB — which is what an intercept sum and an ACLR estimate can take. At `P` = 1
-its own third-order term is 0.76 dB lower. For `P` = 2 the cubic is pessimistic away from compression: two tones at the
-linear transmitter's operating point read their IM3 4.1 dB under it, and 20 dB further down the PA's products
-fall at five times the drive.
+its own third-order term is 0.76 dB lower. For `P` = 2 the cubic is pessimistic for two tones away from compression:
+at the linear transmitter's operating point their IM3 reads 4.1 dB under it, and 20 dB further down the PA's products
+fall at five times the drive. It is optimistic for a noise-like carrier at the same point: the NR carrier's peaks reach
+past the 1 dB point, where Rapp's law clips harder than the cubic, and the PA alone reads its ACLR 0.8 dB worse than
+the estimate.
 
 **How the simulation does it.** A Rapp or Saleh law is a bandpass law, stated for a narrowband signal's envelope, so the
 amplifier applies it to its input's analytic signal: the input voltage and its quadrature, which a linear companion
@@ -827,9 +830,9 @@ The example's `Linear TX.cchain` is a 3.5 GHz transmitter for a 100 MHz NR carri
 | PA | `Amp`, `Law` = Rapp, `Psat` 37 dBm, `P` 2, `Pdc` 10 W | 30 dB | 6 dB | IP1dB 5.84 dBm, cubic IIP3 15.47 dBm |
 | BPF2 | `Filter`, 5th-order 0.1 dB Chebyshev, 3.4 to 3.6 GHz | −0.6 dB | 0.6 dB | |
 
-Driven at −14 dBm, its budget, every number of which a hand calculation reproduces from the formulas above (the PA's
-1 dB point and saturation by root-finding Rapp's own AM-AM, the tanh stages' compression by integrating the describing
-function):
+Driven at −14 dBm, its budget, every number of which an independent calculation reproduces to 10⁻⁶ dB from the formulas
+above (`testdata/chain/tx_reference.py`: the PA's 1 dB point and saturation by root-finding Rapp's own AM-AM, the tanh
+stages' compression by integrating the describing function); a test holds the budget to it at 10⁻⁶ dB:
 
 | Readout | Value |
 |---|---|
@@ -850,13 +853,13 @@ And its benches against it:
 | Output 18 dB past the operating point | 36.3665 dBm | 36.3659 dBm | as above |
 | IP1dB | −6.96 dBm | −6.86 dBm | the cascaded-P1dB formula, as a receive chain's |
 | Image, LO at the modulator | −35.17, −23.22 dBc | −35.17, −23.21 dBc | |
-| Image, LO at the output | −167.82, −90.27 dBc | −166.3, −90.36 dBc | the image 167 dB down, where the run's own resolution is |
-| Noise floor, 1 MHz off the carrier | −117.84 dBm/Hz | −117.98 dBm/Hz | half the noise is amplitude, and at its operating point the PA's differential gain is 0.25 dB under its gain |
+| Image, LO at the output | −167.82, −90.27 dBc | −166.3, −90.36 dBc | the image is the run's MaxMixOrder 5 truncation: at 9 it reads −167.88 dBc |
+| Noise floor, 1 MHz off the carrier | −117.84 dBm/Hz | −117.98 dBm/Hz | half the noise is amplitude, which the PA at its operating point passes 0.2245 dB under its gain, the other half its CW gain: 0.134 dB expected |
 | Noise in the receive band | −156.50 dBm/Hz | −156.63 dBm/Hz | as above |
 | PA: AM-AM, AM-PM | Rapp's law | 6.5×10⁻¹⁰ dB, 10⁻¹⁵° | |
 | PA: IP1dB | 5.835 dBm | 5.826 dBm | the bench's three-point interpolation |
 | IM3 at the operating point | −39.32 dBc | −43.41 dBc | the cubic with the PA's 1 dB point is pessimistic for `P` = 2 away from compression |
-| ACLR at the operating point | −38.07 dBc | −39.07 dBc | the third-order estimate with the PA's cubic intercept, 1.0 dB on the pessimistic side; the carrier's peaks reach the PA's 1 dB point, where Rapp's law is close to the cubic |
+| ACLR at the operating point | −38.07 dBc | −39.07 dBc | the estimate is optimistic at the PA (alone: −38.51 estimated, −37.73 and −37.86 simulated), and the band filter after it removes 1.43 dB of the regrowth, which the estimate does not have |
 | Output, NR carrier | 28.00 dBm | 27.65 dBm | the carrier's peaks, up to the PA's 1 dB point, compress |
 | EVM, NR carrier | — | 4.09 % | the PA's compression of the peaks |
 
@@ -928,8 +931,9 @@ read as the table above does.
 
 The linear transmitter's benches are tabled with it, in [A linear transmitter](#linear-tx): its output over 38 dB of
 drive on the budget's CW output to 5×10⁻⁴ dB, its PA's AM-AM and AM-PM on Rapp's law to 10⁻⁹, its modulator's image and
-LO on their closed forms, its noise 0.13 to 0.15 dB under the budget, and its IM3 and ACLR 4.1 and 1.0 dB on the
-pessimistic side of the estimates.
+LO on their closed forms, its noise 0.13 to 0.15 dB under the budget (0.134 dB expected), its two-tone IM3 4.1 dB under
+the estimate, and its ACLR 0.8 dB over the estimate at the PA and 1.0 dB under it at the output, where the band filter
+takes 1.43 dB of the regrowth.
 
 ## The .cchain file {#format}
 

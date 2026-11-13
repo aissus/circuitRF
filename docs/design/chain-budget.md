@@ -261,7 +261,8 @@ and every row the same numbers. A transmit chain's readouts (`ChainTransmit`) ar
 the linear Pout, the CW output through every stage's compression, the back-offs, the ACLR estimate, the noise floor and a
 receive band's noise, and an IQ modulator's image and LO. The ACLR relation is derived in the reference page: a cubic on
 the complex envelope, a complex Gaussian signal with a flat spectrum (Isserlis' theorem for its moments, the threefold
-convolution for where its distortion falls), the adjacent channel the signal's width one bandwidth away:
+convolution for where its distortion falls; Reed's theorem for the complex Gaussian's), the adjacent channel the
+signal's width one bandwidth away:
 ACLR = 2·(Pout − OIP3) − 10·log10 3.
 
 **Nothing a receive chain writes changes.** A parameter that has a value meaning "as before" says so
@@ -289,8 +290,10 @@ Measured in the envelope too: a Saleh amplifier driven by a 20 MHz NR carrier re
 law to 5×10⁻⁵ dB and its phase to 1.4×10⁻⁴° over every sample above −20 dBm.
 
 **Rapp's intercept is the cubic's at its 1 dB point.** Rapp's law has no third-order term at p ≠ 1, and an intercept
-sum needs one. The cubic with the same 1 dB point is the textbook IP3 = P1dB + 9.64 dB; it is pessimistic away from
-compression for p = 2, which the 2-Tone bench shows, and close for an NR carrier whose peaks reach the 1 dB point.
+sum needs one. The cubic with the same 1 dB point is the textbook IP3 = P1dB + 9.64 dB. For p = 2 it is pessimistic
+for two tones away from compression (the 2-Tone bench's IM3 4.1 dB under it at the operating point) and optimistic for
+a noise-like carrier there, whose peaks reach past the 1 dB point, where Rapp clips harder than the cubic: the PA alone
+reads its NR carrier's ACLR 0.8 dB worse than the estimate.
 
 **The IQ modulator** is composed of library blocks: a 90° Hybrid splits the input into I and Q, a Combiner splits the
 LO into its quadrature (±90° plus the phase error), two Mixers convert (the Q one's gain plus the gain error) and a
@@ -438,9 +441,9 @@ the Levels on the budget to 4×10⁻⁴ dB.
   figure as its loss at every frequency: in its stopband a lossless filter reflects, so the driver after it is fed
   almost no noise, where the loss rule assumed T0. A filter now adds T0·(1 − |S21|² − |S22|²), and the budget reads
   0.13 dB over the run.
-- *Noise under compression.* The noise floor reads 0.15 dB under the budget at the operating point, 0.05 dB into the
-  PA's compression: half of the noise is amplitude, and the PA's differential gain there is about five times its
-  compression, 0.25 dB down.
+- *Noise under compression.* The noise floor reads 0.145 dB under the budget at the operating point, 0.05 dB into the
+  PA's compression: half of the noise is amplitude, which the PA passes at its AM gain there, 0.2245 dB under its
+  small-signal gain, and half phase, at its CW gain; 0.134 dB expected.
 
 The 2-Tone bench is the slowest: two baseband tones and the LO are three tones, and multi-tone harmonic balance at the
 order its IM3 needs takes minutes per level, so it runs three levels. The Envelope bench's two fundamentals, the carrier
@@ -504,13 +507,16 @@ the PA 0.44 dB under Psat at 10 dB of overdrive. Two points of a frequency sweep
 Two quantities are not exact and are said to be: the cascaded compression point is a formula of the intercept's form
 and reads 0.02 to 0.06 dB early, and the envelope SNR is one record of noise, ±0.12 dB from seed to seed.
 
-**The linear transmitter.** A standard-library hand calculation reproduces its budget (Pout, the CW output, both
+**The linear transmitter.** A standard-library calculation reproduces its budget (Pout, the CW output, both
 back-offs, OIP3 and the ACLR, the noise floor and the receive band's noise, the image and the LO) to 10⁻⁶ dB, and each
 law's 1 dB point and saturation by root-finding its own AM-AM. Its benches: the output over 38 dB of drive on the
 budget's CW output to 5×10⁻⁴ dB (the Chebyshev ripple), the PA's AM-AM and AM-PM on Rapp's law to 10⁻⁹, the
-modulator's image and LO on their closed forms, the noise 0.13 to 0.15 dB under; the IM3 and the ACLR beside their
-estimates as the reference page's table states (`ChainBudgetExampleTests.LinearTx_*`, `ChainTransmitTests`,
-`AmplifierLawHbTests`).
+modulator's image and LO on their closed forms, the noise 0.13 to 0.15 dB under (0.134 dB expected); the two-tone IM3
+4.1 dB under the estimate; the ACLR 0.8 dB over it at the PA (the estimate is optimistic there, and the PA bench
+asserts that sign) and 1.0 dB under it at the output, where the band filter after the PA removes 1.43 dB of the
+regrowth. The hand calculation is `testdata/chain/tx_reference.py`, its numbers `tx_reference.json`, which
+`ChainBudgetExampleTests.LinearTx_TheBudget_IsTheIndependentReference` holds the budget to at 10⁻⁶ dB
+(`ChainBudgetExampleTests.LinearTx_*`, `ChainTransmitTests`, `AmplifierLawHbTests`).
 
 ## 5. References
 
@@ -522,6 +528,7 @@ The transmitter: C. Rapp, "Effects of HPA-nonlinearity on 4-DPSK/OFDM-signal for
 Proc. 2nd European Conference on Satellite Communications, 1991; A. A. M. Saleh, "Frequency-independent and
 frequency-dependent nonlinear models of TWT amplifiers", IEEE Trans. Communications 29(11), 1981; L. Isserlis, "On a
 formula for the product-moment coefficient of any order of a normal frequency distribution in any number of
-variables", Biometrika 12, 1918. The
+variables", Biometrika 12, 1918; I. S. Reed, "On a moment theorem for complex Gaussian processes", IRE Trans.
+Information Theory 8(3), 1962. The
 feature list of RxCalc (https://github.com/arhiv6/rxcalc, GPL-3) is the inspiration; only its
 README was read, and no code is taken from it.
