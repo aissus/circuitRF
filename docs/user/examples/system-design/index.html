@@ -33,7 +33,7 @@
   </div>
 
   <h1>System Design</h1>
-  <p class="lede">A 2.4 GHz transmitter and receiver drawn twice — direct conversion and superheterodyne — from the System block library, plus a transmitter whose final stage is a nonlinear FET and a cascade gain/IP3/noise budget.</p>
+  <p class="lede">A 2.4 GHz transmitter and receiver drawn twice — direct conversion and superheterodyne — from the System block library, plus a transmitter whose final stage is a nonlinear FET, a cascade gain/IP3/noise budget, and a 3.5 GHz polar transmitter whose NR EVM and ACPR are studied in the circuit envelope against the AM/PM delay mismatch and the AM path&#39;s bandwidth.</p>
 
 <div class="callout note">
 <span class="label">Open this example</span>
@@ -89,6 +89,10 @@ computing rather than asserted.</li>
 <tr>
 <td><code>CascadeBudget</code></td>
 <td>the gain / IP3 / noise-figure arithmetic, beside a real S-parameter run</td>
+</tr>
+<tr>
+<td><code>PolarTx</code></td>
+<td>a <strong>polar transmitter</strong> at 3.5 GHz, an NR signal recombined in the circuit envelope (its own section below)</td>
 </tr>
 </tbody>
 </table>
@@ -147,13 +151,20 @@ same name. Measured wall clock for the whole sweep, release build:</p>
 <td>601 points</td>
 <td>0.2 s</td>
 </tr>
+<tr>
+<td><code>PolarTx</code></td>
+<td>16 envelope points</td>
+<td>16 min 5 s (CLI, on a shared and loaded machine)</td>
+</tr>
 </tbody>
 </table>
 <p>They render headlessly too, which is how the pictures in this file were checked:</p>
 <pre><code>circuitrf hb    &quot;TxDirectConversion/schematic/TxDirectConversion.csch&quot; -o results/TxDirectConversion.npy
 circuitrf render TxDirectConversion.cdd --data results/TxDirectConversion.npy -o tx.png
 </code></pre>
-<p><code>CascadeBudget</code> is an S-parameter bench, so it is <code>circuitrf sparam</code>, not <code>hb</code>.</p>
+<p><code>CascadeBudget</code> is an S-parameter bench, so it is <code>circuitrf sparam</code>, not <code>hb</code>, and <code>PolarTx</code> is an envelope
+bench, so it is <code>circuitrf env</code>. The CLI writes an envelope run's cubes without the <code>ENV1.</code> group the display
+reads, which Simulate writes; open <code>PolarTx.cdd</code> after a Simulate.</p>
 <h2 id="transmitters">Transmitters</h2>
 <p>Both transmitters end in the same output section — bandpass filter, 20 dB directional coupler,
 circulator, and an antenna deliberately mismatched to <strong>100 Ω (VSWR 2)</strong> so the circulator has
@@ -731,6 +742,109 @@ receives, not what a reflective node swings to.</p>
 <p><strong>Three separately plausible numbers on one passive block can still sum above unity</strong>, because the
 family builds its S-matrix from real, IN-PHASE amplitudes converted straight from dB. The section
 on passive blocks above has the arithmetic and the three shapes it takes here.</p>
+<h2 id="polar-transmitter-envelope">Polar transmitter (envelope)</h2>
+<p><code>PolarTx</code> is not a 2.4 GHz radio: it is the polar-transmitter blocks put to work at <strong>3.5 GHz</strong> on an <strong>NR
+20 MHz, 30 kHz, 64-QAM</strong> signal from the Signal Designer, in the circuit envelope. The signal is split into its
+two halves by a pair of <code>MOD_Source</code>s with the same carrier, <code>SA</code> (<code>Polar=amp</code>, the envelope) and <code>SP</code>
+(<code>Polar=phase</code>), and recombined:</p>
+<ul>
+<li><strong>AM path:</strong> <code>SA</code> → <code>DAM</code>, a Delay of <code>dT</code> → <code>FAM</code>, a third-order Butterworth lowpass of bandwidth <code>Fam</code> → the
+supply <code>VS</code> of <code>PA</code>, a Supply-Modulated Amplifier with <code>Ks = 10</code> (20 dB above the source's 0 dBm).</li>
+<li><strong>Phase path:</strong> a CW carrier <code>LO</code> → <code>LIM</code>, a Limiter → <code>PM</code>, a Phase Modulator turned by <code>SP</code> → <code>DPM</code>, a Delay of
+<code>Tg</code> → the amplifier's RF input. <code>Tg = 2/(2π·Fam)</code> is the Butterworth's own DC group delay, so the two paths
+are aligned at <code>dT = 0</code> whatever the bandwidth: <code>dT</code> is the mismatch, and <code>Fam</code> is the bandwidth alone.</li>
+</ul>
+<p>The envelope is <code>Accuracy=standard</code> (2 ns steps): the delays are fractions of a step and are interpolated, and the
+filter is stepped too. At <code>draft</code>'s 8 ns the ideal case reads 0.211 % and −56 dBc instead of 0.169 % and −74.7 dBc.</p>
+<p><strong>The ideal case reads the source's own EVM.</strong> At <code>dT = 0</code> and <code>Fam = 1 GHz</code> the output's EVM is <strong>0.169 %</strong>,
+which is the signal's own (the same record through a matched pad reads 0.169 %). The recombination is exact: with
+the filter and <code>DPM</code> taken out, ACPR1 is the source's own −86.5 dBc. With them in, the 0.32 ns alignment is a
+fraction of the 2 ns step and is interpolated between steps, and ACPR1 reads −74.7 dBc: that is the step's floor,
+not the transmitter's (<code>fine</code> reads −82.5 dBc).</p>
+<p><strong>EVM and ACPR1 against the delay mismatch</strong> (rows: the AM bandwidth <code>Fam</code>; columns: <code>dT</code>):</p>
+<table>
+<thead>
+<tr>
+<th><code>Fam</code></th>
+<th>EVM 0 ns</th>
+<th>1 ns</th>
+<th>2 ns</th>
+<th>4 ns</th>
+<th>ACPR1 0 ns</th>
+<th>1 ns</th>
+<th>2 ns</th>
+<th>4 ns</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>40 MHz</td>
+<td>0.391 %</td>
+<td>1.344 %</td>
+<td>2.381 %</td>
+<td>4.462 %</td>
+<td>−47.0 dBc</td>
+<td>−40.4</td>
+<td>−35.7</td>
+<td>−30.1</td>
+</tr>
+<tr>
+<td>80 MHz</td>
+<td>0.200 %</td>
+<td>1.179 %</td>
+<td>2.244 %</td>
+<td>4.360 %</td>
+<td>−57.6 dBc</td>
+<td>−42.5</td>
+<td>−36.6</td>
+<td>−30.6</td>
+</tr>
+<tr>
+<td>160 MHz</td>
+<td>0.174 %</td>
+<td>1.141 %</td>
+<td>2.213 %</td>
+<td>4.339 %</td>
+<td>−65.3 dBc</td>
+<td>−42.8</td>
+<td>−36.8</td>
+<td>−30.7</td>
+</tr>
+<tr>
+<td>1 GHz</td>
+<td>0.169 %</td>
+<td>1.122 %</td>
+<td>2.198 %</td>
+<td>4.327 %</td>
+<td>−74.7 dBc</td>
+<td>−42.9</td>
+<td>−36.9</td>
+<td>−30.7</td>
+</tr>
+</tbody>
+</table>
+<p>(ACPR1 is the lower channel; the upper one agrees to 0.2 dB.) What the table says:</p>
+<ul>
+<li><strong>EVM rises in proportion to the mismatch</strong>, about 1.08 % per nanosecond here, and ACPR1 by 6 dB for each
+doubling. The recombined output is <code>a(t − dT)·e^(jφ(t))</code>, whose error against the signal is
+<code>[a(t − dT) − a(t)]·e^(jφ(t)) ≈ −dT·ȧ(t)·e^(jφ(t))</code>: in proportion to the delay and to how fast the envelope moves.
+That error formed from the run's own envelope, inside the occupied band and after the demodulator's own delay
+and gain fits, predicts 1.108 %, 2.188 % and 4.312 % at 1, 2 and 4 ns (with the source's 0.169 % added), within
+1.3 % of what the run reads. Over the whole band the same first-order error is 1.66 % per nanosecond: a third of
+its power lies outside the channel, which is where ACPR1 reads it.</li>
+<li><strong>The demodulator splits the mismatch.</strong> Its delay fit lands halfway, at <code>dT/2</code>, because an NR envelope moves as
+fast in amplitude as in phase; that is why the EVM is that of half the mismatch in each path.</li>
+<li><strong>The AM bandwidth matters for ACPR before it matters for EVM.</strong> Aligned, a 40 MHz AM path (twice the channel)
+costs 0.39 % of EVM but brings ACPR1 to −47 dBc; 80 MHz is −58 dBc and 160 MHz −65 dBc. The envelope's spectrum
+is wider than the signal's, and what the filter takes off it lands next to the channel.</li>
+<li><strong>Once the paths are misaligned, the mismatch dominates.</strong> From 1 ns on, every bandwidth from 80 MHz up reads
+the same ACPR1 to 0.4 dB.</li>
+</ul>
+<p>Things to try: <code>AMPM</code> on <code>PA</code> (degrees per volt of supply) adds AM-PM, which the recombination cannot take out;
+<code>Vsat</code> adds AM-AM compression; a phase-noise mask on <code>SP</code> is the phase path's own phase noise. A Delay or a filter
+can sit on the phase path too: <code>SP</code> plays the phase unwrapped, continuous over the record, so 1 ns there (half a step)
+reads as 1 ns on the amplitude path does (1.097 % against 1.122 %, ACPR1 −42.9 dBc both), not as a cut across 2π wraps. <code>MaxHarm=1</code> is
+enough here because none of these blocks makes harmonics.</p>
 
 </main>
 

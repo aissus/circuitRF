@@ -500,12 +500,9 @@ on passive blocks above has the arithmetic and the three shapes it takes here.
 two halves by a pair of `MOD_Source`s with the same carrier, `SA` (`Polar=amp`, the envelope) and `SP`
 (`Polar=phase`), and recombined:
 
-- **AM path:** `SA` → `DAM`, a [Delay](../../docs/user/reference/system-components.html#delay) of `dT` → `FAM`, a
-  third-order Butterworth lowpass of bandwidth `Fam` → the supply `VS` of `PA`, a
-  [Supply-Modulated Amplifier](../../docs/user/reference/components.html#supplyamp) with `Ks = 10` (20 dB above the
-  source's 0 dBm).
-- **Phase path:** a CW carrier `LO` → `LIM`, a [Limiter](../../docs/user/reference/components.html#limiter) →
-  `PM`, a [Phase Modulator](../../docs/user/reference/components.html#phasemod) turned by `SP` → `DPM`, a Delay of
+- **AM path:** `SA` → `DAM`, a Delay of `dT` → `FAM`, a third-order Butterworth lowpass of bandwidth `Fam` → the
+  supply `VS` of `PA`, a Supply-Modulated Amplifier with `Ks = 10` (20 dB above the source's 0 dBm).
+- **Phase path:** a CW carrier `LO` → `LIM`, a Limiter → `PM`, a Phase Modulator turned by `SP` → `DPM`, a Delay of
   `Tg` → the amplifier's RF input. `Tg = 2/(2π·Fam)` is the Butterworth's own DC group delay, so the two paths
   are aligned at `dT = 0` whatever the bandwidth: `dT` is the mismatch, and `Fam` is the bandwidth alone.
 
