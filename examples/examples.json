@@ -154,7 +154,7 @@
     {
       "Folder": "System Design",
       "Title": "System Design (TX and RX)",
-      "Summary": "A 2.4 GHz transmitter and receiver drawn twice \u2014 direct conversion and superheterodyne \u2014 from the System block library, plus a transmitter whose final stage is a nonlinear FET, a cascade gain/IP3/noise budget, and a 3.5 GHz polar transmitter whose NR EVM and ACPR are studied in the circuit envelope against the AM/PM delay mismatch and the AM path's bandwidth."
+      "Summary": "A 2.4 GHz transmitter and receiver drawn twice \u2014 direct conversion and superheterodyne \u2014 from the System block library, plus a transmitter whose final stage is a nonlinear FET, a cascade gain/IP3/noise budget, a 3.5 GHz polar transmitter whose NR EVM and ACPR are studied in the circuit envelope against the AM/PM delay mismatch and the AM path's bandwidth, and a 3.5 GHz digital transmitter whose two DACs are studied in the envelope against their resolution and sample rate."
     },
     {
       "Folder": "Power Rail",

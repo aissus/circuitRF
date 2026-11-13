@@ -32,6 +32,7 @@ The band is 2400-2483.5 MHz, and it is the one worth building an example on:
 | `TxFetFinal` | System driver stages into a **nonlinear FET** final |
 | `CascadeBudget` | the gain / IP3 / noise-figure arithmetic, beside a real S-parameter run |
 | `PolarTx` | a **polar transmitter** at 3.5 GHz, an NR signal recombined in the circuit envelope (its own section below) |
+| `DigitalTx` | a **digital transmitter** at 3.5 GHz: an NR signal through two DACs, reconstruction filters and an I/Q modulator, in the circuit envelope (its own section below) |
 
 A **T/R switch** is the one part all five radio benches share. It is the same SPDT in every one of
 them, wired the same way - `T1` is the transmit arm, `T2` the receive arm - and the only thing the
@@ -63,6 +64,7 @@ same name. Measured wall clock for the whole sweep, release build:
 | `TxFetFinal` | 29 points | 3.0 s |
 | `CascadeBudget` | 601 points | 0.2 s |
 | `PolarTx` | 16 envelope points | 16 min 5 s (CLI, on a shared and loaded machine) |
+| `DigitalTx` | 20 envelope points | 3 min 17 s (CLI, on a shared and loaded machine) |
 
 They render headlessly too, which is how the pictures in this file were checked:
 
@@ -71,9 +73,9 @@ circuitrf hb    "TxDirectConversion/schematic/TxDirectConversion.csch" -o result
 circuitrf render TxDirectConversion.cdd --data results/TxDirectConversion.npy -o tx.png
 ```
 
-`CascadeBudget` is an S-parameter bench, so it is `circuitrf sparam`, not `hb`, and `PolarTx` is an envelope
-bench, so it is `circuitrf env`. The CLI writes an envelope run's cubes without the `ENV1.` group the display
-reads, which Simulate writes; open `PolarTx.cdd` after a Simulate.
+`CascadeBudget` is an S-parameter bench, so it is `circuitrf sparam`, not `hb`, and `PolarTx` and `DigitalTx` are
+envelope benches, so they are `circuitrf env`. The CLI writes an envelope run's cubes without the `ENV1.` group the
+display reads, which Simulate writes; open `PolarTx.cdd` or `DigitalTx.cdd` after a Simulate.
 
 ## Transmitters
 
@@ -546,3 +548,91 @@ Things to try: `AMPM` on `PA` (degrees per volt of supply) adds AM-PM, which the
 can sit on the phase path too: `SP` plays the phase unwrapped, continuous over the record, so 1 ns there (half a step)
 reads as 1 ns on the amplitude path does (1.097 % against 1.122 %, ACPR1 −42.9 dBc both), not as a cut across 2π wraps. `MaxHarm=1` is
 enough here because none of these blocks makes harmonics.
+
+## Digital transmitter (envelope)
+
+`DigitalTx` is a **direct-conversion transmitter fed by two DACs**, at **3.5 GHz** on the same **NR 20 MHz, 30 kHz,
+64-QAM** record as `PolarTx`, in the circuit envelope. The Signal Designer's signal is the digital stream: a pair of
+`MOD_Source`s with the same carrier play its two rails at baseband, `SI` (`Baseband=i`) and `SQ` (`Baseband=q`). Each
+rail goes through
+
+- a [DAC](../../docs/user/reference/components.html#dac), `DI` / `DQ`: `Bits` bits across `±FS`, sampled at `Fs`,
+  NRZ (a zero-order hold);
+- a reconstruction filter, `FI` / `FQ`: a Butterworth lowpass of order `Order` with its corner at `Fbw = 0.4·Fs`, just
+  below the DAC's Nyquist frequency;
+- a mixer of an I/Q modulator built as `TxDirectConversion`'s is: a CW LO split by a 90° hybrid, its two outputs summed.
+  The Q row is drawn on top because its mixer takes the hybrid's through port and the I mixer the coupled one, which
+  is the order that puts `I + jQ`, not its conjugate, on the carrier.
+
+then a System Amplifier `PA` (20 dB, tanh law, output intercept `OIP3` = +55 dBm, about 40 dB above its +15 dBm
+output) into 50 Ω. `FS` puts the record's peak at full scale: `Rail = 3.15` is the largest either rail reaches, over
+the signal's RMS envelope, so no sample clips at any `Fs`, and the signal sits **BO = 20·log10(3.15) = 9.97 dB** below
+full scale (its PAPR is 10.2 dB; its rails peak a little below its envelope). One nested sweep, `Fs` = 30.72, 61.44,
+122.88 and 491.52 MHz (1×, 2×, 4× and 16× the NR rate) by `Bits` = 6, 8, 10, 12 and 16, at `Accuracy=standard`.
+
+**What the run carries of a DAC.** The envelope does not step the hold: the record is periodic, so each DAC converts
+its rail before the first step, the stream's spectrum times the hold's `sinc` laid onto the run's own record, its
+images included, exact. The band is the run's signal band, ±61.44 MHz here; what a DAC makes beyond it is left out,
+and the Messages pane says where it starts (at 122.88 MHz, the first image from 113.7 MHz, at least 9 dB below the
+signal before the filter). At 30.72 MHz the first image (21.5–39.9 MHz) is inside the band and runs through the filter
+into the adjacent channel; at 61.44 MHz it starts at 52.3 MHz, past the second adjacent channel.
+
+**The ideal case reads the source's own EVM.** At 16 bits, 491.52 MHz and a 197 MHz filter the output's EVM is
+**0.168 %**, the record's own 0.169 % (the 0.001 pp it reads below is the filter's: the chain with the DACs replaced by
+wires reads 0.166 % behind a 100 MHz filter, and 0.169 % with no filter).
+
+**EVM and ACPR1 against resolution** (rows: the sample rate; ACPR1 is the lower channel, the upper agrees to 0.2 dB):
+
+| `Fs` | EVM 6 bits | 8 | 10 | 12 | 16 | ACPR1 6 bits | 8 | 10 | 12 | 16 |
+|---|---|---|---|---|---|---|---|---|---|---|
+| 30.72 MHz | 7.138 % | 6.458 % | 6.406 % | 6.406 % | 6.406 % | −40.8 dBc | −44.9 | −45.3 | −45.3 | −45.4 |
+| 61.44 MHz | 2.522 % | 1.320 % | 1.206 % | 1.199 % | 1.199 % | −35.9 dBc | −48.0 | −59.9 | −71.6 | −81.8 |
+| 122.88 MHz | 1.585 % | 0.509 % | 0.341 % | 0.329 % | 0.328 % | −36.5 dBc | −48.6 | −60.6 | −72.2 | −81.7 |
+| 491.52 MHz | 0.792 % | 0.255 % | 0.174 % | 0.168 % | 0.168 % | −42.0 dBc | −54.2 | −66.1 | −76.8 | −81.6 |
+
+**The quantisation floor, in closed form.** Each DAC's error is `Δ²/12` (`Δ = 2·FS/2^N`) spread from `−Fs/2` to `Fs/2`,
+so the signal over the two rails' error is `SQNR = 6.02·N + 1.76 − BO` dB over the Nyquist band, and the share of it in
+the occupied band `B` = 18.36 MHz, which is what the demodulator reads, is `B/Fs`:
+
+```
+EVM_q = 10^(−(6.02·N + 1.76 − BO + 10·log10(Fs/B)) / 20)
+```
+
+That is 1.554 %, 0.389 %, 0.097 % and 0.024 % at 6, 8, 10 and 12 bits and 122.88 MHz, and half as much per 6 dB of
+oversampling (0.777 % at 6 bits and 491.52 MHz). Added in quadrature to the bench's own floor (its 16-bit column),
+**it predicts every point of the EVM table to within 0.7 %**: 1.588 against 1.585 %, 0.509 against 0.509 % at
+122.88 MHz; 2.504 against 2.522 % at 61.44 MHz and 6 bits, the worst. In an adjacent channel the same noise reads
+`20·log10(EVM_q)` dBc, less the hold's droop there: −36.55, −48.59 and −60.63 dBc at 6, 8 and 10 bits and
+122.88 MHz against the run's −36.51, −48.56 and −60.63; at 12 bits the PA's own −81.7 dBc adds to it (−72.16 dBc
+against −72.24). Each bit is 6 dB, each doubling of `Fs` 3 dB.
+
+**The floor is the hold's droop and the filter, with no equaliser.** The EVM measurement fits one delay and one gain,
+so a gain slope across the channel is EVM. Formed from `H(f) = sinc(f/Fs)·e^(−jπf/Fs)` times the Butterworth on the
+occupied subcarriers, with the same two fits, that error is 6.22, 1.16, 0.278 and 0.017 % at the four rates; with the
+source's own 0.169 % added, 6.22, 1.17, 0.325 and 0.170 % against the run's 6.41, 1.20, 0.328 and 0.168 %. The sinc
+alone is 4.44 % at 30.72 MHz (the channel's edge 1.34 dB down) and 0.27 % at 122.88 MHz (0.08 dB): what an inverse-sinc
+filter ahead of the DAC would take out.
+
+**At 30.72 MHz the image sets ACPR1, and the filter's order is what moves it.** From 10 bits on ACPR1 is −45.3 dBc
+whatever the resolution: the first image, through the fifth-order filter at 12.3 MHz. The same bench at 12 bits with
+the order changed (`Order` 3, 5, 7):
+
+| `Order` | ACPR1 | closed form | EVM | closed form (droop, filter and the source's own) |
+|---|---|---|---|---|
+| 3 | −34.0 dBc | −33.2 dBc | 6.880 % | 6.777 % |
+| 5 | −45.4 dBc | −44.0 dBc | 6.406 % | 6.219 % |
+| 7 | −56.5 dBc | −54.6 dBc | 6.856 % | 6.582 % |
+
+The closed form is the image's power in the adjacent channel, `|sinc(f/Fs)|²·|H_filter(f)|²` at `f = Fs − f'` over the
+channel's `f'`, against the channel's own. The run reads it 0.8, 1.3 and 1.8 dB lower: that is the envelope step's own
+frequency warp on a filter's skirt (3.4 % at 25 MHz on a 2 ns step, about 1.4 dB on a fifth-order skirt), and
+`Accuracy=fine` brings the fifth order to −44.4 dBc. A steeper filter cuts the image but costs EVM: its in-band group
+delay is not equalised either.
+
+**Past about ten bits the PA, not the DAC, sets ACPR1.** With `OIP3` = +40 dBm (the PA 25 dB below its intercept),
+122.88 MHz reads −47.5, −53.1, −53.9 and −53.9 dBc at 8, 10, 12 and 16 bits, and 0.59 % of EVM from 10 bits on.
+
+Things to try: `Mode=rz` with a `Duty` on both DACs (half the signal and stronger images), an `FS` below the rails'
+peak (`Rail` < 3.15: the DAC clips), `OIP3` to bring in the PA, `Order` and `Fbw` against an image. The net between the
+mixers and the PA is left unlabelled: labelled, it reads a few steps apart across a parallel segment's seam while the
+PA's output agrees (`src/Engine/RESOLVED.md`).

@@ -1095,3 +1095,19 @@ Three things that took deciding:
   out the recombination reads the source's own −86.5 dBc.
 - **`SaveWaveforms=no`**: sixteen points of 0.25 ms at the standard step with every labeled net recorded is ~0.6 GB
   of waveforms; the display reads only EVM, ACLR and the spectra.
+
+## System Design ▸ DigitalTx: two DACs and an I/Q modulator in the envelope (2026-11-13)
+
+- **The Q row is on top.** A 90° hybrid's through port is the top right pin and its coupled port the bottom right, and
+  the I/Q modulator puts `I + jQ` on the carrier only with the I mixer on the coupled port: wired the other way round
+  the output is the conjugate, a mirrored spectrum the demodulator reads as ~500 % EVM. So the top row is Q.
+- **`FS` from the record's rail peak.** `Rail = 3.15` is the largest |Re x| or |Im x| of the NR record (Seed 1) over its
+  RMS envelope, at any of the four rates; at 3.15 no sample clips and the closed form's back-off is exactly
+  20·log10(3.15). A different seed or record wants its own (the Signal Designer's PAPR is the envelope's, 10.2 dB, not
+  the rails').
+- **The net between the mixers and the PA is unlabelled.** Labelled, the seam check read it up to ~36 % of its RMS apart
+  across a parallel segment's seam at a few steps, warning on 11 of the 20 points, while the PA's output agreed to
+  2e-4 and EVM and ACLR to 0.1 % against one segment; the same with the DACs replaced by wires
+  (`src/Engine/RESOLVED.md`). Unlabelled it is not recorded, and the run is clean.
+- **The pictures for the pull request** were `circuitrf render` output: the schematic, and the display against the CLI's
+  results with their cubes moved into an `ENV1` group (the CLI writes them ungrouped).
