@@ -458,6 +458,6 @@ The wideband receiver's: 1-Tone 2 s, 2-Tone 25 s, Levels 30 s, Envelope 38 s. \*
 measured in a debug build.
 
 The link's harmonic-balance and envelope benches are slow for their eight elements, each a source of its own, and the
-envelope one for its 50 MHz NR carrier, ten times the others' (measured on a loaded machine).
+envelope one for its 50 MHz NR carrier, ten times the others'.
 
 The Front End's Canceller bench runs its envelope sweeps in about 40 s.
