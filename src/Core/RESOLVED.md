@@ -4665,3 +4665,29 @@ Newton step survives; a charge term `q = (sin θ/ω0)·v` turns the phase only a
 
 Gates: `tests/Core.Tests/Devices/CarrierBlockModelTests.cs` (laws, every Jacobian entry by central difference, grid =
 scalar), `tests/Engine.Tests/HarmonicBalance/CarrierBlockHbTests.cs`, `tests/Engine.Tests/Envelope/PolarEnvelopeTests.cs`.
+
+## The DAC, and a MOD_Source's baseband rails (2026-11-13)
+
+`DAC` (`src/Core/Devices/System/DacModel.cs`) is a digital stream's reconstruction at baseband: the symmetric mid-rise
+quantiser across ±FS (2^N levels, `Δ = 2·FS/2^N`, end codes `±(FS − Δ/2)` holding anything beyond), a hold of `d` of
+the sample period (`nrz`: d = 1; `rz`: `Duty`) whose response is `H(f) = d·sinc(d·f/Fs)·e^(−jπ·d·f/Fs)`, and a gain.
+
+- **Its law is not a function of its input voltage at one instant, so it is not an `Evaluate`.** A sample-and-hold
+  needs the input at `n/Fs`, which no circuit-envelope step or harmonic-balance sample is tied to, and a quantiser
+  evaluated at the envelope's own rate would spread its error over the wrong band (the floor's in-band share is B/Fs
+  only when the samples ARE at Fs). The model is therefore an `IdealSBlockModel` — matched, unilateral, `S21 = G` —
+  for every analysis that can only see a linear two-port, and `Convert` holds the law for the one that can run it
+  (the envelope, `src/Engine/RESOLVED.md`). Harmonic balance refuses it by name (`HbEngine.Run`).
+- **`Convert` is exact on a periodic record.** The stream's DFT at Fs, repeated every Fs, times `H(f)` is the analog
+  output's spectrum at every bin of any other record length over the same period; a band edge cuts it. That is the
+  hold, its droop and its images with no time-domain staircase and no interpolation — and no aliasing of the images
+  the band leaves out, which a staircase sampled at an incommensurate step would fold back onto the signal.
+- **Activity is `ActiveExact`, passivated as the amplifier is** (forward gain → 0), so the NDF gate's table lists it.
+- **`MOD_Source Baseband=i|q`** (`ModSourceModel.Baseband`) plays `|Vs|·Re x` or `|Vs|·Im x` open circuit; harmonic
+  balance sees `|Vs|` and 0 at DC, the unmodulated operating point, as a polar half does. Not with `Polar` (refused by
+  name). `Baseband` is a word, stored raw by `ResolveModSourceParameters` beside `Polar`; the DAC's `Mode` goes
+  through `ResolveEnumNamedParameters`, as the OscProbe's does.
+
+Gates: `tests/Core.Tests/Devices/DacModelTests.cs` (6.02·N + 1.76 dB at 6–14 bits, the back-off, the droop and its
+phase, the first two images NRZ and RZ to 1e-9, clipping against the clipped sine's fundamental, the factory's
+refusals, the Baseband word), `tests/Engine.Tests/Envelope/DacEnvelopeTests.cs`.

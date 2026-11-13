@@ -41,6 +41,12 @@ namespace CircuitRF.Core.Devices;
 /// envelope). Harmonic balance sees the unmodulated operating point at DC: <c>|Vs|</c> (|x| at its RMS of 1)
 /// and 0. The two halves of a pair state the same carriers; the run measures the signal once, through the amplitude
 /// half, whose recorded drive is the complex signal the pair stands for.</para>
+///
+/// <para><b>A baseband rail</b> (<c>Baseband=i</c> or <c>Baseband=q</c>) plays the signal's in-phase or quadrature rail at
+/// baseband: open circuit <c>|Vs|·Re x(t)</c> or <c>|Vs|·Im x(t)</c>, so a matched load reads that rail of the RF envelope the
+/// source would deliver. It is the digital stream a <see cref="DacModel"/> converts. Harmonic balance sees the
+/// unmodulated operating point at DC, <c>|Vs|</c> and 0. The two rails of one signal state the same carriers, and the run
+/// measures the signal once, through the I rail.</para>
 /// </summary>
 public sealed class ModSourceModel : ComponentModel, IDriveScalable
 {
@@ -61,8 +67,12 @@ public sealed class ModSourceModel : ComponentModel, IDriveScalable
     /// <summary>Which half of a polar pair this source plays, or null: an ordinary RF source.</summary>
     public PolarHalf? Polar { get; init; }
 
-    /// <summary>The product an envelope run drives this source at: the baseband for a polar half, the carrier otherwise.</summary>
-    public int EnvelopeProduct => Polar is null ? 1 : 0;
+    /// <summary>Which rail of its signal this source plays at baseband (<c>Baseband=</c>), or null.</summary>
+    public IqRail? Baseband { get; init; }
+
+    /// <summary>The product an envelope run drives this source at: the baseband for a polar half or a rail, the carrier
+    /// otherwise.</summary>
+    public int EnvelopeProduct => Polar is null && Baseband is null ? 1 : 0;
 
     /// <summary>
     /// Envelope assembly hook: when non-null the drive branch is stamped at EVERY frequency with this
@@ -119,8 +129,9 @@ public sealed class ModSourceModel : ComponentModel, IDriveScalable
 
         Complex v;
         if (EnvelopeDrive is { } ed) v = ed;
-        else if (Polar is { } half)        // the unmodulated operating point: |x| at its RMS, the phase at 0
-            v = half == PolarHalf.Amp && Math.Abs(omega) < OmegaTolRad ? new Complex(DriveScale * VsPeak, 0) : Complex.Zero;
+        else if (Polar is not null || Baseband is not null)  // the unmodulated operating point: x = 1, so |x| and I at 1, φ and Q at 0
+            v = (Polar == PolarHalf.Amp || Baseband == IqRail.I) && Math.Abs(omega) < OmegaTolRad
+                ? new Complex(DriveScale * VsPeak, 0) : Complex.Zero;
         else v = Math.Abs(omega - 2 * Math.PI * FcHz) < OmegaTolRad ? new Complex(DriveScale * VsPeak, 0) : Complex.Zero;
 
         int br = mna.AddBranch();
@@ -206,9 +217,24 @@ public sealed class ModSourceModel : ComponentModel, IDriveScalable
                 _ => throw new ParameterRefusalException(CarrierBlockDiagnostics.PolarWord(name, w).Render()),
             };
         }
+        IqRail? rail = null;
+        if (p.TryGetValue("Baseband", out var bv))
+        {
+            string w = bv.Kind == ValueKind.String ? bv.AsString().Trim() : bv.ToString();
+            rail = w.ToLowerInvariant() switch
+            {
+                "i" => IqRail.I,
+                "q" => IqRail.Q,
+                "" or "rf" => null,
+                _ => throw new ParameterRefusalException(DacDiagnostics.BasebandWord(name, w).Render()),
+            };
+        }
+        if (polar is not null && rail is not null)
+            throw new ParameterRefusalException(DacDiagnostics.BasebandAndPolar(name).Render());
         return new ModSourceModel(name, z, Required("Pavg", "average power in dBm"), Required("Fc", "centre frequency"), spec)
         {
             Polar = polar,
+            Baseband = rail,
         };
     }
 }
@@ -218,4 +244,11 @@ public enum PolarHalf
 {
     Amp,
     Phase,
+}
+
+/// <summary>The two rails of a signal a MOD_Source can play at baseband (<c>Baseband=</c>): in-phase and quadrature.</summary>
+public enum IqRail
+{
+    I,
+    Q,
 }

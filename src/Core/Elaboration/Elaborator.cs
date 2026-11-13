@@ -1574,8 +1574,9 @@ public sealed class Elaborator
             return ResolveEnumNamedParameters(inst, parentScope, "Direction");
         if (inst.Reference.Equals("Amp", StringComparison.OrdinalIgnoreCase))
             return ResolveEnumNamedParameters(inst, parentScope, "IP3Ref");
-        // The OscProbe's Mode is series or shunt (brief NZ-9) — a word, as IP3Ref is.
-        if (inst.Reference.Equals("OscProbe", StringComparison.OrdinalIgnoreCase))
+        // The OscProbe's Mode is series or shunt (brief NZ-9) — a word, as IP3Ref is. The DAC's is nrz or rz.
+        if (inst.Reference.Equals("OscProbe", StringComparison.OrdinalIgnoreCase)
+            || inst.Reference.Equals("DAC", StringComparison.OrdinalIgnoreCase))
             return ResolveEnumNamedParameters(inst, parentScope, "Mode");
         // The mixer's NFType (brief NZ-3) is ssb or dsb — a word, the same kind of value as IP3Ref.
         if (inst.Reference.Equals("Mixer", StringComparison.OrdinalIgnoreCase)
@@ -1664,6 +1665,9 @@ public sealed class Elaborator
         if (inst.Reference.Equals("Atten", StringComparison.OrdinalIgnoreCase)
             || inst.Reference.Equals("Delay", StringComparison.OrdinalIgnoreCase))
             return (4, "1+, 1−, 2+, 2−");
+
+        if (inst.Reference.Equals("DAC", StringComparison.OrdinalIgnoreCase))
+            return (4, "in+, in−, out+, out−");
 
         if (inst.Reference.Equals("Circulator", StringComparison.OrdinalIgnoreCase))
             return (6, "1+, 1−, 2+, 2−, 3+, 3−");
@@ -2828,7 +2832,7 @@ public sealed class Elaborator
     // Carrier[i] is a carrier DESCRIPTION ("NR;BW=20MHz;SCS=30kHz;..."), never an expression: stored
     // verbatim with its quotes removed, except that a FILE carrier's File= path resolves against the
     // workspace root exactly as an SnP's File does (the Signal Designer stores it with SnpPathPolicy).
-    // Shaping may be the word `off`, and Polar is the word `amp` or `phase`. Everything else (Fc, Pavg, Z, Record, Clip,
+    // Shaping may be the word `off`, Polar the word `amp` or `phase`, and Baseband `i` or `q`. Everything else (Fc, Pavg, Z, Record, Clip,
     // Shaping in dBc) is an ordinary numeric expression with its unit.
 
     private static readonly Regex RxModCarrier = new(@"^Carrier\[\d+\]$", RegexOptions.Compiled | RegexOptions.IgnoreCase);
@@ -2852,8 +2856,9 @@ public sealed class Elaborator
                 result[ov.Name] = new Value("off");
                 continue;
             }
-            // Polar is a word (amp or phase), never an expression: a global named `amp` must not answer for it.
-            if (ov.Name.Equals("Polar", StringComparison.OrdinalIgnoreCase))
+            // Polar and Baseband are words (amp or phase, i or q), never expressions: a global named `amp` or `i` must not
+            // answer for them.
+            if (ov.Name.Equals("Polar", StringComparison.OrdinalIgnoreCase) || ov.Name.Equals("Baseband", StringComparison.OrdinalIgnoreCase))
             {
                 result[ov.Name] = new Value(raw.Trim('"'));
                 continue;

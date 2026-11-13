@@ -119,6 +119,8 @@ public static class ComponentModelFactory
             // The polar-transmitter blocks: laws of a carrier's amplitude and phase, each with an internal quadrature node
             // (CarrierBlockModel).
             "EnvDetector", "Limiter", "PhaseMod", "SupplyAmp",
+            // The DAC: a digital stream's reconstruction at baseband (DacModel).
+            "DAC",
             // The op-amp: Pins (3 or 5) sets how many nets the line binds, so it is known at
             // construction rather than read at stamp time.
             "OpAmp",
@@ -284,6 +286,8 @@ public static class ComponentModelFactory
             return CreateDelayModel(parameters);
         if (CreateCarrierBlock(typeName, parameters) is { } carrier)
             return carrier;
+        if (typeName.Equals("DAC", StringComparison.OrdinalIgnoreCase))
+            return CreateDacModel(parameters);
         if (typeName.Equals("Switch", StringComparison.OrdinalIgnoreCase))
             return CreateSwitchModel(parameters);
         if (typeName.Equals("Circulator", StringComparison.OrdinalIgnoreCase))
@@ -1929,6 +1933,7 @@ public static class ComponentModelFactory
         ("Limiter",    _ => false,                             ""),
         ("PhaseMod",   _ => false,                             ""),
         ("SupplyAmp",  _ => false,                             ""),
+        ("DAC",        _ => false,                             ""),
         // The controlled sources' phase comes from their delay T alone (issue 55); a complex gain
         // used to be read as zero by the VCCS and as its real part by the VCVS, both silently.
         ("VCCS",       _ => false,                             ""),
@@ -2023,6 +2028,40 @@ public static class ComponentModelFactory
     {
         double t = parameters.TryGetValue("T", out var v) && v.Kind == ValueKind.Real ? v.AsReal() : 0.0;
         return new DelayModel(t, ImpedanceParam(parameters, "Z0", 50.0));
+    }
+
+    /// <summary>
+    /// The DAC (<see cref="DacModel"/>). Fs has no default: a converter that sampled at a rate nobody wrote is a run nobody
+    /// asked for. Every other fallback is the tile's own, and a value the block cannot be is refused by name.
+    /// </summary>
+    private static DacModel CreateDacModel(IReadOnlyDictionary<string, Value> parameters)
+    {
+        double P(string name, double fallback) =>
+            parameters.TryGetValue(name, out var v) && v.Kind == ValueKind.Real ? v.AsReal() : fallback;
+        double Positive(string name, double fallback, string rule) =>
+            P(name, fallback) is var x && x > 0 ? x : throw new ParameterRefusalException(DacDiagnostics.Parameter(name, rule, x).Render());
+        double bits = P("Bits", 12);
+        if (bits != Math.Floor(bits) || bits < 1 || bits > 32)
+            throw new ParameterRefusalException(DacDiagnostics.Parameter("Bits", "a whole number from 1 to 32", bits).Render());
+        if (!parameters.TryGetValue("Fs", out var fv) || fv.Kind != ValueKind.Real)
+            throw new ParameterRefusalException(DacDiagnostics.SampleRateMissing().Render());
+        double fs = Positive("Fs", 0, "a positive sample rate");
+        var pulse = DacPulse.Nrz;
+        if (parameters.TryGetValue("Mode", out var mv))
+        {
+            string w = mv.Kind == ValueKind.String ? mv.AsString().Trim() : mv.ToString();
+            pulse = w.ToLowerInvariant() switch
+            {
+                "nrz" => DacPulse.Nrz,
+                "rz" => DacPulse.Rz,
+                _ => throw new ParameterRefusalException(DacDiagnostics.ModeWord(w).Render()),
+            };
+        }
+        double duty = P("Duty", 0.5);
+        if (!(duty > 0 && duty <= 1))
+            throw new ParameterRefusalException(DacDiagnostics.Parameter("Duty", "above 0 and at most 1", duty).Render());
+        return new DacModel((int)bits, Positive("FS", 1.0, "a positive voltage"), fs, pulse, duty, P("Gain", 0.0),
+                            Positive("Zin", 50.0, "a positive impedance"), Positive("Zout", 50.0, "a positive impedance"));
     }
 
     /// <summary>
