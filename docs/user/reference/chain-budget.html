@@ -50,6 +50,7 @@
 <li><a href="#cascade">What the cascade computes</a></li>
 <li><a href="#image">The image band</a></li>
 <li><a href="#mismatch">With mismatch</a></li>
+<li><a href="#blocking">The LO's phase noise, the blockers and the EVM</a></li>
 <li><a href="#transmit">Transmit chains</a></li>
 <li><a href="#laws">The amplifier's laws</a></li>
 <li><a href="#iqmod">The IQ modulator</a></li>
@@ -1354,7 +1355,9 @@ as a tree combiner whose N is not a power of 2, is not made, and the reason is s
 </tbody>
 </table>
 <p><strong>Transfer to Schematic</strong>'s drop-down has <strong>include a modulated-signal demo</strong>, which adds the <a href="#demo">demo bench</a> to
-what it writes.</p>
+what it writes; <strong>include the dynamic-range checks</strong>, which adds the <a href="#sfdr">SFDR bench</a> and the signal's
+<a href="#blocking">desensitisation</a> on the Blockers bench; and <strong>noise records</strong>, how many records the Envelope and Demo
+benches average (1).</p>
 <h2 id="stages">The stages, and the parts a stage can be</h2>
 <p>A stage has a name (its instance name on the schematic), a part, and that part's parameters. Nine parts are System
 blocks — the splitter and the array combiner are the library's <a href="system-components.html#combiner">Combiner</a>, an
@@ -1377,7 +1380,7 @@ is <strong>data</strong>: an <a href="#snp">S-parameter data</a> stage is a Touc
 </tr>
 <tr>
 <td>Mixer</td>
-<td>The System Mixer, down-converting to |f − <code>Flo</code>|, or with <code>Sideband</code> = Upper up-converting to f + <code>Flo</code>. <code>Flo</code> is the LO the bench drives it with, at <code>Plo</code>.</td>
+<td>The System Mixer, down-converting to |f − <code>Flo</code>|, or with <code>Sideband</code> = Upper up-converting to f + <code>Flo</code>. <code>Flo</code> is the LO the bench drives it with, at <code>Plo</code>; <code>PhaseNoise</code> its LO's phase-noise mask (<a href="#blocking">below</a>).</td>
 <td>G = <code>ConvGain</code>, NF = <code>NF</code> single-sideband (a DSB figure + 3.01 dB), IIP3 = <code>IIP3</code>, IP1dB = IIP3 − 8.96 dB</td>
 </tr>
 <tr>
@@ -1700,6 +1703,62 @@ the source an LNA's noise parameters see, and the two together set the gain. A m
 when no converter comes before it. The intercepts and the compression point keep their sums, each stage's with the gain
 to where its nonlinearity is: the input of every block, which is matched, and for a file the amplifier after it. Off,
 the default, every stage is matched and nothing moves.</p>
+<h2 id="blocking">The LO's phase noise, the blockers and the EVM</h2>
+<p>A Mixer's <strong><code>PhaseNoise</code></strong> is its LO's phase-noise mask, written as a source's mask is: the single-sided L(f) in dBc/Hz at
+offsets from the carrier, <code>offset:level</code> pairs (<code>1kHz:-95, 100kHz:-95, 1MHz:-115, 10MHz:-130</code>), a straight line in dB
+against log f between them, the first segment continued below its first point and the last level beyond its last. The
+Envelope and Demo benches put it on the mixer's LO, where an envelope run plays it as a random phase. Blank, the default:
+a clean LO, and nothing below changes. Each blocker is the <a href="#levels">levels'</a> own, carried to every stage at its own
+frequency.</p>
+<table>
+<thead>
+<tr>
+<th>Quantity</th>
+<th>Formula</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Phase noise in the channel</td>
+<td>σ² = 2·∫ L(f)·(1 − f/B) df from the mask's first offset to B: what e^(jφ) leaves of a signal of width B in its own channel, its flat spectrum spread by the phase's. Below its first offset a demodulator tracks the phase, so write the mask from where yours stops tracking. Each LO's adds, from its mixer on</td>
+</tr>
+<tr>
+<td>Its SNR and EVM floor</td>
+<td>−10·log10 σ², and 100·σ %</td>
+</tr>
+<tr>
+<td>Reciprocal mixing</td>
+<td>a blocker of P_b at a mixer's input, Δf from the signal there, mixes the LO's skirt into the channel: N = P_b·∫ L(|u|) du over u from Δf − B/2 to Δf + B/2, which is P_b + L(Δf) + 10·log10 B where L is flat across the channel; then through the stages after the mixer</td>
+</tr>
+<tr>
+<td>Desensitisation by reciprocal mixing</td>
+<td>10·log10(1 + N/N_floor) at each node, N_floor the noise in the bandwidth there</td>
+</tr>
+<tr>
+<td>Desensitisation by compression</td>
+<td>the signal's small-signal gain beside the blocker, stage by stage, over its own, summed in dB: a tanh limiter's slope averaged over the blocker's cycle, ⟨sech²(u·cos θ)⟩² at u = 2·√(P_b/IIP3) (the cubic's (1 − 2·P_b/IIP3)² when small); a Rapp or Saleh law's |F(s) + s·F′(s)|² at s = P_b, the law linearised about the blocker's envelope</td>
+</tr>
+<tr>
+<td>EVM at a node</td>
+<td>√(N/S + σ² + Σ N_rm/S + (4/3)·(P/IIP3)²): the node's SNR, the phase noise, every blocker's reciprocal mixing, and a cubic's in-channel distortion of a noise-like signal at the input power P, four times its <a href="#transmit">ACLR</a>'s share</td>
+</tr>
+</tbody>
+</table>
+<p>The mask is integrated exactly: between two points 10^(L/10) is a power of f. Every stage that compresses has a law: the
+Amplifier's (tanh unless <code>Law</code> says Rapp or Saleh), a Mixer's and every composed stage's tanh limiter; an active
+combiner's levels and a file's amplifier are taken as one limiter at the stage's intercept. The desensitisation by
+compression is each blocker's on its own; two blockers together take the sum, which is a cubic's, while each takes
+under a few tenths of a dB.</p>
+<p>The Notes give the phase noise in the channel and every blocker that desensitises the chain by 0.01 dB or more;
+<code>circuitrf chain</code> prints them on one line. The DataSet has <code>PN_dBc</code>, <code>EVMpn_pct</code>, <code>SNReff_dB</code> (the SNR with the phase
+noise and every blocker's reciprocal mixing) and <code>EVM_pct</code>, and over a <code>blocker</code> axis <code>DesenseRM_dB</code> and
+<code>DesenseComp_dB</code>. The Levels tab draws the EVM at every node beside the levels, and the <a href="#level-diagram">level
+diagram</a> the phase noise and the reciprocal mixing.</p>
+<p>The example's superhet states a synthesizer's mask, flat at −95 dBc/Hz to 100 kHz and −130 dBc/Hz at 10 MHz, and a third
+blocker 12 MHz below its carrier at −45 dBm. In its 4.5 MHz channel the mask is −39.24 dBc, an EVM floor of 1.09 %; the
+third blocker's reciprocal mixing desensitises it by 1.18 dB, the other two by 0.05 and 0.14 dB; their compression takes
+0.003, 0.001 and 0.003 dB of gain. The SNR at −70 dBm falls from 34.89 dB to 32.53 dB, and the EVM at the output is
+2.36 %.</p>
 <h2 id="transmit">Transmit chains</h2>
 <p><strong>Direction ▸ Transmit</strong> reads the same cascade from its other end. The input is the drive — the complex IF a DAC
 delivers, say — and the chain ends at the antenna. Every stage, every row and every number of the cascade is the same
@@ -4308,7 +4367,8 @@ and the report gives its span. Like a sweep, it is not a bench.</p>
 <p><strong>Transfer to Schematic</strong> saves the chain and writes its test-bench cells beside the <code>.cchain</code>, named after it, each
 with a Data Display of the same name that Simulate opens on the bench's own result. Every chain gets 1-Tone, 2-Tone,
 Envelope and Levels; a chain with blockers a Blockers bench; a chain with a canceller a Canceller bench; an array whose
-branch has no mixer Steering (when the branch has a phase shifter) and Combiners; and, when asked, the Demo. A chain
+branch has no mixer Steering (when the branch has a phase shifter) and Combiners; and, when asked, the Demo and the
+<a href="#sfdr">SFDR</a> bench. A chain
 with more than one mixer gets most of them once per <a href="#conversions">conversion</a>:</p>
 <table>
 <thead>
@@ -4334,9 +4394,9 @@ with more than one mixer gets most of them once per <a href="#conversions">conve
 </tr>
 <tr>
 <td><code>&lt;chain&gt; Envelope</code></td>
-<td>a MOD_Source per element: an NR carrier, its source noisy at the source temperature</td>
-<td><a href="simulations.html#envelope-noise">envelope</a> with <code>Noise=yes</code> and <code>EvmSplit=yes</code></td>
-<td>in-channel SNR, the EVM's noise part, output power and output noise</td>
+<td>a MOD_Source per element: an NR carrier, its source noisy at the source temperature; each mixer's LO with its mask</td>
+<td><a href="simulations.html#envelope-noise">envelope</a> with <code>Noise=yes</code> and <code>EvmSplit=yes</code>, once per noise record</td>
+<td>in-channel SNR, the EVM's noise part, output power and output noise; with a mask, the SNR beside the budget's with the phase noise in it</td>
 </tr>
 <tr>
 <td><code>&lt;chain&gt; Steering</code></td>
@@ -4358,9 +4418,9 @@ with more than one mixer gets most of them once per <a href="#conversions">conve
 </tr>
 <tr>
 <td><code>&lt;chain&gt; Blockers</code></td>
-<td>a PnTone per element with every blocker, an isolator after every stage</td>
+<td>a PnTone per element with every blocker, an isolator after every stage; with the dynamic-range checks, the signal at the input power too</td>
 <td>harmonic balance</td>
-<td>every blocker at every node</td>
+<td>every blocker at every node; with the checks, the gain the blockers take from the signal at every node, beside the budget's <a href="#blocking">desensitisation</a></td>
 </tr>
 <tr>
 <td><code>&lt;chain&gt; Canceller</code></td>
@@ -4370,9 +4430,15 @@ with more than one mixer gets most of them once per <a href="#conversions">conve
 </tr>
 <tr>
 <td><code>&lt;chain&gt; Demo</code></td>
-<td>a MOD_Source of NR 64-QAM and one of DBPSK per element; the LO with a phase-noise mask</td>
-<td>envelope with <code>Noise=yes</code> and <code>EvmSplit=yes</code>, the input power swept</td>
-<td>the constellation, the EVM against the input power, its noise and distortion parts. See <a href="#demo">The demo</a></td>
+<td>a MOD_Source of NR 64-QAM and one of DBPSK per element; the LO with a phase-noise mask, its mixer's own when it states one, and then an IProbe at every node</td>
+<td>envelope with <code>Noise=yes</code> and <code>EvmSplit=yes</code>, the input power swept, once per noise record</td>
+<td>the constellation, the EVM against the input power, its noise and distortion parts; with the mixer's own mask, the EVM node by node. See <a href="#demo">The demo</a></td>
+</tr>
+<tr>
+<td><code>&lt;chain&gt; SFDR</code></td>
+<td>the dynamic-range checks: a PnTone per element, two tones 1 MHz apart</td>
+<td>multi-tone harmonic balance, the two tones swept 3 dB either side of where the budget puts their IM3 on the noise floor</td>
+<td>where the IM3 at the output meets the floor, and the SFDR there. See <a href="#sfdr">The SFDR bench</a></td>
 </tr>
 <tr>
 <td><code>&lt;chain&gt; TX</code></td>
@@ -4393,6 +4459,11 @@ Delete it to see what your own image termination does;</li>
 <li>in an array, the <strong>arriving wave's path</strong>: a TLIN of (k − 1)·<code>Steer</code> in front of element k (on the Steering and
 Combiners benches, the splitter's own path phases instead).</li>
 </ul>
+<p><strong>Noise records.</strong> An envelope run's noise is one record of it, so its SNR is good to about ±0.12 dB from seed to seed.
+With <strong>noise records</strong> above 1 (<code>&quot;Records&quot;</code> in the file, <code>--records</code> on the CLI) the Envelope and Demo benches run that
+many records, each its own seed (a sweep of <code>rec</code> with <code>SeedPerPoint=yes</code>), and average them: the SNR as the mean of
+their noise powers, the EVM as their RMS. The spread of that mean falls as 1/√N, ±0.06 dB for four, and the bench reads
+it beside the SNR (<code>SNR_spread</code>, the records' standard deviation over √N).</p>
 <p>Every bench sets <code>temp = 16.85</code>, which puts every part at 290 K, the temperature a noise figure is stated at. Each row
 of its MEAS block reads one analysis, so <code>circuitrf hb … -a SW1</code> evaluates the compression rows on its own. The envelope
 SNR is measured over the NR carrier's occupied bandwidth (the 15 kHz-spacing channel nearest the chain's bandwidth), and
@@ -4461,6 +4532,13 @@ output is 0.92 dB below <code>Psat</code> − 8 dB and the EVM 6.3 %, at 12 dB 0
 ACPR the link needs, from this table. A memoryless PA's EVM and ACPR do not depend on the bandwidth, so the bench's NR
 carrier is the 15 kHz-spacing channel nearest the chain's bandwidth, 50 MHz at most; the subcarrier spacing changes
 neither the budget nor what a memoryless block does to a carrier's EVM.</p>
+<h3 id="sfdr">The SFDR bench</h3>
+<p>With the dynamic-range checks, the SFDR bench drives two tones, 1 MHz apart, at three levels: where the budget puts
+each IM3 product at the output on the noise floor in the bandwidth, (2·IIP3 + MDS)/3 per tone at the input, and 3 dB
+either side. The IM3 is a line of slope 3 there, so the crossing read between the outer two is where the simulated IM3
+meets the floor, and the fundamental at that drive stands the SFDR over it. The floor is the budget's, the one the 1-Tone
+bench checks: a harmonic-balance noise run takes a port, and the two tones are a PnTone's. Its display draws the
+fundamental, the IM3 and the floor against the drive, and tables the crossing and the SFDR beside the budget's.</p>
 <h2 id="conversions">More than one conversion</h2>
 <p>Every bench Transfer writes is checked against what its runs take: a harmonic-balance run at most six tones and 600
 mixing products, its noise run one or two tones, and an envelope run two fundamentals, the carrier's and one LO's, with
@@ -4588,6 +4666,14 @@ stage k. At every node:</p>
 <tr>
 <td>SNR</td>
 <td>the signal over the noise floor</td>
+</tr>
+<tr>
+<td>EVM</td>
+<td>the node's SNR, an LO's phase noise from its mixer on, every blocker's reciprocal mixing and the cubic's in-channel distortion: <a href="#blocking">the EVM</a></td>
+</tr>
+<tr>
+<td>Each blocker's desensitisation</td>
+<td>by reciprocal mixing and by compression, from the stages up to the node: <a href="#blocking">the blockers</a></td>
 </tr>
 </tbody>
 </table>
@@ -5810,14 +5896,18 @@ two blocks: the input on the arrow before the first, each stage's output on the 
 </tr>
 </tbody>
 </table>
-<p>Shaded between them: the <strong>SNR</strong>, from the noise floor up to the signal; the <strong>headroom</strong>, from the signal up to the
+<p>With an LO's mask, two more lines from its mixer on, dashed: the <strong>LO phase noise</strong>, the signal less what the mask leaves
+it in the channel, and the blockers' <strong>reciprocal mixing</strong>, all of it in the channel. Shaded between them: the <strong>SNR</strong>,
+from the noise floor up to the signal; the <strong>headroom</strong>, from the signal up to the
 P1dB; and, hatched, the <strong>SFDR</strong>, from the noise floor up to where the IM3 would reach it, (2/3)·(OIP3 − noise). The key
 under the plot gives the SNR and the SFDR at the output, and the <strong>margin to P1dB</strong> there as the Levels tab gives it: from
 the strongest carrier, which it names (the signal, or a blocker). Each line is named at the output with its last value.
 The figure is framed as the Levels tab is, and its window also holds the P1dB, the sensitivity and a link's EIRP; an
 IM3 under it is a ▼ on the bottom edge at its node, and its name at the output keeps its value. Over the plot, the
 frequency of each run of nodes, a dashed line at each mixer; in an array, the nodes that carry one element's levels are
-marked <strong>each of N elements</strong>: the branch the blocks draw once, &quot;× N&quot;, up to the combiner.</p>
+marked <strong>each of N elements</strong>: the branch the blocks draw once, &quot;× N&quot;, up to the combiner. When a blocker desensitises
+the chain by 0.01 dB or more, the key names the one that costs most at the output and its desensitisation, reciprocal
+mixing and compression together.</p>
 <p>A <a href="#transmit">transmit chain</a>'s diagram is read toward its output. The signal is <strong>Pout</strong>, the output power at every
 node, and over the P1dB, dashed, is the <strong>Psat</strong> referred to each node: the ceiling the stages up to it give,
 P_k = min(P_(k−1) + g_k, Psat_k), the chain's Psat at the output. The shading under the P1dB is the back-off. The key
@@ -5917,6 +6007,10 @@ where noise dominates;</li>
 past compression;</li>
 <li>the SNR in the carrier's channel, simulated and the budget's.</li>
 </ul>
+<p>When a mixer states its own mask, the demo's LO plays it, the budget's SNR has its phase noise in it, and the demo puts
+an IProbe at every node: its display adds the EVM node by node at its middle input power, the noise part and the whole
+beside the budget's, the step at the mixer where the mask enters included. Without one, the LO plays a synthesizer's
+shape of its own, which the budget does not have, and the demo reads its output alone.</p>
 <h2 id="linear-tx">A linear transmitter</h2>
 <p>The example's <code>Linear TX.cchain</code> is a 3.5 GHz transmitter for a 100 MHz NR carrier at 30 kHz subcarrier spacing, from a
 200 MHz IF to the antenna:</p>
@@ -6150,9 +6244,9 @@ stages' compression by integrating the describing function); a test holds the bu
 </tr>
 <tr>
 <td>SNR</td>
-<td>−0.13 dB</td>
+<td>+0.010 dB, four records</td>
 <td>−0.27 dB</td>
-<td>One noise record's statistics, about ±0.12 dB from seed to seed</td>
+<td>Noise records' statistics: about ±0.12 dB from seed to seed for one, ±0.04 dB measured for the superhet's four</td>
 </tr>
 </tbody>
 </table>
@@ -6166,11 +6260,28 @@ coupled noise, on the formula to 10⁻⁶ dB.</p>
 <p>The Canceller bench's depth, at each of the three interference carriers and every swept error, is the closed form's to
 within 1.4 % of the depth, 0.7 dB at 49.7 dB deep and under 0.3 dB everywhere shallower than 45 dB. With cancellation the
 64-QAM carrier's EVM falls from 840 % to 3.2 % and the QPSK one's from 1036 % to 8.6 %.</p>
-<p>The superhet's Demo bench reads the SNR 0.20 dB under the budget at its lowest power, where noise dominates, and the
-EVM's noise part 57.0 % against the budget's 1/√SNR of 56.2 %. Higher up, two floors the budget does not model take
-over: the LO's phase noise, 1.23 % of EVM in the distortion part, which is the mask integrated over the channel
-(−38.2 dBc), and a noise part that stops at about 1 % (40 dB of SNR), which the Canceller bench's NR carriers show as
-well. At 5 dB past the input P1dB the distortion part is 15.5 %.</p>
+<p>The superhet's Demo bench, its LO playing the mixer's own mask and four records averaged, reads the SNR 0.09 dB over
+the budget at its lowest power, where thermal noise dominates, and the EVM's noise part 55.8 % against the budget's
+56.2 %. Higher up the phase noise takes over, and the budget has it: at the middle power the noise part is 1.11 %
+against 1.14 %. From power to power the SNR there scatters by up to 0.4 dB about the budget's: half the mask's power is
+in its plateau, some fifty of a 0.5 ms record's 2 kHz bins, so one record's phase noise is good to about ±10 % and four
+records' to ±5 %. Node by node at the middle power the noise part is the budget's to 1 % up to the mixer, 0.25 to
+0.29 %, and 3 to 5 % under it after, 1.05 to 1.08 % against 1.09 to 1.13 %, where the mask enters. The whole EVM reads
+0.44 to 0.53 % before the mixer and up to 1.63 % after the IF filter: the NR source's own 0.35 % and the draft step's on
+a carrier 4.5 MHz off the envelope's centre, through that filter, which the budget's cubic does not have.</p>
+<p>The superhet's Envelope bench, four records averaged, reads its SNR 0.010 dB over the budget's 33.53 dB with the
+phase noise in it (34.89 dB without), the spread of the four records' mean 0.036 dB. Its Blockers bench, with the
+dynamic-range checks, reads the gain the three blockers take from the signal on the budget's desensitisation by
+compression to 6×10⁻⁶ dB at every node (0.0066 dB at the output), and each blocker 0.003 to 0.005 dB under its budget
+level, its own and the others' compression. Its SFDR bench reads the SFDR to 3×10⁻⁵ dB, the IM3 meeting the floor
+0.015 dB above the budget's crossing (tanh's fifth-order term, which the fundamental's own compression there takes
+back). An amplifier of each law with a blocker at −10 dBm, transferred and run, desensitises by Rapp's 0.0647 dB and
+Saleh's 0.4288 dB to 10⁻⁶ dB and the tanh limiter's 0.1720 dB to 3×10⁻⁶ dB; and an independent standard-library
+calculation (<code>testdata/chain/blocking_reference.py</code>, the mask integrated numerically and each law's gain read off a weak
+tone passed through it) gives the superhet's phase noise, reciprocal mixing, desensitisation, EVM and SFDR to 10⁻⁶.
+The budget's reciprocal mixing has no bench: an envelope run of a blocker 12 MHz off its carrier does not converge with
+its step (2.6 dB under the closed form at the draft step, 2.8 dB over at the fine one), while its thermal and phase
+noise sit on the budget at every step.</p>
 <p>The dual-conversion receiver's benches, each conversion's against its own budget:</p>
 <table>
 <thead>
@@ -6280,7 +6391,7 @@ as the part's netlist line carries them.</p>
 <tbody>
 <tr>
 <td><code>FormatVersion</code></td>
-<td>1; 2 for a chain that uses a value of the frequency, a budget-only parameter, a <code>Levels</code> combiner, a link, a sweep or a readout input; 3 for a transmit chain, an IQ modulator, an Amplifier's <code>Law</code>, <code>Psat</code>, <code>P</code>, <code>PhiSat</code> or <code>PhiMax</code>, or a converter's <code>Sideband</code>; 4 for a response or the cascade with mismatch. A file from a newer circuitRF is refused, not read in part.</td>
+<td>1; 2 for a chain that uses a value of the frequency, a budget-only parameter, a <code>Levels</code> combiner, a link, a sweep or a readout input; 3 for a transmit chain, an IQ modulator, an Amplifier's <code>Law</code>, <code>Psat</code>, <code>P</code>, <code>PhiSat</code> or <code>PhiMax</code>, or a converter's <code>Sideband</code>; 4 for a response or the cascade with mismatch; 5 for an LO's <code>PhaseNoise</code>, <code>DynamicRange</code> or <code>Records</code>. A file from a newer circuitRF is refused, not read in part.</td>
 </tr>
 <tr>
 <td><code>Direction</code></td>
@@ -6334,6 +6445,14 @@ as the part's netlist line carries them.</p>
 <td><code>Mismatch</code></td>
 <td>Optional: <code>true</code> to cascade every stage's two-port with mismatch. See <a href="#mismatch">With mismatch</a>.</td>
 </tr>
+<tr>
+<td><code>DynamicRange</code></td>
+<td>Optional: <code>true</code> to write the dynamic-range checks: the <a href="#sfdr">SFDR bench</a> and the Blockers bench's desensitisation.</td>
+</tr>
+<tr>
+<td><code>Records</code></td>
+<td>Optional: the noise records the Envelope and Demo benches average, 1 to 64. Absent: 1.</td>
+</tr>
 </tbody>
 </table>
 <p>A chain has at most one Combiner. An <code>SnP</code> stage's <code>File</code> is a path; a relative one resolves from the workspace the
@@ -6351,8 +6470,10 @@ circuitrf hb &quot;Superhet 2-Tone/schematic/Superhet 2-Tone.csch&quot;
 own. A transmit chain's report reads its output in place of a receiver's sensitivity: the output power and its CW
 compression, the back-off from OP1dB and from Psat, the ACLR, the noise floor and the receive band's noise, and an IQ
 modulator's image and LO.</p>
-<p><code>--to-schematic [dir]</code> writes into another folder, <code>--name</code> names the benches, <code>--demo</code> adds the demo bench, and an
-existing bench is a refusal unless <code>--replace</code> is given. <code>circuitrf check</code> reads a <code>.cchain</code> through the same budget and reports its refusals. Over the MCP
+<p><code>--to-schematic [dir]</code> writes into another folder, <code>--name</code> names the benches, <code>--demo</code> adds the demo bench,
+<code>--dynamic-range</code> the dynamic-range checks, <code>--records N</code> sets the noise records, and an existing bench is a refusal
+unless <code>--replace</code> is given. A chain with an LO's mask or blockers has a line of the phase noise in the channel, the SNR
+with it and every blocker's reciprocal mixing, the EVM, and each blocker's desensitisation. <code>circuitrf check</code> reads a <code>.cchain</code> through the same budget and reports its refusals. Over the MCP
 server the verb is <code>run analysis=chain</code>.</p>
 <p class="small">See also: <a href="system-components.html">System Components</a> ·
 <a href="simulations.html#noise">Simulations ▸ Noise</a> ·

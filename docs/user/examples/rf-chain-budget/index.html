@@ -33,7 +33,7 @@
   </div>
 
   <h1>RF Chain Budget</h1>
-  <p class="lede">A receive chain as a budget, stage by stage: a 2.45 GHz superhet, a four-element steered array into a combiner, a front end with a canceller and a dual-conversion receiver, each with its gain, NF, intercepts, compression, sensitivity and SFDR in closed form, and transferred to test benches whose S-parameter, harmonic-balance and envelope runs put a simulated number beside every one of them, the dual-conversion one conversion by conversion. And a 26 GHz link whose stages scale with the frequency: EIRP, the path, SNR, rate and DC power, swept over the carrier and both arrays. And a 3.5 GHz linear transmitter, an IQ modulator to a PA with Rapp&#39;s law: its output power, back-off, ACLR estimate and noise.</p>
+  <p class="lede">A receive chain as a budget, stage by stage: a 2.45 GHz superhet, a four-element steered array into a combiner, a front end with a canceller and a dual-conversion receiver, each with its gain, NF, intercepts, compression, sensitivity and SFDR in closed form, and transferred to test benches whose S-parameter, harmonic-balance and envelope runs put a simulated number beside every one of them, the dual-conversion one conversion by conversion. And a 26 GHz link whose stages scale with the frequency: EIRP, the path, SNR, rate and DC power, swept over the carrier and both arrays. And a 3.5 GHz linear transmitter, an IQ modulator to a PA with Rapp&#39;s law: its output power, back-off, ACLR estimate and noise. The superhet&#39;s LO has a phase-noise mask: its EVM floor, each blocker&#39;s reciprocal mixing and desensitisation, the EVM at every node and an SFDR sweep, each beside its bench.</p>
 
 <div class="callout note">
 <span class="label">Open this example</span>
@@ -55,8 +55,10 @@ of error in its reference path: 47 dB of depth.</li>
 an image filter and a second mixer to a 21.4 MHz second IF, an IF filter and an amplifier. Two mixers are more than
 one simulation run holds, so most of its benches are written once per conversion (below).</li>
 </ol>
-<p>The superhet also has two blockers at its input, 150 MHz and 20 MHz above the signal, and asks for the demo bench. The
-dual-conversion receiver has one blocker on each mixer's image, and asks for the demo bench too.</p>
+<p>The superhet also has three blockers at its input, 150 MHz and 20 MHz above the signal and 12 MHz below it, its mixer's
+LO a phase-noise mask (a synthesizer's: flat at −95 dBc/Hz to 100 kHz, −130 dBc/Hz at 10 MHz), and asks for the demo
+bench, the dynamic-range checks and four noise records. The dual-conversion receiver has one blocker on each mixer's
+image, and asks for the demo bench too.</p>
 <p>And a link: <strong><code>26 GHz Link.cchain</code></strong>, a 16-element transmitter 200 m from an 8-element receiver at 26 GHz, in NR band
 n258 (24.25 to 27.5 GHz), whose stages scale with the frequency. See <a href="#the-26-ghz-link">The 26 GHz link</a>.</p>
 <p>And a transmitter: <strong><code>Linear TX.cchain</code></strong>, a 3.5 GHz chain for a 100 MHz NR carrier at 30 kHz subcarrier spacing, from an
@@ -554,23 +556,33 @@ a carrier's SNR and EVM.</p>
 <li><strong><code>&lt;chain&gt; Levels</code></strong> (every chain): two tones at the input power, the signal and its IM3 at every node. Its display
 puts them beside the budget's, with the noise floor and NF from the 1-Tone bench, each blocker from the Blockers
 bench, and the SNR and the margin to compression, all against the node (0 the input, k stage k's output).</li>
-<li><strong><code>Superhet Blockers</code></strong>: the blockers alone, an isolator after every stage so each node reads the wave going forward.
-The RF filter takes 10 dB off the one at 150 MHz; after the mixer it is at 500 MHz, and the IF filter takes 38 dB more.</li>
+<li><strong><code>Superhet Blockers</code></strong>: the blockers, an isolator after every stage so each node reads the wave going forward.
+The RF filter takes 10 dB off the one at 150 MHz; after the mixer it is at 500 MHz, and the IF filter takes 38 dB more.
+With the dynamic-range checks the signal rides with them at −70 dBm, and the display adds the gain they take from it
+at every node beside the budget's desensitisation by compression.</li>
+<li><strong><code>Superhet SFDR</code></strong>: two tones swept 3 dB either side of where the budget puts their IM3 on the noise floor, the
+crossing read off the run and the SFDR there beside the budget's 65.00 dB.</li>
+<li><strong><code>Superhet Envelope</code></strong>: the NR carrier with the LO's mask on, four records averaged: the SNR beside the budget's with
+the phase noise in it, and the spread of the four records' mean.</li>
 <li><strong><code>Front End Canceller</code></strong>: the canceller with real signals. A wanted 64-QAM and QPSK pair under a three-carrier
 interference (10, 5 and 20 MHz), each from a MOD_Source the Signal Designer edits. Its display: the depth against the
 phase error, the amplitude error and the delay mismatch at each interference carrier, simulated beside the closed form;
 the wanted carriers' EVM and SNR, and their constellations, with and without cancellation. Set <code>phase_err</code> or
 <code>delay_err</code> in its VAR block and Simulate again.</li>
-<li><strong><code>Superhet Demo</code></strong>: the superhet demodulated end to end, NR 64-QAM and DBPSK, the LO with a phase-noise mask, the input
-power swept from noise-limited to compression-limited: the constellation, the EVM beside the budget's 1/√SNR, and its
-noise and distortion parts.</li>
+<li><strong><code>Superhet Demo</code></strong>: the superhet demodulated end to end, NR 64-QAM and DBPSK, the LO with its phase-noise mask, the input
+power swept from noise-limited to compression-limited: the constellation, the EVM beside the budget's, and its noise
+and distortion parts; and, a probe at every node, the EVM node by node at the middle power, stepping up at the mixer
+where the mask enters.</li>
 </ul>
 <h3 id="the-level-diagram">The level diagram</h3>
 <p>Tick <strong>Levels</strong> in the Blocks view and each chain's level plan is drawn under its blocks, a node on each gap: the
 signal, the noise floor, the sensitivity, the IM3, every blocker and the P1dB at every node, the SNR and the headroom
 shaded between them and the SFDR hatched. <code>circuitrf chain Superhet.cchain --level-diagram superhet-levels.png</code> draws
 the same figure on its own:</p>
-<p><img class="readme-picture" src="pictures/level-diagram-superhet.png" alt="The superhet's level diagram: the signal from −70 dBm at the input to −46.5 dBm at the output, the noise floor 34.9 dB under it, the P1dB from the LNA on, the blockers, the IM3 far below, and the two frequencies either side of the mixer" width="924"></p>
+<p><img class="readme-picture" src="pictures/level-diagram-superhet.png" alt="The superhet's level diagram: the signal from −70 dBm at the input to −46.5 dBm at the output, the noise floor 34.9 dB under it, the P1dB from the LNA on, the three blockers, the LO's phase noise and the reciprocal mixing from the mixer on, the IM3 far below, and the two frequencies either side of the mixer" width="924"></p>
+<p>From the mixer on, two dashed lines more: the LO's phase noise in the channel, −39.2 dBc under the signal, and the
+blockers' reciprocal mixing, the LO's skirt mixed onto them; the key names the blocker that costs most, the third, 1.18
+dB.</p>
 <p>The 26 GHz link's starts in front of its input: the 16 transmit elements' EIRP, the path down to the −59.4 dBm each
 receive element gets, and the receiver's ceiling, 14 dB above it. Up to the combiner the levels are one element's.</p>
 <p><img class="readme-picture" src="pictures/level-diagram-link.png" alt="The 26 GHz link's level diagram: the EIRP, the path loss and the ceiling left of the input, then each element's levels up to the combiner and the array's after it, and the conversion to 3 GHz" width="1120"></p>
@@ -838,21 +850,25 @@ reads 0.29 dB low, |1 + Γin|, the chain's input reflection.</li>
 </tr>
 <tr>
 <td>SNR</td>
-<td>−0.13 dB</td>
+<td>+0.01 dB, four records</td>
 <td>−0.27 dB</td>
 </tr>
 </tbody>
 </table>
 <p>The gain, NF and intercepts agree to the drive levels the benches use. The compression point is the cascaded-P1dB
-formula's own approximation: two stages compressing at similar levels compress a little later together. The SNR is one
-noise record's: four seeds of the array read 29.17 to 29.42 dB against 29.37 dB.</p>
+formula's own approximation: two stages compressing at similar levels compress a little later together. The array's SNR
+is one noise record's: four seeds of it read 29.17 to 29.42 dB against 29.37 dB. The superhet averages four records,
+each its own seed, and reads its SNR, the LO's phase noise in it, 0.01 dB over the budget's 33.53 dB, the spread of the
+four records' mean 0.04 dB.</p>
 <p>The array's Steering pattern sits on the closed-form array factor to 3×10⁻⁹ dB within 3 dB of each peak, and its gain,
 NF and array gain at each peak, like every variant's gain and NF on the Combiners bench, to 10⁻¹⁴ dB: an S-parameter run
 of ideal blocks has no drive level to differ by.</p>
-<p>The superhet's levels sit on the budget to 2×10⁻⁵ dB (signal) and 8×10⁻⁵ dB (IM3) at every node, its blockers 0.001 to
-0.003 dB under it, the blockers' own slight compression. The canceller's depth is the closed form's to 1.4 % of the
+<p>The superhet's levels sit on the budget to 2×10⁻⁵ dB (signal) and 8×10⁻⁵ dB (IM3) at every node, its blockers 0.003 to
+0.005 dB under it, their own and each other's slight compression; the gain they take from the signal is the budget's
+desensitisation to 6×10⁻⁶ dB at every node, and the SFDR bench reads the budget's 65.00 dB to 3×10⁻⁵ dB. The canceller's depth is the closed form's to 1.4 % of the
 depth at every carrier and error, and cancelling takes the 64-QAM carrier's EVM from 840 % to 3.2 %. The demo's SNR is
-the budget's to 0.2 dB where noise dominates; above that the LO's phase noise holds the EVM at 1.2 % until compression.</p>
+the budget's to 0.1 dB where noise dominates; above that the LO's phase noise holds the EVM's noise part at 1.1 %, the
+budget's to 3 to 5 % (four records of a mask whose power is mostly in fifty 2 kHz bins), node by node from the mixer on.</p>
 <p>The dual-conversion receiver, each conversion against its own budget:</p>
 <table>
 <thead>
@@ -922,7 +938,7 @@ factor of 1.41, the load's own noise, which the budget leaves out, is an eighth 
 </tr>
 <tr>
 <td>Envelope</td>
-<td>9 s</td>
+<td>36 s, four records*</td>
 <td>25 s</td>
 <td>12 s, 18 s</td>
 <td>33 min</td>
@@ -950,14 +966,21 @@ factor of 1.41, the load's own noise, which the budget leaves out, is an eighth 
 </tr>
 <tr>
 <td>Blockers</td>
-<td>3 s</td>
+<td>5 min with the signal and three blockers*</td>
 <td></td>
 <td>1 s</td>
 <td></td>
 </tr>
 <tr>
+<td>SFDR</td>
+<td>1 min 16 s*</td>
+<td></td>
+<td></td>
+<td></td>
+</tr>
+<tr>
 <td>Demo</td>
-<td>2 min 20 s</td>
+<td>22 min, four records and a probe at every node*</td>
 <td></td>
 <td>1 min 45 s, 3 min</td>
 <td></td>
@@ -971,7 +994,8 @@ factor of 1.41, the load's own noise, which the budget leaves out, is an eighth 
 </tr>
 </tbody>
 </table>
-<p>The wideband receiver's: 1-Tone 2 s, 2-Tone 25 s, Levels 30 s, Envelope 38 s.</p>
+<p>The wideband receiver's: 1-Tone 2 s, 2-Tone 25 s, Levels 30 s, Envelope 38 s. *The superhet's marked benches were
+measured in a debug build.</p>
 <p>The link's harmonic-balance and envelope benches are slow for their eight elements, each a source of its own, and the
 envelope one for its 50 MHz NR carrier, ten times the others' (measured on a loaded machine).</p>
 <p>The Front End's Canceller bench runs its envelope sweeps in about 40 s.</p>

@@ -1572,7 +1572,7 @@ writes nothing but `-o`'s PDF.
 
 ## `chain` — an RF chain budget, headless {#chain}
 
-<pre><code class="cmd"><span class="prompt">$ </span>circuitrf chain &lt;rx.cchain&gt; [-o budget.{npy,mat,txt}] [--level-diagram levels.{png,svg}] [--to-schematic [dir]] [--name &lt;stem&gt;] [--replace] [--demo]</code></pre>
+<pre><code class="cmd"><span class="prompt">$ </span>circuitrf chain &lt;rx.cchain&gt; [-o budget.{npy,mat,txt}] [--level-diagram levels.{png,svg}] [--to-schematic [dir]] [--name &lt;stem&gt;] [--replace] [--demo] [--dynamic-range] [--records &lt;n&gt;]</code></pre>
 
 `chain` budgets a **`.cchain`** — the document the [RF Chain Budget](chain-budget.html) window edits — and prints
 the cascade, one row per stage, and the chain's totals: gain, NF, the intercepts and compression points, the noise
@@ -1597,10 +1597,17 @@ and its CW compression, the back-off from OP1dB and from Psat, the ACLR, the noi
 and an IQ modulator's image and LO; the DataSet carries them as scalars (`PoutCW_dBm`, `BackoffPsat_dB`, `ACLR_dBc`,
 `NoisePSD_dBmHz`, `RxNoise_dBm`, `Image_dBc`, `LoLeak_dBc`, …).
 
+A chain whose mixer states its LO's [phase-noise mask](chain-budget.html#blocking), or that has blockers, has a line of
+the phase noise in the channel and its EVM floor, the SNR with it and every blocker's reciprocal mixing, the EVM at the
+output, and each blocker's desensitisation by reciprocal mixing and by compression; the DataSet carries `PN_dBc`,
+`EVMpn_pct`, `SNReff_dB`, `EVM_pct`, and `DesenseRM_dB` and `DesenseComp_dB` over a `blocker` axis.
+
 `--to-schematic` is the window's **Transfer to Schematic**: the chain's `1-Tone`, `2-Tone`, `Envelope` and `Levels`
 test benches; `Blockers` for a chain with blockers, `Canceller` for one with a canceller; an array's `Steering` and
 `Combiners` benches; and with `--demo` (or `"Demo": true` in the `.cchain`) the `Demo` bench, the chain demodulated end
-to end; a chain with a link also its `TX` bench, the PA against its back-off. A transmit chain's are its own `1-Tone`,
+to end; with `--dynamic-range` (or `"DynamicRange": true`) the `SFDR` bench and the signal's desensitisation on the
+`Blockers` bench; a chain with a link also its `TX` bench, the PA against its back-off. `--records N` (or `"Records": N`,
+1 to 64) has the `Envelope` and `Demo` benches average N noise records, each its own seed. A transmit chain's are its own `1-Tone`,
 `2-Tone`, `Envelope` and `PA` benches. Each comes with its Data Display, beside
 the `.cchain` or in `dir`. A bench that already exists is a refusal naming it; `--replace` writes it again. Nothing is written when any
 bench is refused. Exit **0** when it budgeted (and

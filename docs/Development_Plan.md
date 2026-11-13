@@ -305,6 +305,15 @@ with no S data its budget's matched two-port. The example is a 2.45 GHz wideband
 preselector passes the image; its harmonic-balance noise bench reads the budget's NF, image and mismatch both in it, to
 2×10⁻⁵ dB.
 
+**The LO's phase noise, the blockers and the dynamic range (2026-11).** A Mixer's LO takes a phase-noise mask, the form
+a source's takes, which the budget integrates over the channel (its SNR and EVM floor) and mixes onto every blocker
+(reciprocal mixing, a desensitisation per blocker); each blocker also desensitises by compression, a weak signal's gain
+beside it through every stage in closed form for each Amplifier law; and every node has an EVM from its SNR, the phase
+noise, the reciprocal mixing and the cubic's distortion. The Envelope and Demo benches play the mask, the Demo bench with
+a probe at every node; the dynamic-range checks add an SFDR
+bench and the Blockers bench's desensitisation; and the envelope benches average a stated number of noise records. The
+example's superhet has them all, against a standard-library hand calculation and its benches.
+
 **Deferred:**
 
 - **With mismatch, what is still matched.** The intercepts and the compression point sum each stage's own with the gain
@@ -330,6 +339,15 @@ preselector passes the image; its harmonic-balance noise bench reads the budget'
 - **A canceller's own nonlinearity and its adaptation.** The canceller is linear and its settings are variables to sweep
   or tune by hand; there is no loop that adapts them, and no stage of the budget follows a residual through a later
   nonlinearity other than as a level.
-- **Per-node EVM.** The demo reads EVM at the output only; a probe at every node would give it node by node.
+- **An IQ modulator's LO phase noise, and blockers together.** A Mixer's mask is in the budget; an IQ modulator's LO takes
+  none, so a transmit chain's EVM floor from its LO is not. Each blocker's desensitisation by compression is its own,
+  and two together are their sum, a cubic's; the law's own for two at once is a two-dimensional average.
+- **Reciprocal mixing on a bench.** The budget's is checked by the hand calculation alone. An envelope run with a blocker
+  12 MHz from its carrier and the LO's mask reads it 2.6 dB under the closed form at the draft step, 1.2 dB over at the
+  standard and 2.8 dB over at the fine, while the thermal noise and the phase noise alone sit on the budget at every
+  step and the blocker with a clean LO adds nothing: the envelope engine's reciprocal mixing far off its centre does not
+  converge with its step, an engine question of its own.
+- **The SFDR bench's own noise floor.** Its two tones are a PnTone's, and a harmonic-balance noise run takes a port, so
+  the floor the IM3 is read against is the budget's, which the 1-Tone bench checks.
 - **The Steering bench through a mixer.** It needs an S-parameter run to reach the combiner, so an array whose branch
   has a mixer gets no Steering or Combiners bench.

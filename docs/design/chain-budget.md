@@ -16,6 +16,7 @@ flowchart LR
     io --> sweep["ChainBudget.Sweep<br/>the whole chain at every point"] --> ds
     io --> rsp["ChainBudget.Response<br/>one design across a band,<br/>its LOs and filters fixed"] --> ds
     fid["ChainImage, ChainMismatch<br/>each mixer's image band;<br/>the two-ports cascaded"] --> calc
+    blk["ChainBlocking<br/>an LO's phase noise, each blocker's<br/>reciprocal mixing and desensitisation,<br/>the EVM at every node"] --> levels
     parts["ChainParts<br/>each part's budget;<br/>System-block defaults from<br/>ComponentTypeRegistry"] --> calc
     calc --> ds["ChainBudget.ToDataSet<br/>per-stage cubes over a stage axis"]
     ds --> verb["circuitrf chain / MCP run analysis=chain<br/>-o budget.npy"]
@@ -38,6 +39,7 @@ flowchart LR
     write --> demo["Demo bench (asked for)<br/>demodulated end to end"]
     write --> tx["TX bench (a link)<br/>the PA against its back-off"]
     write --> txc["a transmit chain's benches<br/>1-Tone, 2-Tone, Envelope, PA"]
+    write --> sfdr["SFDR bench (asked for)<br/>two tones swept to where<br/>their IM3 meets the floor"]
     calc --> levels["ChainLevels<br/>every node"] --> table
     levels --> diagram["ChainLevelDiagram (src/Render)<br/>the level plan, one figure"]
     diagram --> blocks
@@ -386,6 +388,60 @@ the chain up to it into 50 Ω, and the Levels bench reads that node's voltage, w
 20·log10|(1 + Γ_L)/(1 − S22·Γ_L)| above the budget's level, the reflected wave and the multiple reflection between the
 stage (S22) and its load (Γ_L), and |1 + Γin| at the input.
 
+### 2.7 The LO's phase noise, the blockers and the EVM at every node
+
+**`ChainBlocking`** is read off the levels (`ChainLevels.Evaluate` ends in `ChainBlocking.Annotate`), so every number
+is the cascade's at its node and each blocker its own level and frequency there. `ChainNodeLevel` gains them as
+`init` properties, which every caller that builds a node keeps working without.
+
+**A mask is a Mixer's text parameter**, `PhaseNoise`, the form a source's `PhaseNoise` takes (`RfCore.Signals.PhaseNoiseMask`
+reads both, so a mask the budget takes is one a bench plays). It is budget-only: not on the Mixer's line but on its
+LO's P1Tone, and only on the envelope benches, the analysis that plays it. It is never a value of the frequency:
+`10kHz -90` reads as the expression 9910 otherwise, so `ChainScaling` passes it by as it passes a choice or a file.
+
+**The phase noise in the channel**, σ² = 2·∫ L(f)·(1 − f/B) df from the mask's first offset to B. Multiplying a signal of
+flat spectrum and width B by e^(jφ) spreads it by the phase's two-sided density L(|f|); what stays in the channel is the
+overlap, B − |f|. The integral is exact segment by segment, 10^(L/10) being 10^(L_r/10)·(f/f_r)^s there (`Integral`,
+with `expm1` where s is near −1). Below its first offset the phase is taken as tracked. The bench's 0.5 ms record holds
+the phase from 2 kHz, its bins 2 kHz apart: a mask flat over its first decades, a synthesizer's in-loop shape, reads the
+same there, where one still falling at 1 kHz reads the discrete sum, 0.3 dB under the integral for the demo's own shape
+(1.18 % against 1.23 %).
+
+**Reciprocal mixing** is the blocker's level at the mixer's input times ∫ L(|u|) du over the channel, Δf from it: the
+textbook P_b + L(Δf) + 10·log10 B, without assuming L flat across the channel (0.2 dB at 10 MHz on a −20 dB/decade
+skirt). It is carried to each node by the noise gain after the mixer, the signal gain less the array's.
+
+**Desensitisation by compression** linearises each stage's law about the blocker. A tanh limiter acts on the
+instantaneous input, so a weak tone sees its slope, sech²(x/Vsat), averaged over the blocker's cycle (the slope's
+other harmonics move the tone to ω_s ± 2kω_b); a Rapp or Saleh law acts on the envelope, F(|z|²)·z, and its first-order
+response to a weak tone beside a blocker of envelope power s is (F + s·F′)·a at the tone and a conjugate term at
+2ω_b − ω_s. `AmplifierLaw.Gain` already returns F and D = s·F′, the Jacobian's own pair, so the budget's is the
+simulation's. The stages compound: the gain each takes multiplies.
+
+**The EVM at a node** adds the node's N/S, σ², every blocker's N_rm/S and a cubic's in-channel distortion of a
+Gaussian signal, (4/3)·(P/IIP3)²: of the third-order output's uncorrelated 2·|a₃|²·P³, two thirds falls in the channel
+(the ACLR relation's convolution), four times its neighbour's share.
+
+**The benches.** Nothing new in the engine. The Envelope and Demo benches put a mixer's mask on its LO and compute their
+budget at the occupied bandwidth. The Demo bench probes every node of element 1's row: the envelope run reads the EVM at
+every IProbe, picking per probe the product the carrier is on. The SFDR bench is the 2-Tone bench's circuit swept 3 dB
+either side of the budget's crossing; its floor is the budget's, since a harmonic-balance noise run needs a port and the
+tones are a PnTone's. The Blockers bench, with the checks, carries the signal as its first tone, at the input power, so
+its gain at every node is read in the same run as the blockers, at MaxMixOrder 5 + mixers where the cap allows (4 on the
+superhet's five tones). Records are a sweep of `rec` around the envelope analysis with `SeedPerPoint=yes`, averaged with
+`mean_over` over `rec`.
+
+**Reciprocal mixing has no bench.** An Envelope bench that carried a blocker as a CW beside its NR carrier was built and
+run, and taken out: with the superhet's blocker 12 MHz below the carrier and a mask whose close-in part is negligible,
+the run reads the reciprocal mixing 2.6 dB under the closed form at the draft step, 1.2 dB over at the standard step and
+2.8 dB over at the fine one, four records each, while the same run's thermal noise (34.95, 34.91, 34.85 dB of SNR against
+34.89 dB) and the phase noise on the carrier alone (33.54 dB against 33.53 dB) sit on the budget, and the blocker with a
+clean LO adds nothing. The envelope engine's reciprocal mixing of a tone that far off its centre does not converge with
+the step; the budget's is checked against the standard-library calculation, which integrates the mask numerically.
+
+**Defaults off.** A blank mask, no `DynamicRange` and one record write every bench as before, to the byte; the
+superhet, which asks for all three, is the only shipped chain whose benches move.
+
 ## 3. The benches, and what was found building them
 
 **The mixer's image termination.** A mixer's SSB noise figure is stated with its image at T0. In a chain a filter in
@@ -613,6 +669,19 @@ matched the budget reads 1.27 dB off in gain. The wideband example, the image an
 1-Tone bench's NF to 1.9×10⁻⁵ dB and gain to −1.1×10⁻⁴ dB (every stage's to 3×10⁻⁵ dB), its 2-Tone IIP3 to 2.2×10⁻⁴ dB,
 its Levels from the LNA on to 7×10⁻⁴ dB and its envelope SNR to −0.14 dB.
 
+**The LO's phase noise, the blockers and the EVM.** `testdata/chain/blocking_reference.py` (standard library only) works
+the example's superhet out by quadrature (Simpson's rule between the mask's points, not the budget's closed form) and
+reads each law's small-signal gain off a weak tone passed through the law itself (the envelope laws projected over a
+beat cycle, tanh over both tones' cycles): the phase noise at every node, each blocker's reciprocal mixing and
+desensitisation by compression, the EVM, the SNR with them and the SFDR. The budget agrees with it to 10⁻⁶
+(`ChainBlockingTests.TheBlockingBudget_IsTheIndependentReference`), and with each law's desensitisation at five levels
+up to 5 dB under the saturated input to 10⁻⁶ dB. Against the benches: an amplifier of each law with a blocker at
+−10 dBm, its Blockers bench's run, Rapp 0.0647 dB and Saleh 0.4288 dB to 10⁻⁶ dB, tanh 0.1720 dB to 3×10⁻⁶ dB; the
+superhet's Blockers bench, every node to 6×10⁻⁶ dB; its SFDR bench to 3×10⁻⁵ dB (a pad and an amplifier's to
+6×10⁻⁴ dB); its Envelope bench, four records, the SNR with the phase noise 0.010 dB over the budget, the spread of the
+mean 0.036 dB; its Demo bench at the middle power, the EVM's noise part node by node to 1 % before the mixer and 3 to 5 %
+under after it, the phase noise's own statistics.
+
 ## 5. References
 
 Friis 1944 (doi:10.1109/JRPROC.1944.232049); Pozar, *Microwave Engineering*, 4th ed., §10.1 and §10.3; Razavi,
@@ -630,6 +699,9 @@ Information Theory 8(3), 1962. The response, the image band and the cascade with
 linear noisy systems", Philips Research Reports Supplements 10, 1967, a passive network's noise from its S; Pozar,
 *Microwave Engineering*, 4th ed., §8.3–8.4 (a Butterworth response and the bandpass transformation), §10.2 (the
 cascade's noise figure on available gains) and §12.1, §12.3 (a two-port's power gains, and its noise figure from its
-noise parameters); Razavi, *RF Microelectronics*, 2nd ed., ch. 6 (a mixer's noise figure, its image band). The
+noise parameters); Razavi, *RF Microelectronics*, 2nd ed., ch. 6 (a mixer's noise figure, its image band). The LO's
+phase noise and the blockers: Razavi, *RF Microelectronics*, 2nd ed., 2011, ch. 2 (gain compression, and desensitisation
+by a blocker: a₁ − (3/2)·a₃·A²) and ch. 8 (an oscillator's phase noise, reciprocal mixing, and phase noise's effect on a
+received signal); the laws' F + s·F′ from Rapp 1991 and Saleh 1981 above. The
 feature list of RxCalc (https://github.com/arhiv6/rxcalc, GPL-3) is the inspiration; only its
 README was read, and no code is taken from it.
