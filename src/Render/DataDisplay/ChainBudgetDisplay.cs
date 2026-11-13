@@ -55,7 +55,7 @@ public static class ChainBudgetDisplay
             case ChainBench.Combiners: return Display(chain, bench, src, Combiners(src, design));
             case ChainBench.Levels: return Display(chain, bench, src, Levels(chain, design, budget, blockersOnly: false, written));
             case ChainBench.Blockers: return Display(chain, bench, src, Levels(chain, design, budget, blockersOnly: true, written));
-            case ChainBench.Canceller: return Display(chain, bench, src, Canceller(src));
+            case ChainBench.Canceller: return Display(chain, bench, src, Canceller(src, design));
             case ChainBench.Demo: return Display(chain, bench, src, Demo(src, ChainBenches.DemoPowers(budget.Totals!)));
             case ChainBench.Transmitter: return Display(chain, bench, src, Transmitter(src));
             case ChainBench.Pa: return Display(chain, bench, src, Pa(src, design));
@@ -325,8 +325,9 @@ public static class ChainBudgetDisplay
     }
 
     /// <summary>The canceller's depth against each error, simulated and closed form for every interference carrier; the
-    /// wanted carriers' EVM and SNR without and with cancellation; their constellations both ways.</summary>
-    private static List<PlotContainerConfig> Canceller(string src)
+    /// wanted carriers' EVM and SNR without and with cancellation; their constellations both ways. And the
+    /// harmonic-balance part's nonlinear terms (<see cref="CancellerHb"/>).</summary>
+    private static List<PlotContainerConfig> Canceller(string src, ChainDesign d)
     {
         var plots = new List<PlotContainerConfig>();
         var bands = ChainBenches.CancInterference;
@@ -356,6 +357,61 @@ public static class ChainBudgetDisplay
                 plots.Add(Constellation($"{kind}, {(on == 1 ? "cancelled" : "uncancelled")}", src, "ENVO",
                                         $"[{on}, 0, {k}, :]", $"[{on}, {k}, :]", (k * 2 + on) * (300 + Gap), y, 300));
             }
+        plots.AddRange(CancellerHb(src, d, y + 300 + Gap));
+        return plots;
+    }
+
+    /// <summary>
+    /// The Canceller bench's harmonic-balance part: at the stage's settings, each interference tone's residual and the
+    /// canceller's own IM3 at its output beside their closed forms, and the residual the Tune canceller goal reads beside
+    /// its target; then, over steps of the amplitude error, the residual and the canceller's own IM3 at its output and, at
+    /// the last stage's output, the IM3, the residual's products with the signal and the signal's compression by it, the
+    /// budget's forms as lines and the simulation's as points. Only the rows the bench writes: no IM3 of its own for a
+    /// linear canceller, nothing after it when no stage follows.
+    /// </summary>
+    private static List<PlotContainerConfig> CancellerHb(string src, ChainDesign d, double top)
+    {
+        int ci = ChainCanceller.Index(d);
+        bool linear = CancellerSpec.Read(d.Stages[ci]).Linear;
+        bool after = ci + 1 < d.Stages.Count && !ChainParts.Converts(d.Stages[ci + 1].Part) && d.Stages[ci + 1].Part != ChainParts.Combiner;
+        bool cascade = after && d.Stages.Skip(ci + 1).TakeWhile(s => !ChainParts.Converts(s.Part) && s.Part != ChainParts.Combiner)
+                                       .Any(s => double.IsFinite(ChainParts.Find(s.Part)!.Budget(s, new ChainStageContext(d.FrequencyHz, d.BaseDirectory)).Iip3Dbm));
+        var cols = new List<(string, string)>
+        {
+            ("ResA_calc", "HB, at its settings: residual, lower tone, budget dBm"), ("ResA_sim", "simulated"), ("ResA_err", "difference"),
+            ("ResB_calc", "upper tone, budget"), ("ResB_sim", "simulated"), ("ResB_err", "difference"),
+        };
+        if (!linear) cols.AddRange([("IM3c_calc", "its own IM3, budget"), ("IM3c_sim", "simulated"), ("IM3c_err", "difference")]);
+        cols.AddRange([("Res_sim", "residual, the tune's goal"), ("Res_target", "its target")]);
+        var t = Table("The harmonic-balance part at the canceller's settings", src, [.. cols], first: 300);
+        t.Top = top;
+        const string x = "amp_step", xl = "step of the amplitude error, dB";
+        var lv = new List<TraceConfig>
+        {
+            Over(src, "HA_ResA_calc", x, "residual, lower tone, budget", C(2), false),
+            Over(src, "HA_ResA_sim", x, "residual, simulated", C(2), true),
+        };
+        if (!linear)
+        {
+            lv.Add(Over(src, "HA_IM3c_calc", x, "its own IM3, budget", C(4), false));
+            lv.Add(Over(src, "HA_IM3c_sim", x, "its own IM3, simulated", C(4), true));
+        }
+        var plots = new List<PlotContainerConfig> { t, Rect("At the canceller's output, dBm", xl, "dBm", 0, top + H + Gap, 560, 340, lv) };
+        if (!after || (linear && !cascade)) return plots;
+        var o = new List<TraceConfig>
+        {
+            Over(src, "HA_IM3o_calc", x, "IM3 of the interference, budget", C(4), false),
+            Over(src, "HA_IM3o_sim", x, "simulated", C(4), true),
+        };
+        if (cascade)
+        {
+            o.AddRange([Over(src, "HA_IMssr_calc", x, "2·f_s − f_r, budget", C(1), false), Over(src, "HA_IMssr_sim", x, "simulated", C(1), true),
+                        Over(src, "HA_IMrrs_calc", x, "2·f_r − f_s, budget", C(3), false), Over(src, "HA_IMrrs_sim", x, "simulated", C(3), true)]);
+        }
+        plots.Add(Rect("At the last stage's output, dBm", xl, "dBm", 560 + Gap, top + H + Gap, 560, 340, o));
+        if (cascade)
+            plots.Add(Rect("The signal's compression by the residual, dB", xl, "dB", 2 * (560 + Gap), top + H + Gap, 420, 340,
+                           [Over(src, "HA_Desense_calc", x, "budget", C(5), false), Over(src, "HA_Desense_sim", x, "simulated", C(5), true)]));
         return plots;
     }
 

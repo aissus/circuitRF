@@ -4271,7 +4271,8 @@ internal static class CliDiagnostics
 
     public static Diagnostic ChainUnknownOption(string option) => Diagnostic.Create(
         "chain.option.unknown", DiagnosticSeverity.Error,
-        "chain does not take '{option}'. It takes a .cchain, -o, --level-diagram, --to-schematic [dir], --name and --replace.",
+        "chain does not take '{option}'. It takes a .cchain, -o, --level-diagram, --to-schematic [dir], --name, --replace, " +
+        "--demo, --tune-canceller and --apply.",
         ("option", option));
 
     public static Diagnostic ChainLevelDiagramKind(string path) => Diagnostic.Create(
@@ -4306,6 +4307,14 @@ internal static class CliDiagnostics
     /// <summary>Why the transfer wrote nothing: a cell already there, a bench the drawing refused.</summary>
     public static Diagnostic ChainTransferRefused(string why) => Diagnostic.Create(
         "chain.transfer.refused", DiagnosticSeverity.Error, "Transfer to schematic: {why}", ("why", why));
+
+    /// <summary>Why Tune canceller did not run: no canceller, a refused budget, a run the optimizer refused.</summary>
+    public static Diagnostic ChainTuneRefused(string why) => Diagnostic.Create(
+        "chain.tune.refused", DiagnosticSeverity.Error, "Tune canceller: {why}", ("why", why));
+
+    public static Diagnostic ChainApplyNeedsTune() => Diagnostic.Create(
+        "chain.apply.needs-tune", DiagnosticSeverity.Error,
+        "--apply writes the tuned canceller into the .cchain, so it needs --tune-canceller.");
 
     public static Diagnostic CheckChainSummary(string path, int stages, double gainDb, double nfDb) => Diagnostic.Create(
         "check.chain.summary", DiagnosticSeverity.Info,

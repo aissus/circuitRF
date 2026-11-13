@@ -7,8 +7,10 @@ namespace CircuitRF.Cli;
 
 /// <summary>
 /// <c>circuitrf chain &lt;path.cchain&gt; [-o budget.{npy,mat,txt}] [--level-diagram out.{png,svg}] [--to-schematic [dir]] [--name N]
-/// [--replace] [--demo]</c> —
-/// the RF Chain Budget window, headless.
+/// [--replace] [--demo] [--tune-canceller [--apply]]</c> —
+/// the RF Chain Budget window, headless. <c>--tune-canceller</c> is the window's Tune canceller: the optimizer on the
+/// Canceller bench (<see cref="ChainCancellerTune"/>); <c>--apply</c> writes what it found into the <c>.cchain</c>, after a
+/// history checkpoint when the workspace keeps one.
 ///
 /// <para><b>It owns no arithmetic and no drawing.</b> The budget is <see cref="ChainBudget.Evaluate"/>, the benches
 /// <see cref="ChainBenches.Write"/> and the display <see cref="ChainBudgetDisplay"/>, the three calls the window's own
@@ -23,7 +25,7 @@ internal static class Chain
     public static int Run(string[] args)
     {
         string? path = null, output = null, into = null, name = null, levels = null;
-        bool toSchematic = false, replace = false, demo = false;
+        bool toSchematic = false, replace = false, demo = false, tune = false, apply = false;
         for (int i = 0; i < args.Length; i++)
         {
             switch (args[i])
@@ -38,6 +40,8 @@ internal static class Chain
                 case "--name" when i + 1 < args.Length: name = args[++i]; continue;
                 case "--replace": replace = true; continue;
                 case "--demo": demo = true; continue;
+                case "--tune-canceller": tune = true; continue;
+                case "--apply": apply = true; continue;
             }
             if (args[i].StartsWith('-')) return JsonRun.Fail(CliDiagnostics.ChainUnknownOption(args[i]));
             if (path is not null) return JsonRun.Fail(CliDiagnostics.ChainUnknownOption(args[i]));
@@ -47,9 +51,11 @@ internal static class Chain
         {
             Console.Error.WriteLine(
                 "Usage: circuitrf chain <path.cchain> [-o budget.{npy,mat,txt}] [--level-diagram levels.{png,svg}]\n" +
-                "                       [--to-schematic [workspace-dir]] [--name <chain>] [--replace] [--demo]");
+                "                       [--to-schematic [workspace-dir]] [--name <chain>] [--replace] [--demo]\n" +
+                "                       [--tune-canceller [--apply]]");
             return 1;
         }
+        if (apply && !tune) return JsonRun.Fail(CliDiagnostics.ChainApplyNeedsTune());
         JsonRun.InputPath = path;
         // Before anything is written: a picture of another kind is refused here, not after the budget's own output.
         if (levels is not null && !CircuitRF.Render.Chain.ChainLevelDiagram.Writes(levels))
@@ -63,6 +69,26 @@ internal static class Chain
         catch (Exception ex) when (ex is IOException or InvalidDataException or UnauthorizedAccessException)
         { return JsonRun.Fail(CliDiagnostics.ChainUnreadable(path, ex.Message)); }
 
+        // Tune first: with --apply the rest of the run (the report, -o, the diagram, the transfer) is the tuned chain's.
+        ChainCancellerTuning? tuned = null;
+        if (tune)
+        {
+            tuned = ChainCancellerTune.Run(design, out string? refusal, ct: RunHost.Cancellation);
+            if (tuned is null) return JsonRun.Fail(CliDiagnostics.ChainTuneRefused(refusal ?? "the run did not finish"));
+            ReportTune(tuned);
+            if (apply)
+            {
+                string full = Path.GetFullPath(path);
+                if (Optimize.CheckpointBefore(full, "chain --tune-canceller --apply") is { } checkpoint) return JsonRun.Fail(checkpoint);
+                // The document as written, not as read for this run: an expression elsewhere in it stays one.
+                ChainDesignIo.SaveToFile(full, ChainCancellerTune.Apply(ChainDesignIo.LoadFromFile(full), tuned));
+                Console.WriteLine($"Wrote {path}");
+                JsonRun.AddOutput("cchain", path);
+                design = ChainCancellerTune.Apply(design, tuned);
+            }
+            else Console.WriteLine($"  --apply writes them into {path}.");
+        }
+
         var budget = ChainBudget.Evaluate(design);
         if (budget.Totals is null)
         {
@@ -73,6 +99,7 @@ internal static class Chain
         if (ChainLink.Power(budget)?.Note is { } dcNote) JsonRun.Note(CliDiagnostics.ChainNote(dcNote));
         Report(budget, design);
         JsonRun.Data = ChainBudget.ToDataSet(budget);
+        if (tuned is not null) AddTune(JsonRun.Data, tuned);
         // The sweeps, a group each: every point the whole chain budgeted again there.
         var sweepNotes = new List<string>();
         ChainBudget.AddSweeps(JsonRun.Data, design, sweepNotes);
@@ -132,6 +159,31 @@ internal static class Chain
     }
 
     private static string D(double v) => double.IsFinite(v) ? v.ToString("0.00", CultureInfo.InvariantCulture) : "-";
+
+    /// <summary>Tune canceller's report: each setting from its start to what the optimizer found, beside the closed
+    /// form's optimum, and the residual before and after.</summary>
+    private static void ReportTune(ChainCancellerTuning t)
+    {
+        static string N(double v) => v.ToString("0.#####", CultureInfo.InvariantCulture);
+        Console.WriteLine($"Tune canceller {t.Stage}: {t.Algorithm}, {t.Evaluations} evaluations, {t.FinishReason}");
+        Console.WriteLine($"  {"setting",-10} {"start",12} {"tuned",12} {"closed form",12}");
+        Console.WriteLine($"  {"AmpErr",-10} {N(t.StartAmpErrDb) + " dB",12} {N(t.AmpErrDb) + " dB",12} {N(t.OptimumAmpErrDb) + " dB",12}");
+        Console.WriteLine($"  {"PhaseErr",-10} {N(t.StartPhaseErrDeg) + " deg",12} {N(t.PhaseErrDeg) + " deg",12} {"0 deg",12}");
+        Console.WriteLine($"  {"DelayErr",-10} {N(t.StartDelayErrS * 1e9) + " ns",12} {N(t.DelayErrS * 1e9) + " ns",12} {"0 ns",12}");
+        Console.WriteLine($"  residual {D(t.ResidualBeforeDbm)} dBm before, {D(t.ResidualAfterDbm)} dBm after, each tone at its output " +
+                          $"(goal {D(t.TargetDbm)} dBm, {ChainCancellerTune.BelowFloorDb:0} dB under the floor: {(t.Met ? "met" : "NOT met")})");
+    }
+
+    /// <summary>The tune's numbers as a <c>tune</c> group of the run's DataSet.</summary>
+    private static void AddTune(RfCore.Data.DataSet ds, ChainCancellerTuning t)
+    {
+        void One(string name, string unit, double v) => ds.AddToGroup("tune", name, new RfCore.Data.DataCube([], [v]) { Unit = unit });
+        One("AmpErr_start_dB", "dB", t.StartAmpErrDb); One("AmpErr_dB", "dB", t.AmpErrDb); One("AmpErr_closed_dB", "dB", t.OptimumAmpErrDb);
+        One("PhaseErr_start_deg", "deg", t.StartPhaseErrDeg); One("PhaseErr_deg", "deg", t.PhaseErrDeg);
+        One("DelayErr_start_s", "s", t.StartDelayErrS); One("DelayErr_s", "s", t.DelayErrS);
+        One("Res_before_dBm", "dBm", t.ResidualBeforeDbm); One("Res_after_dBm", "dBm", t.ResidualAfterDbm);
+        One("Res_target_dBm", "dBm", t.TargetDbm);
+    }
 
     private static void Report(ChainBudgetResult r, ChainDesign d)
     {

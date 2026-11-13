@@ -537,8 +537,9 @@
                         </Grid>
                     </TabItem>
                     <TabItem Header="Canceller" FontSize="13" IsVisible="{Binding HasCanceller}">
-                        <!-- The depth against its settings, and the residual through the stages after it. -->
-                        <Grid ColumnDefinitions="*,4,*,4,*">
+                        <!-- The depth against its settings, the residual through the stages after it, and Tune canceller:
+                             the optimizer on the Canceller bench, its result written into the chain as one undo step. -->
+                        <Grid ColumnDefinitions="*,4,*,4,*" RowDefinitions="*,Auto">
                             <ddc:PlotControl Grid.Column="0" Name="DepthPhasePlotControl" ClipToBounds="True"
                                              Plot="{Binding DepthPhasePlot}" Library="{Binding PlotHost.Library}"
                                              CanDeletePlot="False" CanEditPlotProperties="False" CanAddMarkers="False"/>
@@ -548,6 +549,23 @@
                             <ddc:PlotControl Grid.Column="4" Name="CancellerNodesPlotControl" ClipToBounds="True"
                                              Plot="{Binding CancellerNodesPlot}" Library="{Binding PlotHost.Library}"
                                              CanDeletePlot="False" CanEditPlotProperties="False" CanAddMarkers="False"/>
+                            <DockPanel Grid.Row="1" Grid.ColumnSpan="5" Margin="6,4,6,4">
+                                <StackPanel DockPanel.Dock="Left" Orientation="Horizontal" Spacing="4" VerticalAlignment="Top">
+                                    <Button Name="TuneCancellerButton" Command="{Binding TuneCancellerCommand}" Padding="6,3"
+                                            ToolTip.Tip="Tune canceller — the optimizer on the Canceller bench's harmonic-balance part, from the canceller's own settings">
+                                        <TextBlock Text="Tune canceller"/>
+                                    </Button>
+                                    <Button Command="{Binding StopTuneCommand}" Padding="6,3" IsVisible="{Binding Tuning}"
+                                            ToolTip.Tip="Stop — keep nothing of this run">
+                                        <TextBlock Text="Stop"/>
+                                    </Button>
+                                    <Button Name="ApplyTuneButton" Command="{Binding ApplyTuneCommand}" Padding="6,3"
+                                            ToolTip.Tip="Write the tuned settings into the canceller: one step, which Undo takes back">
+                                        <TextBlock Text="Write into the chain"/>
+                                    </Button>
+                                </StackPanel>
+                                <TextBlock Text="{Binding TuneStatus}" TextWrapping="Wrap" Margin="8,3,0,0" VerticalAlignment="Top"/>
+                            </DockPanel>
                         </Grid>
                     </TabItem>
                 </TabControl>

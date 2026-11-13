@@ -31050,3 +31050,40 @@ After review:
   the linear transmitter's operating point read their IM3 under it, and 20 dB down the PA's products fall at 5:1.
 
 Gates: `tests/Ui.Tests/Chain/ChainTransmitTests.cs`, `tests/Ui.Tests/Examples/ChainBudgetExampleTests.cs` (`LinearTx_*`).
+
+## A canceller's nonlinearity, its residual through the later stages, and Tune canceller (CH-7, 2026-11-13)
+
+- **A cubic misses the canceller's own terms by 0.1 to 0.2 dB at 25 dB under the intercept.** The reference path is an
+  Amplifier with the Tanh law; on the bench each tone's residual read 0.10 and 0.13 dB under the cubic's closed form and
+  the own IM3 0.16 dB under it. The law's two-tone expansion to fifth order — gain 1 − 3y + (40/3)y², IM3 the cubic's
+  times 1 − (20/3)y, y the output per tone over OIP3 — reads them to 0.002 to 0.004 dB, and the law's own coefficients,
+  integrated over both tones' phases (`testdata/chain/canceller_reference.py`), agree with it to 2×10⁻⁵ and 0.003 dB.
+- **Harmonic balance refuses a MOD_Source whose `Fc` is no product of its tones.** The bench's harmonic-balance part
+  therefore puts its wanted tone on the frequency itself, where the envelope part's sources drive their own circuit
+  harmlessly; its interference tones are off the frequency, where an envelope run drives a PnTone not at all.
+- **At a mixing order of 3, fifth-order products fold onto weak ones.** The residual's product 2·f_s − f_r read
+  −131.9 dBm at order 3 where the closed form and a run at 5 read −158.1 and −158.5, and the signal's compression by the
+  residual read 6.7×10⁻⁵ dB with the residual at −83 dBm. The swept run is at 5; the run the optimizer evaluates is at 3,
+  0.6 s against 7 s, its residual and own IM3 within 0.002 dB of 5's. Even at 5, 2·f_r − f_s at 100 dB under the drive
+  (0.5 dB off the null) reads 0.24 dB off, and 1 dB where the canceller's own IM3 takes most of it back; at 7, 0.02 dB.
+  The swept steps stay 1.5 dB or more off the null.
+- **The canceller's own IM3 is in the product at 2·f_a − f_s.** With the residual at f_b and the signal it makes a term
+  twice the two-tone one's amplitude, 2·C·R_b·S against R_a²·S, in phase when the reference is short of the null and
+  against it when long. Without it the bench read 0.9 dB over the budget at 0.5 dB short; after tuning, with the residual
+  21 dB under the own IM3, it is most of that product.
+- **And the later stages' own IM3 of the residual adds to the canceller's with a phase.** R_a²·R_b* through a compressive
+  cubic is against the canceller's own IM3 when the reference is short of the null and with it when long: 40 dB under
+  it, that is ∓0.09 dB, which a power sum missed on the bench. The bench's row adds the two with each tone's phases; the
+  budget reports them apart, node by node.
+- **A measurement on a product the lattice keeps under its other sign evaluates to nothing.** `HBA.V(n, "(-1,2,0)")` was
+  silently absent from the run's measurements (a warning on Simulate, nothing on `circuitrf hb`); the lattice keeps
+  (1,−2,0), the same magnitude.
+- **The optimizer moves no value a sweep moves**, and the envelope runs sweep `amp_err`, `phase_err` and `delay_err`:
+  `opt` refused the bench until the harmonic-balance part had settings of its own (`amp_hb`, `phase_hb`, `delay_hb`) and
+  its sweep a step of its own (`amp_step`).
+- **Levenberg–Marquardt stalls on the residual in dB.** From 1 dB, 10° and 0.5 ns off it stopped at −88 dBm after 488
+  evaluations, the delay's pull on two tones 6 MHz apart a twentieth of the phase's; the trust-region algorithm met a goal
+  at −111.5 dBm in 92 to 116 evaluations, and from the example's own settings in 42.
+
+Gates: `tests/Ui.Tests/Chain/ChainCancellerTests.cs`, `tests/Ui.Tests/Examples/ChainBudgetExampleTests.cs`
+(`FrontEnd_Canceller_*`).

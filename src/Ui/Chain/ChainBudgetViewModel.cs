@@ -361,6 +361,7 @@ public sealed partial class ChainBudgetViewModel : ObservableObject
     {
         var st = d.Stages.FirstOrDefault(x => x.Part == ChainParts.Canceller);
         HasCanceller = st is not null;
+        TuneCancellerCommand.NotifyCanExecuteChanged();
         if (st is null) return;
         var c = CancellerSpec.Read(st);
         var (data, cfg) = CircuitRF.Render.DataDisplay.ChainBudgetDisplay.WindowCanceller(c, ChainCanceller.Levels(r));
@@ -369,6 +370,82 @@ public sealed partial class ChainBudgetViewModel : ObservableObject
         // A canceller with no stage after it has no residual to follow: its third plot stays empty.
         if (cfg.Count > 2) Refill(ref _cancNodes, nameof(CancellerNodesPlot), cfg[2], BudgetSource, data);
         else _cancNodes?.PlotVM.Plot.Traces.Clear();
+    }
+
+    // ── Tune canceller: the optimizer on the Canceller bench, and its settings written back as one undo step ──
+
+    /// <summary>What Tune canceller is doing, or found.</summary>
+    [ObservableProperty] private string _tuneStatus = "Tune canceller runs the optimizer on the Canceller bench's harmonic-balance part, " +
+                                                      "from the canceller's own settings, for the amplitude, phase and delay that cancel.";
+
+    /// <summary>A tune is running.</summary>
+    [ObservableProperty] [NotifyCanExecuteChangedFor(nameof(TuneCancellerCommand), nameof(StopTuneCommand), nameof(ApplyTuneCommand))]
+    private bool _tuning;
+
+    /// <summary>The last tune's result, while the chain it was found on is the one on screen.</summary>
+    [ObservableProperty] [NotifyCanExecuteChangedFor(nameof(ApplyTuneCommand))]
+    private ChainCancellerTuning? _tuned;
+
+    private System.Threading.CancellationTokenSource? _tuneStop;
+
+    private bool CanTune() => HasCanceller && !Tuning;
+
+    [RelayCommand(CanExecute = nameof(CanTune))]
+    private async Task TuneCanceller()
+    {
+        var d = ToDesign();
+        Tuned = null;
+        Tuning = true;
+        _tuneStop = new System.Threading.CancellationTokenSource();
+        var stop = _tuneStop.Token;
+        TuneStatus = "Tuning…";
+        void Progress(CircuitRF.Design.Optimization.OptimizationProgress p) =>
+            Avalonia.Threading.Dispatcher.UIThread.Post(() =>
+            {
+                if (Tuning) TuneStatus = $"Tuning… {p.Evaluations} evaluations, best cost {p.BestCost:G3}";
+            });
+        try
+        {
+            var (t, why) = await Task.Run(() => (ChainCancellerTune.Run(d, out string? w, progress: Progress, ct: stop), w));
+            Tuned = t;
+            TuneStatus = t is null ? (stop.IsCancellationRequested ? "Stopped." : "Not tuned: " + why) : Describe(t);
+        }
+        catch (OperationCanceledException) { TuneStatus = "Stopped."; }
+        finally { Tuning = false; }
+    }
+
+    private bool CanStopTune() => Tuning;
+
+    [RelayCommand(CanExecute = nameof(CanStopTune))]
+    private void StopTune() => _tuneStop?.Cancel();
+
+    private bool CanApplyTune() => Tuned is not null && !Tuning;
+
+    /// <summary>Writes the tuned settings into the canceller's row: one undo step, however many values it changes.</summary>
+    [RelayCommand(CanExecute = nameof(CanApplyTune))]
+    private void ApplyTune()
+    {
+        if (Tuned is not { } t || Stages.FirstOrDefault(x => x.Part.Token == ChainParts.Canceller && x.Name == t.Stage) is not { } row) return;
+        _loading = true;
+        try
+        {
+            foreach (var (name, value) in ChainCancellerTune.Values(t))
+                if (row.Parameters.FirstOrDefault(p => p.Name == name) is { } p) p.Value = value;
+        }
+        finally { _loading = false; }
+        Edited(null);
+        TuneStatus = $"Written into {t.Stage}: " + string.Join(", ", ChainCancellerTune.Values(t).Select(v => $"{v.Name} {v.Value}")) +
+                     ". Undo takes it back.";
+    }
+
+    /// <summary>A tune's result, as the tab says it.</summary>
+    public static string Describe(ChainCancellerTuning t)
+    {
+        static string N(double v) => v.ToString("0.####", CultureInfo.InvariantCulture);
+        return $"{t.Stage}: AmpErr {N(t.StartAmpErrDb)} → {N(t.AmpErrDb)} dB (the null's {N(t.OptimumAmpErrDb)} dB), " +
+               $"PhaseErr {N(t.StartPhaseErrDeg)} → {N(t.PhaseErrDeg)}°, DelayErr {N(t.StartDelayErrS * 1e9)} → {N(t.DelayErrS * 1e9)} ns. " +
+               $"Residual {D(t.ResidualBeforeDbm)} → {D(t.ResidualAfterDbm)} dBm a tone at its output, the goal {D(t.TargetDbm)} dBm " +
+               $"{(t.Met ? "met" : "not met")} ({t.Evaluations} evaluations, {t.Algorithm}). Write it into the chain to keep it.";
     }
 
     /// <summary>The link's numbers and the receiver's readouts, as tables over the budget's scalars.</summary>
@@ -717,6 +794,7 @@ public sealed partial class ChainBudgetViewModel : ObservableObject
     private void Edited(object? key)
     {
         if (_loading || _restoring) return;
+        Tuned = null;   // a tune found on another chain is not this one's to write
         if (key is ChainFileWanted wanted)
         {
             Edited(wanted.Param);

@@ -120,6 +120,14 @@ public static class ChainBenches
     /// bandwidths for the depth a delay mismatch leaves, the first two under the wanted carriers.</summary>
     public static readonly (int Mhz, double OffsetHz)[] CancInterference = [(10, 0), (5, -15e6), (20, 20e6)];
 
+    /// <summary>The Canceller bench's harmonic-balance part's interference tones, offset from the frequency as a share of
+    /// the interference's bandwidth: inside it, and unevenly, so no product the part reads lands on another.</summary>
+    public static readonly (double Lower, double Upper) CancHbTones = (-0.25, 0.35);
+
+    /// <summary>The steps of the amplitude error the harmonic-balance part sweeps, dB: far enough from the null that the
+    /// residual's products with the signal stand 40 dB clear of what a run at a mixing order of 5 resolves.</summary>
+    public static readonly double[] CancHbStepsDb = [-3, -1.5, 1.5, 3];
+
     /// <summary>The variable, and so the axis, the Levels displays plot against: the node, 0 the chain's input and k the
     /// output of stage k.</summary>
     public const string NodeVar = "nodeix";
@@ -1050,7 +1058,185 @@ public static class ChainBenches
                     _meas.Add($"SNR_{tag}_{w} = ENVO.SNR_dB[{on}, \"Iout\", {k}]");
                 }
             }
+            CancellerHb(ci, c, g0);
             return Text();
+        }
+
+        /// <summary>
+        /// The Canceller bench's harmonic-balance part, beside its envelope runs and apart from them: the canceller again,
+        /// its reference path an Amp with the stage's IP3 at its output, then the stages after it up to a mixer or a
+        /// combiner, driven by PnTones — the wanted signal one tone at the frequency, which every run here has, and the
+        /// interference two tones each at Pint inside its bandwidth (<see cref="CancHbTones"/>), off every frequency an
+        /// envelope run drives. Its settings are its own VARs, amp_hb, phase_hb and delay_hb, the stage's errors: the
+        /// envelope runs sweep theirs, and the optimizer moves no value a sweep moves. The envelope runs keep their
+        /// reference path linear, so their depths are the settings' alone; the nonlinear terms are this part's.
+        /// Its runs: HBC at the stage's settings — each tone's residual and the canceller's own IM3 at its output, beside
+        /// their closed forms, and the residual the tune's goal reads; HBA over amp_step, steps of the amplitude error
+        /// (<see cref="CancHbStepsDb"/>) — the residual and the canceller's own IM3, and at the last stage's output the
+        /// IM3, the residual's products with the signal and the signal's compression by it (against the same run with the
+        /// interference off, int_on = 0), each beside the budget's own form of it. And the tune, goal and optimize lines
+        /// the Tune canceller action runs (<see cref="ChainCancellerTune"/>).
+        /// </summary>
+        private void CancellerHb(int ci, CancellerSpec c, double g0)
+        {
+            static double Lin(double db) => Math.Pow(10, db / 10);
+            double frf = d.FrequencyHz, fa = frf + CancHbTones.Lower * c.BintHz, fb = frf + CancHbTones.Upper * c.BintHz;
+            double three = 10 * Math.Log10(2), six = 20 * Math.Log10(2), dy = 4000;
+            string name = d.Stages[ci].Name + "_H";
+            _vars.AddRange([$"Fa = {G(fa)}", $"Fb = {G(fb)}", $"{ChainCancellerTune.AmpVar} = {F(c.AmpErrDb)}",
+                            $"{ChainCancellerTune.PhaseVar} = {F(c.PhaseErrDeg)}",
+                            $"{ChainCancellerTune.DelayVar} = {c.DelayErrS.ToString("G12", CultureInfo.InvariantCulture)}",
+                            "amp_step = 0", "int_on = 1"]);
+            Line($"PnTone:SIG_H  sh  0  Freq[1]=Frf  Pavl[1]=Psig+{G(three)} dBm  Phase[1]=0 deg  Z=50 Ohm");
+            Place("SIG_H", 0, dy + 200);
+            string pint = $"Pint+{G(six)}+(int_on-1)*300 dBm";
+            Line($"PnTone:INT_H  ih  0  Freq[1]=Fa  Pavl[1]={pint}  Phase[1]=0 deg  Freq[2]=Fb  Pavl[2]={pint}  Phase[2]=0 deg  Z=50 Ohm");
+            Place("INT_H", 0, dy + 2600);
+            Line("Combiner:ISPL_H  ih  0  ilh  0  irh  0  N=2  Z0=50 Ohm");
+            Place("ISPL_H", 900, dy + 2400, mirror: true);
+            Line("TLIN:LEAK_H  ilh  lkh  Z=50 Ohm  E=360*Frf*tau_leak deg  F=Frf Hz");
+            Place("LEAK_H", 1800, dy + 1300);
+            Line("Combiner:MAIN_H  mh  0  sh  0  lkh  0  N=2  Z0=50 Ohm");
+            Place("MAIN_H", 2700, dy + 300);
+            Line($"Coupler:{name}  mh  0  th  0  {name}_cp  0  {name}_iso  0  Coupling={F(c.CouplingDb)} dB  IL={F(c.IlDb)} dB  Phase=90 deg");
+            Line($"R:{name}_Rc  {name}_cp  0  R=50 Ohm");
+            Place(name, 3700, dy + 400); Place($"{name}_Rc", 4000, dy + 1000);
+            // The Amp's output is 3 dB over the isolated port, the flat phase's share: its intercept is the stage's plus that.
+            string ip = c.Linear ? "IP3=200 dBm  IP3Ref=Input" : $"IP3={G(c.Ip3Dbm + three)} dBm  IP3Ref=Output";
+            Line($"Amp:{name}_VMA  irh  0  rh1  0  Gain={G(g0)}+{ChainCancellerTune.AmpVar}+amp_step+(canc_on-1)*300 dB  {ip}");
+            Place($"{name}_VMA", 1900, dy + 2700);
+            Line($"Combiner:{name}_VMP  rh2  0  rh1  0  {name}_VMP_t  0  N=2  " +
+                 $"Phase[1]=-90+{ChainCancellerTune.PhaseVar}+360*Frf*{ChainCancellerTune.DelayVar} deg  Z0=50 Ohm");
+            Line($"R:{name}_VMP_T  {name}_VMP_t  0  R=50 Ohm");
+            Place($"{name}_VMP", 2800, dy + 2600, mirror: true); Place($"{name}_VMP_T", 3500, dy + 3100);
+            Line($"TLIN:{name}_DL  rh2  {name}_iso  Z=50 Ohm  E=360*Frf*(tau_leak+{ChainCancellerTune.DelayVar}) deg  F=Frf Hz");
+            Place($"{name}_DL", 3400, dy + 2000);
+            // The stages after it, as the other benches place them, up to the first that converts or combines.
+            _x = 4300; _y = dy + 400;
+            string prev = "th";
+            double f = frf; int lo = 0; int[] v1 = [1, 0, 0], v3 = [0, 0, 0];
+            var after = new List<int>();
+            for (int j = ci + 1; j < d.Stages.Count && !ChainParts.Converts(d.Stages[j].Part) && d.Stages[j].Part != ChainParts.Combiner; j++)
+            {
+                string net = $"{d.Stages[j].Name}_ho";
+                Stage(d.Stages[j], d.Stages[j].Name + "_H", prev, net, ref f, v1, v3, ref lo, 1, 1);
+                prev = net;
+                after.Add(j);
+            }
+            Line($"R:RL_H  {prev}  0  R=50 Ohm");
+            Place("RL_H", _x, _y + 200);
+
+            // HBC, the tune's, at a mixing order of 3: each tone's residual and the canceller's own IM3 there move by 0.002 dB
+            // to 5. HBA at 5: the residual's products with the signal, and its compression of it, sit 60 to 130 dB under the
+            // drive, where a run at 3 reads the fifth-order products its lattice leaves out folded onto them.
+            int[][] read = [[1, 0, 0], [0, 1, 0], [0, 0, 1], [0, 2, -1], [2, -1, 0], [-1, 2, 0]];
+            int order3 = Order("HBC", [frf, fa, fb], 3, 3, "the canceller's own IM3", read);
+            int order5 = Order("HBA", [frf, fa, fb], 5, 3, "the residual's products with the signal", read);
+            string hb(string an, int order) => $"analysis {an} type=hb NumFreqs=3 Tone[1]=\"Frf\" ToneUnit[1]=Hz Tone[2]=\"Fa\" ToneUnit[2]=Hz " +
+                                               $"Tone[3]=\"Fb\" ToneUnit[3]=Hz MaxHarm=3 MaxMixOrder={order} Tol=1e-12";
+            _analyses.Add(hb("HBC", order3));
+            _analyses.Add(hb("HBA", order5));
+            _analyses.Add("analysis SWHI type=parametric_sweep Var=int_on Values=0,1 Inner=HBA");
+            _analyses.Add($"analysis SWHA type=parametric_sweep Var=amp_step Values={string.Join(",", CancHbStepsDb.Select(F))} Inner=SWHI");
+            // The tune's lines ride with the analyses; the reader takes each directive wherever it stands.
+            _analyses.AddRange(ChainCancellerTune.Lines(c, ChainCancellerTune.TargetDbm(r), "HBC", "th"));
+
+            // Each tone's residual: |1 − a·g·e^(j(φ − 2πντ))|² of the interference through the through arm, g the
+            // reference path's compression for two tones, the Tanh law's 1 − 3y + (40/3)y² (CancellerSpec). The swept
+            // forms take the amplitude error as the stage's plus the sweep's step.
+            double cc = Math.Pow(10, -c.CouplingDb / 10), pro0 = c.PintDbm + 10 * Math.Log10((1 - cc) / cc);
+            static string Plus(double v) => v < 0 ? $" - {G(-v)}" : $" + {G(v)}";
+            string y(string ae) => $"10^(({ae}{Plus(pro0 - c.Ip3Dbm)})/10)";
+            string a(string ae) => c.Linear ? $"10^({ae}/20)" : $"10^({ae}/20)*(1 - 3*{y(ae)} + 40/3*({y(ae)})^2)";
+            string res(string ae, double nu)
+            {
+                double cos = Math.Cos(c.PhaseErrDeg * Math.PI / 180 - 2 * Math.PI * nu * c.DelayErrS);
+                return $"{G(c.PintDbm - c.ThroughLossDb)} + 10*log10(1 + ({a(ae)})^2 - 2*({a(ae)})*{G(cos)})";
+            }
+            string im3(string ae) => $"3*({ae}{Plus(pro0)}){Plus(10 * Math.Log10(cc) - c.IlDb - 2 * c.Ip3Dbm)} + 20*log10(1 - 20/3*{y(ae)})";
+            // The swept run's interference-on slice (the off one is the signal's reference for its compression).
+            string tone(string an, string node, string k) => an == "HBA" ? $"at(dB(HBA.V(\"{node}\",\"{k}\")), \"int_on\", 1) + 10"
+                                                                         : $"dB({an}.V(\"{node}\",\"{k}\")) + 10";
+            string ae0 = $"({G(c.AmpErrDb)})", step = $"({G(c.AmpErrDb)} + amp_step)";
+            double nuA = CancHbTones.Lower * c.BintHz, nuB = CancHbTones.Upper * c.BintHz;
+
+            // At the stage's settings.
+            foreach (var (t, k, nu) in new[] { ("A", "(0,1,0)", nuA), ("B", "(0,0,1)", nuB) })
+            {
+                _meas.Add($"Res{t}_calc = {res(ae0, nu)}");
+                _meas.Add($"Res{t}_sim = {tone("HBC", "th", k)}");
+                _meas.Add($"Res{t}_err = Res{t}_sim - Res{t}_calc");
+            }
+            _meas.Add($"Res_sim = {ChainCancellerTune.GoalExpression("HBC", "th")}");
+            _meas.Add($"Res_target = {G(ChainCancellerTune.TargetDbm(r))}");
+            if (!c.Linear)
+            {
+                _meas.Add($"IM3c_calc = {G(c.Im3Dbm)}");
+                _meas.Add($"IM3c_sim = {tone("HBC", "th", "(0,2,-1)")}");
+                _meas.Add("IM3c_err = IM3c_sim - IM3c_calc");
+            }
+
+            // Over the amplitude error's steps: at the canceller's output, and at the last stage's.
+            _meas.Add($"HA_ResA_calc = {res(step, nuA)}");
+            _meas.Add($"HA_ResB_calc = {res(step, nuB)}");
+            _meas.Add($"HA_ResA_sim = {tone("HBA", "th", "(0,1,0)")}");
+            if (!c.Linear)
+            {
+                _meas.Add($"HA_IM3c_calc = {im3(step)}");
+                _meas.Add($"HA_IM3c_sim = {tone("HBA", "th", "(0,2,-1)")}");
+            }
+            if (after.Count == 0) return;
+            // The stages after the canceller: their gain, their cascaded intercept from its output, and the signal there.
+            double gain = 0, inv3 = 0;
+            var desense = new List<string>();
+            foreach (int j in after)
+            {
+                var b = r.Stages[j].Stage;
+                if (double.IsFinite(b.Iip3Dbm))
+                {
+                    inv3 += Lin(gain) / Lin(b.Iip3Dbm);
+                    double at = gain - b.Iip3Dbm;
+                    // Two residual tones and, with an IP3, the canceller's two IM3 products, each its share.
+                    string im = c.Linear ? "" : $" + 2*10^((HA_IM3c_calc{Plus(at)})/10)";
+                    desense.Add($"20*log10(1 - 2*(10^((HA_ResA_calc{Plus(at)})/10) + 10^((HA_ResB_calc{Plus(at)})/10){im}))");
+                }
+                gain += b.GainDb;
+            }
+            string last = $"{d.Stages[after[^1]].Name}_ho";
+            double ps = r.Stages[after[^1]].PoutDbm, oip3 = inv3 > 0 ? -10 * Math.Log10(inv3) + gain : double.PositiveInfinity;
+            string ra = $"(HA_ResA_calc{Plus(gain)})", rb = $"(HA_ResB_calc{Plus(gain)})";
+            string own = c.Linear ? "" : $"HA_IM3c_calc{Plus(gain)}";
+            if (double.IsFinite(oip3))
+            {
+                // Each tone's residual is L·(1 − A·e^(jθ)), and the canceller's IM3 at 2·f_a − f_b, carried, is
+                // L·(|C|/L)·e^(j(2θa − θb)): their phases set how the later stages' products add to it.
+                double ta = c.PhaseErrDeg * Math.PI / 180 - 2 * Math.PI * nuA * c.DelayErrS;
+                double tb = c.PhaseErrDeg * Math.PI / 180 - 2 * Math.PI * nuB * c.DelayErrS;
+                string A = $"({a(step)})", ea = $"{Euler}^(j*{G(ta)})", eb = $"{Euler}^(j*{G(tb)})";
+                string wa = $"(1 - {A}*{ea})", wb = $"(1 - {A}*{eb})", wbc = $"(1 - {A}*{Euler}^(j*{G(-tb)}))";
+                string ri = $"2*{ra} + {rb}{Plus(-2 * oip3)}";
+                // The interference's IM3 at the output: the canceller's own, carried, and the later stages' of the
+                // residual, R_a²·R_b* through a compressive cubic: against the own when the reference is short of the null.
+                _meas.Add($"HA_IM3o_calc = " + (c.Linear ? ri
+                    : $"{own} + 20*log10(mag(1 - 10^(({ri} - ({own}))/20)*{wa}*{wa}*{wbc}/mag({wa}*{wa}*{wbc})*{Euler}^(j*{G(tb - 2 * ta)})))"));
+                _meas.Add($"HA_IMssr_calc = {ra}{Plus(2 * ps - 2 * oip3)}");
+                // 2·f_a − f_s: the residual's own product, and with an IP3 the canceller's IM3 at 2·f_a − f_b with the
+                // residual at f_b and the signal, twice as strong a term, on the same frequency: the second over the first is
+                // 2·(|C|/L)·e^(j(2θa − θb))·(1 − A·e^(jθb))/(1 − A·e^(jθa))², in phase when the reference is short, against it
+                // when it is long.
+                string rrs = $"2*{ra}{Plus(ps - 2 * oip3)}";
+                if (!c.Linear)
+                    rrs += $" + 20*log10(mag(1 + 2*10^((HA_IM3c_calc{Plus(-(c.PintDbm - c.ThroughLossDb))})/20)*{Euler}^(j*{G(2 * ta - tb)})" +
+                           $"*{wb}/({wa}*{wa})))";
+                _meas.Add($"HA_IMrrs_calc = {rrs}");
+                _meas.Add($"HA_Desense_calc = {string.Join(" + ", desense)}");
+            }
+            else if (!c.Linear) _meas.Add($"HA_IM3o_calc = {own}");
+            if (double.IsFinite(oip3) || !c.Linear) _meas.Add($"HA_IM3o_sim = {tone("HBA", last, "(0,2,-1)")}");
+            if (!double.IsFinite(oip3)) return;
+            _meas.Add($"HA_IMssr_sim = {tone("HBA", last, "(2,-1,0)")}");
+            _meas.Add($"HA_IMrrs_sim = {tone("HBA", last, "(1,-2,0)")}");   // 2·f_r − f_s, as the lattice keeps it
+            _meas.Add($"HA_Desense_sim = at(dB(HBA.V(\"{last}\",\"(1,0,0)\")), \"int_on\", 1) - at(dB(HBA.V(\"{last}\",\"(1,0,0)\")), \"int_on\", 0)");
         }
 
         /// <summary>

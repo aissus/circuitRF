@@ -268,6 +268,13 @@ public sealed class ChainBudgetExampleTests(ITestOutputHelper output) : IDisposa
         output.WriteLine($"Front End Canceller: worst |depth - closed form| = {100 * worst:G3} % of the depth ({at}); EVM 64-QAM {M(ds, "EVM_QAM64_off"):G3} -> {M(ds, "EVM_QAM64_on"):G3} %, QPSK {M(ds, "EVM_QPSK_off"):G3} -> {M(ds, "EVM_QPSK_on"):G3} %");
         Assert.InRange(worst, 0, 0.02);
         Assert.True(M(ds, "EVM_QAM64_on") < M(ds, "EVM_QAM64_off") / 3);
+        // Its harmonic-balance part: each tone's residual and the canceller's own IM3 on their closed forms, the reference
+        // path 25 dB under its intercept.
+        foreach (var q in new[] { "ResA_err", "ResB_err", "IM3c_err" })
+        {
+            output.WriteLine($"Front End Canceller: {q} = {M(ds, q):G4} dB");
+            Assert.InRange(M(ds, q), -0.01, 0.01);
+        }
     }
 
     [Fact]
