@@ -50,6 +50,13 @@ public sealed record SnpStageRead(string FullPath, int Ports, int In, int Out, d
 /// <summary>Where an SnP stage's own noise comes from.</summary>
 public enum SnpNoiseFrom { NoiseData, Passive, None }
 
+/// <summary>An SnP stage's file at one frequency (<see cref="ChainSnp.FileAt"/>).</summary>
+/// <param name="S">The two-port In → Out at 50 Ω, every other port terminated.</param>
+/// <param name="Noise">The noise rows' parameters there, for a two-port read 1 → 2 that has them; null otherwise.</param>
+/// <param name="Passive">σ_max(S) ≤ 1 over the whole network: its own noise is its thermal noise (Bosma).</param>
+/// <param name="Outside">The frequency is outside the file, which is read at its nearest end.</param>
+public sealed record SnpFileAt(Mat<Complex> S, TwoPortNoise? Noise, bool Passive, bool Outside);
+
 public static class ChainSnp
 {
     /// <summary>The reference impedance a chain's stages are matched to.</summary>
@@ -250,18 +257,35 @@ public static class ChainSnp
     /// </summary>
     public static double? GainDbAt(ChainStage s, string? baseDirectory, double fHz, out bool outside)
     {
-        outside = false;
+        if (FileAt(s, baseDirectory, fHz) is not { } a) { outside = false; return null; }
+        outside = a.Outside;
+        double mag = a.S[1, 0].Magnitude;
+        return mag > 0 ? 20 * Math.Log10(mag) : double.NegativeInfinity;   // passes nothing: no level after it
+    }
+
+    /// <summary>
+    /// The file between its ports <c>In</c> and <c>Out</c> at <paramref name="fHz"/>, as the block takes it there: the two-port
+    /// S at 50 Ω (row and column 0 the In port), at the file's nearest frequency outside its range
+    /// (<see cref="SnpFileAt.Outside"/>); the noise parameters its rows give there (a two-port read 1 → 2), and whether the
+    /// whole network is passive. Null when the file cannot be read. What the image band and the cascade with mismatch read.
+    /// </summary>
+    public static SnpFileAt? FileAt(ChainStage s, string? baseDirectory, double fHz)
+    {
         try
         {
             if (Resolve(FileText(s), baseDirectory) is not { } full || !File.Exists(full)) return null;
+            var snp = TouchstoneCache.Get(full);
             var interp = TouchstoneCache.GetInterpolator(full, InterpolationMethod.CubicSpline, InterpolationFormat.MagPhase,
                                                          MatrixType.S, OutOfRangePolicy.WarnClamp);
-            outside = fHz < interp.MinFrequency || fHz > interp.MaxFrequency;
+            bool outside = fHz < interp.MinFrequency || fHz > interp.MaxFrequency;
             var m = At50(interp.Evaluate(Math.Clamp(fHz, interp.MinFrequency, interp.MaxFrequency)), interp.Source.Z0);
             int i = (int)ChainValue.Or(s.Get("In"), 1) - 1, o = (int)ChainValue.Or(s.Get("Out"), 2) - 1;
-            if (i < 0 || o < 0 || i >= m.RowCount || o >= m.RowCount) return null;
-            double mag = m[o, i].Magnitude;
-            return mag > 0 ? 20 * Math.Log10(mag) : double.NegativeInfinity;   // passes nothing: no level after it
+            if (i < 0 || o < 0 || i >= m.RowCount || o >= m.RowCount || i == o) return null;
+            var two = new Mat<Complex>(2, 2);
+            two[0, 0] = m[i, i]; two[0, 1] = m[i, o]; two[1, 0] = m[o, i]; two[1, 1] = m[o, o];
+            var rows = snp.NoiseParameters.OrderBy(p => p.FrequencyHz).ToList();
+            TwoPortNoise? noise = rows.Count > 0 && m.RowCount == 2 && i == 0 && o == 1 ? NoiseAt(rows, fHz, snp.Z0.Real) : null;
+            return new SnpFileAt(two, noise, RFNetwork.Passivity(m) <= 1 + PassiveTol, outside);
         }
         catch (Exception) { return null; }
     }

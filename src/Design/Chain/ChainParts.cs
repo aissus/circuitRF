@@ -54,7 +54,9 @@ public sealed record ChainParam(string Name, string Default, string Unit, bool N
 
 /// <summary>Where a stage sits in its chain: the frequency at its INPUT (the chain's, or a mixer's output after one),
 /// Hz, and the directory a relative file reference resolves against (null for a chain that has none).</summary>
-public sealed record ChainStageContext(double FrequencyHz, string? BaseDirectory);
+/// <param name="Response">The stage is read off its carrier (<see cref="ChainBudget.Response"/>, a sweep, an image): a
+/// Filter is its own response at <paramref name="FrequencyHz"/>, not its passband loss.</param>
+public sealed record ChainStageContext(double FrequencyHz, string? BaseDirectory, bool Response = false);
 
 /// <summary>What one stage does to a budget, on its own.</summary>
 /// <param name="GainDb">Signal (available-power) gain, dB. A Combiner's includes its coherent 10·log10(N).</param>
@@ -188,6 +190,18 @@ public static class ChainParts
 
     private static double P1(double iip3) => double.IsPositiveInfinity(iip3) ? iip3 : iip3 - TanhP1dbBelowIip3;
 
+    /// <summary>A Filter at <paramref name="fHz"/>, its own network (<see cref="ChainLevels.FilterOf"/>, the block's
+    /// model) between 50 Ω: G = |S21|², and by Bosma's theorem F = (1 − |S22|²)/|S21|², which is its IL at every
+    /// frequency for a lossless prototype under a flat loss. Where it passes nothing, −∞ dB and an infinite NF.</summary>
+    private static StageBudget FilterAt(ChainStage s, double fHz)
+    {
+        var (_, s21, s22) = ChainLevels.FilterOf(s).At(2 * Math.PI * fHz);
+        double g = s21.Magnitude * s21.Magnitude;
+        double nf = g > 0 ? 10 * Math.Log10((1 - s22.Magnitude * s22.Magnitude) / g) : double.PositiveInfinity;
+        double gDb = g > 0 ? 10 * Math.Log10(g) : double.NegativeInfinity;
+        return new(gDb, gDb, nf, double.PositiveInfinity, double.PositiveInfinity, 1, []);
+    }
+
     /// <summary>Every part's DC power, which only the budget's power readout reads.</summary>
     public static readonly ChainParam Pdc = new("Pdc", "", "W", BlankAllowed: true, BudgetOnly: true,
         Help: "DC power, W or with its unit (5 mW); with GainPerStage, per amplifier stage; blank: none");
@@ -251,7 +265,8 @@ public static class ChainParts
              new("Sideband", Lower, "", Numeric: false, Options: [Lower, Upper], BudgetOnly: true, Implied: Lower,
                  Help: "the sideband the chain goes on with: Lower, the difference |f − Flo|; Upper, the sum f + Flo")],
             "An ideal multiplier: the chain goes on at its difference |f − Flo|, or at its sum f + Flo. Its noise is its " +
-            "single-sideband figure: the image is taken as terminated at T0 and filtered of every earlier stage's noise.",
+            "single-sideband figure, the image at T0, and what the stages before it really pass at the image is added when it " +
+            "moves the NF by 0.001 dB or more.",
             (s, _) =>
             {
                 var notes = new List<string>();
@@ -290,8 +305,8 @@ public static class ChainParts
              Reg(SymbolKind.Filter, "F2"), Reg(SymbolKind.Filter, "Ripple"), Reg(SymbolKind.Filter, "Astop"),
              Reg(SymbolKind.Filter, "IL")],
             "A synthesised filter. In its passband the budget is its IL, and its noise figure is that loss; " +
-            "a Chebyshev's ripple is not in the budget.",
-            (s, _) => Passive(Num(s, "IL"))),
+            "a Chebyshev's ripple is not in the budget. Off the carrier (a response, a sweep, an image) it is its own response.",
+            (s, c) => c.Response ? FilterAt(s, c.FrequencyHz) : Passive(Num(s, "IL"))),
         new(Switch, "Switch", true, [Reg(SymbolKind.Switch, "IL")],
             "A closed SPST switch. Its noise figure is its insertion loss.", (s, _) => Passive(Num(s, "IL"))),
         new(Circulator, "Isolator (Circulator)", true, [Reg(SymbolKind.Circulator, "IL")],

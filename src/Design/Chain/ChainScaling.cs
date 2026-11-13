@@ -81,6 +81,31 @@ public static class ChainScaling
         return null;
     }
 
+    /// <summary>A frequency parameter: what places a part in frequency (a Filter's band, a Mixer's LO, a canceller's
+    /// bandwidth), which a design sets at its carrier and which stays there off it.</summary>
+    public static bool IsFrequency(ChainParam p) => p.Unit.EndsWith("Hz", StringComparison.Ordinal);
+
+    /// <summary>
+    /// A stage of a design that stands as it was resolved at its carrier, read at <paramref name="fHz"/>, its input
+    /// frequency off the carrier (a response's point, an image): every value of the frequency of <paramref name="raw"/>
+    /// read there, every frequency parameter left where <paramref name="resolved"/> has it. A value that cannot be read
+    /// there is added to <paramref name="refusals"/> when there is one, and keeps its carrier value when not.
+    /// </summary>
+    public static ChainStage At(ChainStage raw, ChainStage resolved, double fHz, string? baseDirectory, List<string>? refusals = null)
+    {
+        var s = resolved.Clone();
+        if (ChainParts.Find(raw.Part) is not { } part) return s;
+        foreach (var p in part.Parameters)
+        {
+            if (p.IsFile || p.Options is { Count: > 0 } || IsFrequency(p)) continue;
+            string text = raw.Get(p.Name);
+            if (!IsScaled(text)) continue;
+            if (At(text, fHz, baseDirectory, out string why) is { } v) s.Parameters[p.Name] = v.ToString("R", CultureInfo.InvariantCulture);
+            else refusals?.Add($"Stage '{raw.Name}': {p.Name} = '{text.Trim()}' {why}.");
+        }
+        return s;
+    }
+
     /// <summary>
     /// The design as the budget reads it: a copy in which every stage parameter written as an expression or a table is
     /// its number at that stage's input frequency. A value that cannot be read adds its reason to
