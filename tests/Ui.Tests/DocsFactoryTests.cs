@@ -193,7 +193,7 @@ public class DocsFactoryTests
             string readme = Path.Combine(dir, "README.md");
             string page = Path.Combine(DocsRoot(), "examples", Path.GetFileName(dir).ToLowerInvariant().Replace(' ', '-'));
             if (!File.Exists(readme) || !File.Exists(Path.Combine(page, "index.html"))) continue;
-            foreach (Match m in Regex.Matches(File.ReadAllText(readme), @"(?m)^!\[[^\]]*\]\((?<src>[^)\s:]+)\)[ \t]*$"))
+            foreach (System.Text.RegularExpressions.Match m in Regex.Matches(File.ReadAllText(readme), @"(?m)^!\[[^\]]*\]\((?<src>[^)\s:]+)\)[ \t]*$"))
             {
                 string src = Uri.UnescapeDataString(m.Groups["src"].Value);
                 string inWorkspace = Path.GetFullPath(Path.Combine(dir, src));
