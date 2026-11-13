@@ -113,7 +113,8 @@ public sealed class DacEnvelopeTests(ITestOutputHelper output)
     /// EVM against resolution. Each rail's quantisation error is Δ²/12 spread from −Fs/2 to Fs/2 (Δ = 2·FS/2^N), so a
     /// signal of RMS envelope x_rms has SQNR = 6.02·N + 1.76 − 20·log10(FS/x_rms) over the Nyquist band, and the share of
     /// it in the occupied band B, which is what the demodulator reads, is B/Fs: EVM_q = 10^(−(SQNR + 10·log10(Fs/B))/20).
-    /// The bench's own floor (the same chain at 24 bits) is taken out in quadrature; what is left is within 10 % of it.
+    /// The source's own EVM is taken out in quadrature (at 15.36 MHz the hold's droop adds nothing measurable to it: ideal
+    /// DACs there read 0.4578 % against its 0.4624 %); what is left is within 10 % of the closed form. One run per case.
     /// </summary>
     [Theory]
     [InlineData(6)]
@@ -122,15 +123,14 @@ public sealed class DacEnvelopeTests(ITestOutputHelper output)
     {
         const double fs = 15.36e6;
         var (ds, sig) = RunPlan(IqTx(bits, fs));
-        var (floor, _) = RunPlan(IqTx(24, fs));
-        double evm = ds["EVM_pct"].RealValues[0], ref24 = floor["EVM_pct"].RealValues[0];
+        double evm = ds["EVM_pct"].RealValues[0], own = OwnEvm(sig);
         double xRms = 0.1;                                         // −10 dBm: |Vs|/2 of RMS envelope at a matched input
         var nm = OfdmGenerator.Numerology(sig.Carriers[0].Spec);
         double b = nm.NSc * nm.ScsHz;
         double sqnr = 6.02 * bits + 1.76 - 20 * Math.Log10(Fs0 / xRms);
         double closed = 100 * Math.Pow(10, -(sqnr + 10 * Math.Log10(fs / b)) / 20);
-        double measured = Math.Sqrt(evm * evm - ref24 * ref24);
-        output.WriteLine($"{bits} bits: EVM {evm:F4} % (floor {ref24:F4} %), quantisation {measured:F4} %, closed form {closed:F4} % " +
+        double measured = Math.Sqrt(evm * evm - own * own);
+        output.WriteLine($"{bits} bits: EVM {evm:F4} % (the source's own {own:F4} %), quantisation {measured:F4} %, closed form {closed:F4} % " +
                          $"(SQNR {sqnr:F2} dB + {10 * Math.Log10(fs / b):F2} dB of oversampling); ACPR1 {ds["ACLR"].RealValues[1]:F2} dBc");
         Assert.InRange(measured, 0.9 * closed, 1.1 * closed);
     }

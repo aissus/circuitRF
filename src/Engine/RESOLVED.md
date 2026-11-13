@@ -4476,5 +4476,5 @@ its gain. A function of the absolute sample, as every drive is, so segments and 
 
 Gates: `tests/Engine.Tests/Envelope/DacEnvelopeTests.cs` — a rail through a DAC is its conversion step for step
 (5e-11), ideal DACs read the source's own EVM through an I/Q modulator, EVM against bits within 10 % of the closed form
-in quadrature with the 24-bit floor (6 and 8 bits: −2.7 % and +4.3 %), the pair measured once, the refusals in the
-envelope and in harmonic balance.
+in quadrature with the source's own EVM (6 and 8 bits: −2.8 % and +2.0 %; one envelope run per case, so each stays
+routine), the pair measured once, the refusals in the envelope and in harmonic balance.
