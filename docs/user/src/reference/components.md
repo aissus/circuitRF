@@ -4,7 +4,7 @@ slug: reference/components.html
 doc-kind: Reference Guide
 breadcrumb: Docs > Reference > Components
 lede: Every component in the standard library — its symbol, what it does, and its parameters.
-keywords: resistor, capacitor, inductor, transmission line, microstrip, MLIN, CPWG, GCPW, coplanar waveguide, SLIN, stripline, via, VIA, VIAGND, part, symbol, library, bead, ferrite, MMIC, MIMCAP, MIM capacitor, SPIRAL, spiral inductor, OSPIRAL, octagonal spiral, TFR, thin-film resistor, AIRBRIDGE, air bridge, CLIN, MCLIN, BCLIN, MBCLIN, MMITER, broadside, coupler, combiner, splitter, power divider, envelope detector, limiter, phase modulator, supply-modulated amplifier, polar transmitter, MOD_Source, modulated, LTE, NR, OFDM, pulsed CW, pCW, radar pulse, FSK, GFSK, GMSK, PN9, wireless M-Bus, DBPSK, UNB, LPWAN, CSS, chirp spread spectrum, Bluetooth LE, LoRa, LoRaWAN, Sigfox
+keywords: resistor, capacitor, inductor, transmission line, microstrip, MLIN, CPWG, GCPW, coplanar waveguide, SLIN, stripline, via, VIA, VIAGND, part, symbol, library, bead, ferrite, MMIC, MIMCAP, MIM capacitor, SPIRAL, spiral inductor, OSPIRAL, octagonal spiral, TFR, thin-film resistor, AIRBRIDGE, air bridge, CLIN, MCLIN, BCLIN, MBCLIN, MMITER, broadside, coupler, combiner, splitter, power divider, envelope detector, limiter, phase modulator, supply-modulated amplifier, polar transmitter, DAC, digital-to-analog converter, quantisation, zero-order hold, digital transmitter, MOD_Source, modulated, LTE, NR, OFDM, pulsed CW, pCW, radar pulse, FSK, GFSK, GMSK, PN9, wireless M-Bus, DBPSK, UNB, LPWAN, CSS, chirp spread spectrum, Bluetooth LE, LoRa, LoRaWAN, Sigfox
 ---
 
 Symbols are rendered from the live drawing engine, with their connection leads and their pins shown
@@ -388,6 +388,10 @@ source impedance `Z`.
   (it still turns by about π across a null of the envelope). The pair is measured once, through its amplitude half;
   beside an RF source of the same signal (envelope tracking) the RF source is the one measured. Add it as a row in
   the source's properties.
+- `Baseband` — `i` or `q` plays one rail of the signal at baseband: the open-circuit voltage is `|Vs|·Re x(t)` or
+  `|Vs|·Im x(t)`, so a matched load reads that rail of the RF envelope the source would deliver. It is the digital
+  stream a [DAC](#dac) converts. The two rails of one signal state the same carriers, and the run measures the signal
+  once, through the I rail (a Q rail alone is refused). Not with `Polar`. Add it as a row in the source's properties.
 - `Record` — periodic record length (s), whole 0.5 ms slots. `Clip` — target PAPR (dB) for
   clip-and-filter; absent means **unclipped** (the natural OFDM PAPR, about 11–12 dB).
   `Shaping` — out-of-channel spectral floor (dBc), or `off`.
@@ -399,7 +403,7 @@ the spectrum, the CCDF and the EVM of the signal before you simulate it.
 In a harmonic-balance or loadpull run a MOD_Source is a CW tone at `Fc` carrying `Pavg` — the signal's
 average power, or for a pulsed-CW source the pulse-top power, the steady state of a pulse that never ends;
 in an S-parameter run it is the passive impedance `Z`. A polar half is the unmodulated operating point at
-DC there: `|Vs|` (the envelope at its RMS) or 0.
+DC there: `|Vs|` (the envelope at its RMS) or 0; an I rail is `|Vs|` and a Q rail 0.
 
 {{table: components/ModSource}}
 
@@ -2545,6 +2549,33 @@ of a polar transmitter, while its output phase follows the RF input. Into a matc
 In depth: [System Components › Polar transmitters](system-components.html#polar).
 
 {{table: components/SupplyAmp}}
+
+### DAC {#dac}
+
+{{symbol: dac}}
+
+The digital-to-analog converter: a digital stream in on the left, its analog reconstruction out on the right at
+baseband. The stream is a [MOD_Source](#modsource) with `Baseband=i` or `q` on the input's net and nothing else: one
+rail of the [Signal Designer](signal-designer.html)'s record, sampled at `Fs`. Into a matched load the output is
+
+- the input at each sample instant `n/Fs`, **quantised** to `Bits` bits across `±FS`: the symmetric mid-rise
+  quantiser, step `Δ = 2·FS/2^Bits`, whose end codes `±(FS − Δ/2)` hold any input beyond full scale (clipping);
+- **held** for the whole period (`Mode=nrz`, a zero-order hold) or for `Duty` of it before returning to zero
+  (`Mode=rz`): the signal comes out through `H(f) = d·sinc(d·f/Fs)·e^(−jπ·d·f/Fs)` (`d` = 1 or `Duty`), with its
+  images at `k·Fs ± f` at `|H(k·Fs ± f)|`;
+- times `Gain`.
+
+Over a busy signal the quantisation error is `Δ²/12` spread evenly from `−Fs/2` to `Fs/2`, so a full-scale sine reads
+`SNR = 6.02·Bits + 1.76 dB`, and a complex signal of RMS `x_rms` on two DACs loses its back-off from full scale,
+`6.02·Bits + 1.76 − 20·log10(FS/x_rms)`, of which the share `B/Fs` falls in an occupied band `B`.
+
+It runs in a **single circuit envelope**, which converts the whole record exactly before the first step. Harmonic
+balance has no stream to sample and refuses it by name; an S-parameter or DC run sees its matched, unilateral
+through path, `S21 = 10^(Gain/20)`.
+
+In depth: [System Components › Digital transmitters](system-components.html#digital).
+
+{{table: components/DAC}}
 
 ### Duplexer {#duplexer}
 

@@ -4,7 +4,7 @@ slug: reference/simulations.html
 doc-kind: Reference Guide
 breadcrumb: Docs > Reference > Simulations
 lede: Every analysis circuitRF runs, what it computes, a short overview of the method, and the full set of settings. Algorithm details are deferred to the design notes / white papers; this chapter is the operational reference.
-keywords: analysis, sweep, DC, S-parameters, noise, noise figure, NF, NFmin, noise temperature, phase noise, EVM, SNR, mixer noise, SSB, DSB, harmonic balance, HB, loadpull, load pull, parametric sweep, run, simulate, envelope, modulated, ACLR, ACPR, pulsed CW, pulse droop, pulse-to-pulse, radar
+keywords: analysis, sweep, DC, S-parameters, noise, noise figure, NF, NFmin, noise temperature, phase noise, EVM, SNR, mixer noise, SSB, DSB, harmonic balance, HB, loadpull, load pull, parametric sweep, run, simulate, envelope, modulated, ACLR, ACPR, pulsed CW, pulse droop, pulse-to-pulse, radar, DAC, digital transmitter, baseband rail
 ---
 
 <nav class="toc">
@@ -590,6 +590,15 @@ half plays the phase unwrapped over the record, continuous, so a filter or a del
 phase rather than on 2π wraps; it still turns by about π across a null of the envelope. Polar halves need a single
 envelope, and the multi-fundamental envelope refuses them by name; it refuses those blocks too, for as long as its
 solver drops the weighted term they read their carrier's quadrature through.
+
+**A digital stream and its DAC.** A MOD_Source with `Baseband=i` or `Baseband=q` drives the baseband with one rail of
+its signal, `|Vs|·Re x` or `|Vs|·Im x`; the I and Q rails of one signal are measured once, through the I rail. A
+[DAC](components.html#dac) on a rail's net converts it, and the run does that before the first step: the record is
+periodic, so the rail at the DAC's `Fs`, quantised and held, is laid onto the envelope's record bin by bin, its
+`sinc` droop, its quantisation noise and every image inside the run's signal band (± half the signal rate) exact
+whatever the step. What the DAC makes beyond that band is left out, and a note says where the band ends and how far
+down the first image it leaves out is. The multi-fundamental envelope refuses rails and DACs by name, and harmonic
+balance refuses a DAC ([Digital transmitters](system-components.html#digital)).
 
 | Setting | Default | Meaning |
 |---|---|---|

@@ -37,7 +37,7 @@
   </div>
 
   <h1>System Components</h1>
-  <p class="lede">The ideal blocks a system diagram is drawn out of — circulator, coupler, hybrid, combiner, balun, switch, amplifier, attenuator, delay, filter, duplexer and mixer, and the four of a polar transmitter. What each one is for, what &quot;ideal&quot; costs you, and where passive intermodulation comes from.</p>
+  <p class="lede">The ideal blocks a system diagram is drawn out of — circulator, coupler, hybrid, combiner, balun, switch, amplifier, attenuator, delay, filter, duplexer and mixer, the four of a polar transmitter, and the DAC of a digital one. What each one is for, what &quot;ideal&quot; costs you, and where passive intermodulation comes from.</p>
 
 <nav class="toc">
 <h2>On this page</h2>
@@ -47,6 +47,7 @@
 <li><a href="#running">Which analysis answers which question</a></li>
 <li><a href="#pim">Passive intermodulation</a></li>
 <li><a href="#polar">Polar transmitters</a></li>
+<li><a href="#digital">Digital transmitters</a></li>
 <li><a href="#catalogue">The blocks, one by one</a></li>
 </ol>
 </nav>
@@ -354,6 +355,73 @@ it, so a filter or a fraction-of-a-step delay on that path acts on the phase and
 about π across a null of the envelope: that is the signal, and why a phase path needs bandwidth.</p>
 <p><strong>Envelope tracking</strong> is the same blocks with an RF source: an RF MOD_Source on the amplifier's input and the
 amplitude half of the same signal on its supply. The run measures the RF source, once.</p>
+<p>A MOD_Source with <code>Baseband=i</code> or <code>Baseband=q</code> drives the baseband with one rail of its signal instead, the stream
+a <a href="#dac">DAC</a> converts (<a href="#digital">Digital transmitters</a>, below).</p>
+<h2 id="digital">Digital transmitters</h2>
+<p>A digital transmitter's baseband is a stream of numbers until a <strong>DAC</strong> turns it into a voltage. The
+<a href="components.html#dac">DAC</a> block is that converter, and a <a href="components.html#modsource">MOD_Source</a> with <code>Baseband=i</code>
+or <code>Baseband=q</code> is the stream: one rail of the <a href="signal-designer.html">Signal Designer</a>'s record, its I or its Q. Two
+rails, two DACs, two reconstruction filters and an I/Q modulator (two <a href="#mixer">mixers</a> on a quadrature LO, as in the
+<code>TxDirectConversion</code> bench) make a transmitter. The worked example is the <strong>DigitalTx</strong> bench of the <em>System Design</em>
+examples: an NR signal at 3.5 GHz, its EVM and ACLR against the DACs' resolution and sample rate.</p>
+<h3 id="what-the-envelope-carries-of-a-dac">What the envelope carries of a DAC</h3>
+<p>The envelope steps at its own rate, which has nothing to do with <code>Fs</code>, and it does not need to resolve the hold in
+time: the record is periodic, so the whole conversion is known before the first step. The rail is resampled at
+<code>Fs</code>, quantised and held, and its spectrum — the stream's own, repeated every <code>Fs</code>, times the pulse's
+<code>H(f) = d·sinc(d·f/Fs)·e^(−jπ·d·f/Fs)</code> — is laid onto the envelope's record bin by bin: the droop, the
+quantisation noise and every image that falls inside the run's signal band, exactly, with no interpolation between
+steps. The rail's source then plays that conversion, in volts at the DAC's input, and the DAC carries it to its output
+with its gain. That is exact because nothing else is on the DAC's input net, which the run checks.</p>
+<p>The run's <strong>signal band</strong> is ± half the signal rate (±61.44 MHz for a 20 MHz NR carrier): the band ACLR is measured
+over and a System <a href="#filter">Filter</a>'s rational fit holds over. What a DAC makes beyond it — its higher images and its
+quantisation noise above the band — is <strong>left out</strong>, and the Messages pane says so for each DAC: where the band ends,
+the first image it leaves out, and how far below the signal any of them is at the DAC's output, from
+<code>|H(f)| ≤ Fs/(π·f)</code>. A reconstruction filter's job is to remove exactly those. Lower <code>Fs</code> brings the first image
+inside the band, and the run then carries it through the filter into the adjacent channel.</p>
+<h3 id="the-closed-forms">The closed forms</h3>
+<table>
+<thead>
+<tr>
+<th>What</th>
+<th>Closed form</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Quantisation floor, Nyquist band</td>
+<td>a full-scale sine on one DAC: <code>6.02·N + 1.76</code> dB, the error <code>Δ²/12</code> with <code>Δ = 2·FS/2^N</code>. A complex signal of RMS <code>x_rms</code> on two DACs (each rail at <code>x_rms/√2</code>): <code>SQNR = 6.02·N + 1.76 − BO</code> dB, <code>BO = 20·log10(FS/x_rms)</code> its back-off from full scale</td>
+</tr>
+<tr>
+<td>Its share in the occupied band <code>B</code></td>
+<td><code>EVM_q = 10^(−(SQNR + 10·log10(Fs/B))/20)</code>, and about the same in dBc in an adjacent channel</td>
+</tr>
+<tr>
+<td>Droop at <code>f</code></td>
+<td><code>\|H(f)/H(0)\| = sinc(d·f/Fs)</code>: 0.08 dB at the edge of a 20 MHz NR channel at 122.88 MHz NRZ</td>
+</tr>
+<tr>
+<td>Images</td>
+<td>at <code>k·Fs ± f</code>, <code>\|H(k·Fs ± f)/H(f)\|</code>: for NRZ the first is <code>f/(Fs − f)</code> of the tone</td>
+</tr>
+<tr>
+<td>Clipping</td>
+<td>an input beyond <code>±FS</code> is held at the end codes <code>±(FS − Δ/2)</code></td>
+</tr>
+</tbody>
+</table>
+<p>The floor assumes the error is busy and uncorrelated with the signal — Bennett (&quot;Spectra of quantized signals&quot;,
+1948), and Widrow and Kollár (<em>Quantization Noise</em>, 2008) for when that holds: a modulated signal spread over many
+steps, which six bits already is. With no equaliser in the EVM measurement, the droop is EVM too: about 0.27 % at
+122.88 MHz for a 20 MHz NR channel, what an inverse-sinc filter ahead of the DAC would take out.</p>
+<h3 id="which-analyses-carry-it">Which analyses carry it</h3>
+<ul>
+<li><strong>A single circuit envelope:</strong> the DAC and the rails, as above.</li>
+<li><strong>The multi-fundamental envelope</strong> refuses a rail and a DAC by name: it has no one baseband for them to drive.</li>
+<li><strong>Harmonic balance</strong> refuses a DAC by name, at any tone count: it has no stream to sample, and a held tone's images
+<code>k·Fs ± f</code> are harmonics of the tone only when <code>Fs</code> is a whole multiple of it. A rail alone plays its unmodulated
+operating point there, <code>|Vs|</code> (I) or 0 (Q) at DC.</li>
+<li><strong>S-parameters and DC</strong> see the DAC's matched, unilateral through path, <code>S21 = 10^(Gain/20)</code>.</li>
+</ul>
 <h2 id="catalogue">The blocks, one by one</h2>
 <p>One entry each, in the order the palette lists them under <strong>System</strong>. The parameter tables live in
 <a href="components.html">Components</a>, one section per block, and each entry below links to its own.</p>
@@ -797,6 +865,27 @@ its matched <code>PH</code> reads one volt per radian, so <code>Kp = 1</code> re
 its phase by <code>AMPM·VS</code> degrees, while the RF input sets only the phase. Like the <a href="#amp">Amplifier</a> it has no DC
 power consumption and no efficiency: it is the law of the envelope, not a supply's current.</p>
 <p>Parameters: <a href="components.html#supplyamp">Components › Supply-Modulated Amplifier</a>.</p>
+<h3 id="dac">DAC</h3>
+<figure class="symbol"><span class="frame">
+<span class="sym-light"><svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="240" height="186" viewBox="0 0 240 186"><path fill="none" stroke="#2D14C3" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M88.83 102.43L88.83 47.57Q88.83 47.39 88.85 47.2Q88.87 47.02 88.9 46.84Q88.94 46.66 88.99 46.49Q89.05 46.31 89.12 46.14Q89.19 45.97 89.27 45.81Q89.36 45.65 89.46 45.49Q89.56 45.34 89.68 45.2Q89.8 45.06 89.93 44.93Q90.06 44.8 90.2 44.68Q90.34 44.56 90.49 44.46Q90.65 44.36 90.81 44.27Q90.97 44.19 91.14 44.12Q91.31 44.05 91.49 43.99Q91.66 43.94 91.84 43.9Q92.02 43.87 92.2 43.85Q92.39 43.83 92.57 43.83L147.43 43.83Q147.61 43.83 147.79 43.85Q147.98 43.87 148.16 43.9Q148.34 43.94 148.51 43.99Q148.69 44.05 148.86 44.12Q149.03 44.19 149.19 44.27Q149.35 44.36 149.51 44.46Q149.66 44.56 149.8 44.68Q149.94 44.8 150.07 44.93Q150.2 45.06 150.32 45.2Q150.44 45.34 150.54 45.49Q150.64 45.65 150.73 45.81Q150.81 45.97 150.88 46.14Q150.95 46.31 151.01 46.49Q151.06 46.66 151.1 46.84Q151.13 47.02 151.15 47.2Q151.17 47.39 151.17 47.57L151.17 102.43Q151.17 102.61 151.15 102.8Q151.13 102.98 151.1 103.16Q151.06 103.34 151.01 103.51Q150.95 103.69 150.88 103.86Q150.81 104.03 150.73 104.19Q150.64 104.35 150.54 104.51Q150.44 104.66 150.32 104.8Q150.2 104.94 150.07 105.07Q149.94 105.2 149.8 105.32Q149.66 105.44 149.51 105.54Q149.35 105.64 149.19 105.73Q149.03 105.81 148.86 105.88Q148.69 105.95 148.51 106.01Q148.34 106.06 148.16 106.1Q147.98 106.13 147.79 106.15Q147.61 106.17 147.43 106.17L92.57 106.17Q92.39 106.17 92.2 106.15Q92.02 106.13 91.84 106.1Q91.66 106.06 91.49 106.01Q91.31 105.95 91.14 105.88Q90.97 105.81 90.81 105.73Q90.65 105.64 90.49 105.54Q90.34 105.44 90.2 105.32Q90.06 105.2 89.93 105.07Q89.8 104.94 89.68 104.8Q89.56 104.66 89.46 104.51Q89.36 104.35 89.27 104.19Q89.19 104.03 89.12 103.86Q89.05 103.69 88.99 103.51Q88.94 103.34 88.9 103.16Q88.87 102.98 88.85 102.8Q88.83 102.61 88.83 102.43Z" /><path fill="none" stroke="#2D14C3" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M89.92 105.08L150.08 44.92" /><text fill="#2D14C3" transform="translate(105.97 60.97)" font-size="21.82" font-family="IBM Plex Sans" x="-7.5" y="8.18">
+			D
+	</text><text fill="#2D14C3" transform="translate(134.03 89.03)" font-size="21.82" font-family="IBM Plex Sans" x="-7" y="8.18">
+			A
+	</text><path fill="none" stroke="#2D14C3" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M26.49 75L88.83 75" /><path fill="none" stroke="#2D14C3" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M151.17 75L213.51 75" /><rect fill="none" stroke="#CE4A24" stroke-width="1" stroke-miterlimit="4" x="23.49" y="72" width="6" height="6" /><rect fill="none" stroke="#CE4A24" stroke-width="1" stroke-miterlimit="4" x="210.51" y="72" width="6" height="6" /><text fill="#6A8EF6" font-size="15" font-weight="600" font-family="IBM Plex Sans" x="105, 115, 125" y="172.32">
+			DAC
+	</text></svg></span>
+<span class="sym-dark"><svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="240" height="186" viewBox="0 0 240 186"><path fill="none" stroke="#9684FA" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M88.83 102.43L88.83 47.57Q88.83 47.39 88.85 47.2Q88.87 47.02 88.9 46.84Q88.94 46.66 88.99 46.49Q89.05 46.31 89.12 46.14Q89.19 45.97 89.27 45.81Q89.36 45.65 89.46 45.49Q89.56 45.34 89.68 45.2Q89.8 45.06 89.93 44.93Q90.06 44.8 90.2 44.68Q90.34 44.56 90.49 44.46Q90.65 44.36 90.81 44.27Q90.97 44.19 91.14 44.12Q91.31 44.05 91.49 43.99Q91.66 43.94 91.84 43.9Q92.02 43.87 92.2 43.85Q92.39 43.83 92.57 43.83L147.43 43.83Q147.61 43.83 147.79 43.85Q147.98 43.87 148.16 43.9Q148.34 43.94 148.51 43.99Q148.69 44.05 148.86 44.12Q149.03 44.19 149.19 44.27Q149.35 44.36 149.51 44.46Q149.66 44.56 149.8 44.68Q149.94 44.8 150.07 44.93Q150.2 45.06 150.32 45.2Q150.44 45.34 150.54 45.49Q150.64 45.65 150.73 45.81Q150.81 45.97 150.88 46.14Q150.95 46.31 151.01 46.49Q151.06 46.66 151.1 46.84Q151.13 47.02 151.15 47.2Q151.17 47.39 151.17 47.57L151.17 102.43Q151.17 102.61 151.15 102.8Q151.13 102.98 151.1 103.16Q151.06 103.34 151.01 103.51Q150.95 103.69 150.88 103.86Q150.81 104.03 150.73 104.19Q150.64 104.35 150.54 104.51Q150.44 104.66 150.32 104.8Q150.2 104.94 150.07 105.07Q149.94 105.2 149.8 105.32Q149.66 105.44 149.51 105.54Q149.35 105.64 149.19 105.73Q149.03 105.81 148.86 105.88Q148.69 105.95 148.51 106.01Q148.34 106.06 148.16 106.1Q147.98 106.13 147.79 106.15Q147.61 106.17 147.43 106.17L92.57 106.17Q92.39 106.17 92.2 106.15Q92.02 106.13 91.84 106.1Q91.66 106.06 91.49 106.01Q91.31 105.95 91.14 105.88Q90.97 105.81 90.81 105.73Q90.65 105.64 90.49 105.54Q90.34 105.44 90.2 105.32Q90.06 105.2 89.93 105.07Q89.8 104.94 89.68 104.8Q89.56 104.66 89.46 104.51Q89.36 104.35 89.27 104.19Q89.19 104.03 89.12 103.86Q89.05 103.69 88.99 103.51Q88.94 103.34 88.9 103.16Q88.87 102.98 88.85 102.8Q88.83 102.61 88.83 102.43Z" /><path fill="none" stroke="#9684FA" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M89.92 105.08L150.08 44.92" /><text fill="#9684FA" transform="translate(105.97 60.97)" font-size="21.82" font-family="IBM Plex Sans" x="-7.5" y="8.18">
+			D
+	</text><text fill="#9684FA" transform="translate(134.03 89.03)" font-size="21.82" font-family="IBM Plex Sans" x="-7" y="8.18">
+			A
+	</text><path fill="none" stroke="#9684FA" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M26.49 75L88.83 75" /><path fill="none" stroke="#9684FA" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M151.17 75L213.51 75" /><rect fill="none" stroke="#F07846" stroke-width="1" stroke-miterlimit="4" x="23.49" y="72" width="6" height="6" /><rect fill="none" stroke="#F07846" stroke-width="1" stroke-miterlimit="4" x="210.51" y="72" width="6" height="6" /><text fill="#8CAEFF" font-size="15" font-weight="600" font-family="IBM Plex Sans" x="105, 115, 125" y="172.32">
+			DAC
+	</text></svg></span>
+</span><figcaption>DAC</figcaption></figure>
+<p>A baseband rail's digital stream in, its analog reconstruction out: sampled at <code>Fs</code>, quantised to <code>Bits</code> bits across
+<code>±FS</code>, held for the whole period (<code>nrz</code>) or for <code>Duty</code> of it (<code>rz</code>), times <code>Gain</code>. Its input must be a MOD_Source rail
+(<code>Baseband=i</code> or <code>q</code>) and nothing else; see <a href="#digital">Digital transmitters</a> for what the envelope carries of it.</p>
+<p>Parameters: <a href="components.html#dac">Components › DAC</a>.</p>
 <h3 id="coupler">Directional Coupler</h3>
 <figure class="symbol"><span class="frame">
 <span class="sym-light"><svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="240" height="186" viewBox="0 0 240 186"><path fill="none" stroke="#2D14C3" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M70.13 118.01L70.13 31.99Q70.13 31.8 70.15 31.62Q70.17 31.44 70.2 31.26Q70.24 31.08 70.29 30.9Q70.34 30.73 70.41 30.56Q70.48 30.39 70.57 30.22Q70.66 30.06 70.76 29.91Q70.86 29.76 70.98 29.61Q71.1 29.47 71.23 29.34Q71.36 29.21 71.5 29.1Q71.64 28.98 71.79 28.88Q71.94 28.78 72.11 28.69Q72.27 28.6 72.44 28.53Q72.61 28.46 72.78 28.41Q72.96 28.35 73.14 28.32Q73.32 28.28 73.5 28.26Q73.69 28.25 73.87 28.25L166.13 28.25Q166.31 28.25 166.5 28.26Q166.68 28.28 166.86 28.32Q167.04 28.35 167.22 28.41Q167.39 28.46 167.56 28.53Q167.73 28.6 167.89 28.69Q168.06 28.78 168.21 28.88Q168.36 28.98 168.5 29.1Q168.65 29.21 168.78 29.34Q168.91 29.47 169.02 29.61Q169.14 29.76 169.24 29.91Q169.34 30.06 169.43 30.22Q169.52 30.39 169.59 30.56Q169.66 30.73 169.71 30.9Q169.76 31.08 169.8 31.26Q169.83 31.44 169.85 31.62Q169.87 31.8 169.87 31.99L169.87 118.01Q169.87 118.2 169.85 118.38Q169.83 118.56 169.8 118.74Q169.76 118.92 169.71 119.1Q169.66 119.28 169.59 119.44Q169.52 119.61 169.43 119.78Q169.34 119.94 169.24 120.09Q169.14 120.24 169.02 120.39Q168.91 120.53 168.78 120.66Q168.65 120.79 168.5 120.9Q168.36 121.02 168.21 121.12Q168.06 121.23 167.89 121.31Q167.73 121.4 167.56 121.47Q167.39 121.54 167.22 121.59Q167.04 121.65 166.86 121.68Q166.68 121.72 166.5 121.74Q166.31 121.75 166.13 121.75L73.87 121.75Q73.69 121.75 73.5 121.74Q73.32 121.72 73.14 121.68Q72.96 121.65 72.78 121.59Q72.61 121.54 72.44 121.47Q72.27 121.4 72.11 121.31Q71.94 121.23 71.79 121.12Q71.64 121.02 71.5 120.9Q71.36 120.79 71.23 120.66Q71.1 120.53 70.98 120.39Q70.86 120.24 70.76 120.09Q70.66 119.94 70.57 119.78Q70.48 119.61 70.41 119.44Q70.34 119.28 70.29 119.1Q70.24 118.92 70.2 118.74Q70.17 118.56 70.15 118.38Q70.13 118.2 70.13 118.01Z" /><path fill="none" stroke="#2D14C3" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M26.49 43.83L213.51 43.83" /><path fill="none" stroke="#2D14C3" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M26.49 106.17L213.51 106.17" /><path fill="none" stroke="#2D14C3" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M107.53 43.83L129 97.49" /><path fill="#2D14C3" d="M132.47 106.17L124.94 99.11L133.05 95.87L132.47 106.17Z" /><text fill="#2D14C3" transform="translate(52.99 31.36)" font-size="9.35" font-family="IBM Plex Sans" x="-2.81" y="3.51">

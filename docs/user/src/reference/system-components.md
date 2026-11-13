@@ -3,8 +3,8 @@ title: System Components
 slug: reference/system-components.html
 doc-kind: Reference Guide
 breadcrumb: Docs > Reference > System components
-lede: The ideal blocks a system diagram is drawn out of — circulator, coupler, hybrid, combiner, balun, switch, amplifier, attenuator, delay, filter, duplexer and mixer, and the four of a polar transmitter. What each one is for, what "ideal" costs you, and where passive intermodulation comes from.
-keywords: mixer, amplifier, filter, attenuator, delay, combiner, splitter, power divider, Wilkinson, behavioural block, system level, intermod, IP3, polar transmitter, envelope elimination and restoration, EER, envelope detector, limiter, phase modulator, supply-modulated amplifier, AM-AM, AM-PM
+lede: The ideal blocks a system diagram is drawn out of — circulator, coupler, hybrid, combiner, balun, switch, amplifier, attenuator, delay, filter, duplexer and mixer, the four of a polar transmitter, and the DAC of a digital one. What each one is for, what "ideal" costs you, and where passive intermodulation comes from.
+keywords: mixer, amplifier, filter, attenuator, delay, combiner, splitter, power divider, Wilkinson, behavioural block, system level, intermod, IP3, polar transmitter, envelope elimination and restoration, EER, envelope detector, limiter, phase modulator, supply-modulated amplifier, AM-AM, AM-PM, DAC, digital-to-analog converter, digital transmitter, quantisation noise, SQNR, zero-order hold, sinc droop, images, reconstruction filter
 ---
 
 <nav class="toc">
@@ -15,6 +15,7 @@ keywords: mixer, amplifier, filter, attenuator, delay, combiner, splitter, power
 <li><a href="#running">Which analysis answers which question</a></li>
 <li><a href="#pim">Passive intermodulation</a></li>
 <li><a href="#polar">Polar transmitters</a></li>
+<li><a href="#digital">Digital transmitters</a></li>
 <li><a href="#catalogue">The blocks, one by one</a></li>
 </ol>
 </nav>
@@ -301,6 +302,59 @@ about π across a null of the envelope: that is the signal, and why a phase path
 **Envelope tracking** is the same blocks with an RF source: an RF MOD_Source on the amplifier's input and the
 amplitude half of the same signal on its supply. The run measures the RF source, once.
 
+A MOD_Source with `Baseband=i` or `Baseband=q` drives the baseband with one rail of its signal instead, the stream
+a [DAC](#dac) converts ([Digital transmitters](#digital), below).
+
+## Digital transmitters {#digital}
+
+A digital transmitter's baseband is a stream of numbers until a **DAC** turns it into a voltage. The
+[DAC](components.html#dac) block is that converter, and a [MOD_Source](components.html#modsource) with `Baseband=i`
+or `Baseband=q` is the stream: one rail of the [Signal Designer](signal-designer.html)'s record, its I or its Q. Two
+rails, two DACs, two reconstruction filters and an I/Q modulator (two [mixers](#mixer) on a quadrature LO, as in the
+`TxDirectConversion` bench) make a transmitter. The worked example is the **DigitalTx** bench of the *System Design*
+examples: an NR signal at 3.5 GHz, its EVM and ACLR against the DACs' resolution and sample rate.
+
+### What the envelope carries of a DAC
+
+The envelope steps at its own rate, which has nothing to do with `Fs`, and it does not need to resolve the hold in
+time: the record is periodic, so the whole conversion is known before the first step. The rail is resampled at
+`Fs`, quantised and held, and its spectrum — the stream's own, repeated every `Fs`, times the pulse's
+`H(f) = d·sinc(d·f/Fs)·e^(−jπ·d·f/Fs)` — is laid onto the envelope's record bin by bin: the droop, the
+quantisation noise and every image that falls inside the run's signal band, exactly, with no interpolation between
+steps. The rail's source then plays that conversion, in volts at the DAC's input, and the DAC carries it to its output
+with its gain. That is exact because nothing else is on the DAC's input net, which the run checks.
+
+The run's **signal band** is ± half the signal rate (±61.44 MHz for a 20 MHz NR carrier): the band ACLR is measured
+over and a System [Filter](#filter)'s rational fit holds over. What a DAC makes beyond it — its higher images and its
+quantisation noise above the band — is **left out**, and the Messages pane says so for each DAC: where the band ends,
+the first image it leaves out, and how far below the signal any of them is at the DAC's output, from
+`|H(f)| ≤ Fs/(π·f)`. A reconstruction filter's job is to remove exactly those. Lower `Fs` brings the first image
+inside the band, and the run then carries it through the filter into the adjacent channel.
+
+### The closed forms
+
+| What | Closed form |
+|---|---|
+| Quantisation floor, Nyquist band | a full-scale sine on one DAC: `6.02·N + 1.76` dB, the error `Δ²/12` with `Δ = 2·FS/2^N`. A complex signal of RMS `x_rms` on two DACs (each rail at `x_rms/√2`): `SQNR = 6.02·N + 1.76 − BO` dB, `BO = 20·log10(FS/x_rms)` its back-off from full scale |
+| Its share in the occupied band `B` | `EVM_q = 10^(−(SQNR + 10·log10(Fs/B))/20)`, and about the same in dBc in an adjacent channel |
+| Droop at `f` | `\|H(f)/H(0)\| = sinc(d·f/Fs)`: 0.08 dB at the edge of a 20 MHz NR channel at 122.88 MHz NRZ |
+| Images | at `k·Fs ± f`, `\|H(k·Fs ± f)/H(f)\|`: for NRZ the first is `f/(Fs − f)` of the tone |
+| Clipping | an input beyond `±FS` is held at the end codes `±(FS − Δ/2)` |
+
+The floor assumes the error is busy and uncorrelated with the signal — Bennett ("Spectra of quantized signals",
+1948), and Widrow and Kollár (*Quantization Noise*, 2008) for when that holds: a modulated signal spread over many
+steps, which six bits already is. With no equaliser in the EVM measurement, the droop is EVM too: about 0.27 % at
+122.88 MHz for a 20 MHz NR channel, what an inverse-sinc filter ahead of the DAC would take out.
+
+### Which analyses carry it
+
+- **A single circuit envelope:** the DAC and the rails, as above.
+- **The multi-fundamental envelope** refuses a rail and a DAC by name: it has no one baseband for them to drive.
+- **Harmonic balance** refuses a DAC by name, at any tone count: it has no stream to sample, and a held tone's images
+  `k·Fs ± f` are harmonics of the tone only when `Fs` is a whole multiple of it. A rail alone plays its unmodulated
+  operating point there, `|Vs|` (I) or 0 (Q) at DC.
+- **S-parameters and DC** see the DAC's matched, unilateral through path, `S21 = 10^(Gain/20)`.
+
 ## The blocks, one by one {#catalogue}
 
 One entry each, in the order the palette lists them under **System**. The parameter tables live in
@@ -582,6 +636,16 @@ its phase by `AMPM·VS` degrees, while the RF input sets only the phase. Like th
 power consumption and no efficiency: it is the law of the envelope, not a supply's current.
 
 Parameters: {{anchor: components#supplyamp|Components › Supply-Modulated Amplifier}}.
+
+### DAC {#dac}
+
+{{symbol: dac}}
+
+A baseband rail's digital stream in, its analog reconstruction out: sampled at `Fs`, quantised to `Bits` bits across
+`±FS`, held for the whole period (`nrz`) or for `Duty` of it (`rz`), times `Gain`. Its input must be a MOD_Source rail
+(`Baseband=i` or `q`) and nothing else; see [Digital transmitters](#digital) for what the envelope carries of it.
+
+Parameters: {{anchor: components#dac|Components › DAC}}.
 
 ### Directional Coupler {#coupler}
 
