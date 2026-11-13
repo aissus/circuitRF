@@ -356,6 +356,9 @@ public static class InstanceNetContract
                 p["Fc"]   = new Expressions.Value(1e9);
                 p["Pavg"] = new Expressions.Value(0.0);
                 break;
+
+            // A DAC refuses a missing sample rate; any positive one stands in.
+            case "DAC":    p["Fs"] = new Expressions.Value(1e8); break;
         }
         return p;
     }
