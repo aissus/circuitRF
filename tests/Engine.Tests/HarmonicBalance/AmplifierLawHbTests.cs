@@ -109,6 +109,67 @@ analysis HB2 type=hb NumFreqs=2 Tone[1]=3.4995e9 Tone[2]=3.5005e9 MaxMixOrder=7 
         if (law.Contains("Saleh")) Assert.InRange(iip3 - AmplifierLaw.Saleh(33, 30, 10, 20).Iip3Dbm, -1e-3, 1e-3);
     }
 
+    /// <summary>A law its Psat switches off is a linear amplifier, not the tanh limiter on the line's IP3: a 15 dBm tone into
+    /// 30 dB comes out at 45 dBm, where an IP3 of 40 would have compressed it.</summary>
+    [Fact]
+    public void ALawSwitchedOff_IsLinear()
+    {
+        var ds = Run(OneTone(15, "Law=Rapp  Psat=200 dBm  IP3=40 dBm"));
+        Assert.InRange(Dbm(V(ds, "out", 1)) - 45, -1e-9, 1e-9);
+    }
+
+    /// <summary>A hard clip: Rapp at P = 1000 is read in the log domain, so 6 dB past its saturating input it is Psat and
+    /// not NaN, in the closed form and in the run.</summary>
+    [Fact]
+    public void AHardClip_Rapp1000_IsPsat()
+    {
+        const string law = "Law=Rapp  Psat=33 dBm  P=1000";
+        var l = AmplifierLaw.Rapp(33, 30, 1000);
+        Assert.Equal(33, l.OutputDbm(9.0206, 30), 6);
+        Assert.True(double.IsFinite(l.Ip1dbDbm));
+        double pout = Dbm(V(Run(OneTone(9.0206, law)), "out", 1));
+        output.WriteLine($"Rapp P = 1000, 6 dB past its input saturation: {pout:F6} dBm");
+        Assert.InRange(pout - 33, -1e-6, 1e-6);
+    }
+
+    /// <summary>Two tones at strong drive, through the 2-D solver: the fundamental and the IM3 are the law's on the complex
+    /// envelope, the two tones' beat sampled over its period and transformed, to 10⁻² dB, and the IM5 to 2×10⁻² dB (Rapp,
+    /// p = 2, +3 dBm a tone, 3 dB past its 1 dB point). The IM7 is printed: at MaxMixOrder 9 it is the run's truncation,
+    /// 0.4 dB off.</summary>
+    [Fact]
+    public void TwoTonesAtStrongDrive_AreTheLawOnTheEnvelope()
+    {
+        const double pt = 3, g = 30;
+        var ds = Run($@"
+PnTone:S  in 0  Freq[1]=3.4995 GHz  Pavl[1]={N(pt)} dBm  Phase[1]=0 deg  Freq[2]=3.5005 GHz  Pavl[2]={N(pt)} dBm  Phase[2]=0 deg  Z=50 Ohm
+Amp:PA  in 0 out 0  Gain=30 dB  {Rapp}
+R:RL  out 0  R=50 Ohm
+analysis HB2 type=hb NumFreqs=2 Tone[1]=3.4995e9 Tone[2]=3.5005e9 MaxMixOrder=9 MaxHarm=3 Tol=1e-12
+");
+        // The envelope about f1: x(θ) = A·(1 + e^(jθ)), y = F(|x|²)·x; the product k is y's Fourier coefficient at e^(jkθ).
+        var law = AmplifierLaw.Rapp(33, g, 2);
+        double a = Math.Sqrt(1e-3 * Math.Pow(10, pt / 10));
+        const int m = 512;
+        Complex Coefficient(int k)
+        {
+            Complex c = 0;
+            for (int i = 0; i < m; i++)
+            {
+                double th = 2 * Math.PI * i / m;
+                var x = a * (1 + Complex.FromPolarCoordinates(1, th));
+                c += law.Gain(x.Magnitude * x.Magnitude, out _) * x * Complex.FromPolarCoordinates(1, -k * th);
+            }
+            return c / m;
+        }
+        double EnvDbm(Complex c) => 10 * Math.Log10(c.Magnitude * c.Magnitude * Math.Pow(10, g / 10)) + 30;
+        foreach (var (k1, k2, k, tol) in new[] { (1, 0, 0, 1e-2), (2, -1, -1, 1e-2), (3, -2, -2, 2e-2), (4, -3, -3, double.PositiveInfinity) })
+        {
+            double hb = Dbm(TwoToneMeasurements.Tone(ds, 0, "out", k1, k2)), env = EnvDbm(Coefficient(k));
+            output.WriteLine($"({k1},{k2}): HB {hb:F4} dBm, the law on the envelope {env:F4} dBm");
+            Assert.InRange(hb - env, -tol, tol);
+        }
+    }
+
     /// <summary>At small signal the law is the gain and nothing else: an S-parameter run of the amplifier reads it.</summary>
     [Fact]
     public void SmallSignal_TheLawIsTheGain()

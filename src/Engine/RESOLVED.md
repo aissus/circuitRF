@@ -4387,8 +4387,10 @@ gate 5 lists only diode/BJT shot and series-R thermal.
 A device's weighted terms (`NonlinearResult.Terms`, the `H[w]` buckets for w ≥ 2: an SDD's own weights, a 90° hybrid's
 passive-intermod quadrature) are carried by `HbNewton` (single tone) and therefore by the single-fundamental envelope,
 which builds on it. `HbNewton2D`, `HbNewtonNd` and the multi-fundamental envelope take a device's conduction and charge
-only (`PortTermTimes2D/Nd` have W0 and W1), and **drop the rest without a word**: a hybrid with a PIM level in a two-tone
-run loses its quadrature half. Not fixed here.
+only (`PortTermTimes2D/Nd` have W0 and W1), and **drop the rest without a word**. For an ideal 90° hybrid with a PIM level
+that is its whole linear coupling, not a half of it: its admittance is purely imaginary and lives entirely in the H[2]
+bucket, so in a two-tone run its through and coupled ports read −289 dBm against the 27 dBm a single-tone run gives.
+Fixed separately, in its own pull request on main; not here.
 
 The System Amplifier's Rapp and Saleh laws need the input's Hilbert transform at every frequency every analysis solves
 at, multi-tone included. It is therefore not a weighted term of the amplifier but a LINEAR companion,

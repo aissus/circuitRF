@@ -234,6 +234,14 @@ public sealed class HbEngine
             + "them).");
     }
 
+    /// <summary>The port-current keys of each bandpass-law amplifier's quadrature port (its third, the net its linear
+    /// companion holds at the input's Hilbert transform): it draws nothing, so its rows are always 0 and are not reported.</summary>
+    private HashSet<string> QuadraturePorts => _quadraturePorts ??= [.. _netlist.NonlinearComponents
+        .Select(i => _netlist.Components[i])
+        .Where(ec => ec.Model is AmplifierModel { NeedsQuadrature: true })
+        .SelectMany(ec => new[] { $"{ec.InstancePath}:{ec.Model.TerminalNames[2]}", $"{ec.InstancePath}:2" })];
+    private HashSet<string>? _quadraturePorts;
+
     // ── The linear extractor outlives one solve (HB-P2) ───────────────────────
     //
     // The extractor holds one LU per harmonic. Rebuilding it per solve threw those away and
@@ -716,6 +724,7 @@ public sealed class HbEngine
             V, N, K, gridN, f0, _netlist, ifNodes, cc, solveResult.INl, solveResult.PortTerms);
         foreach (var (key, spec) in pointPortCurrents)
         {
+            if (QuadraturePorts.Contains(key)) continue;
             if (!portCurrentsByBranch.TryGetValue(key, out var lst))
                 portCurrentsByBranch[key] = lst = [];
             lst.Add(spec);
@@ -1116,6 +1125,7 @@ public sealed class HbEngine
             V, grid, N, N1, N2, f1, f2, _netlist, ifNodes, solveResult.PortTerms);
         foreach (var (key, spec) in pointPortCurrents)
         {
+            if (QuadraturePorts.Contains(key)) continue;
             if (!portCurrentsByBranch.TryGetValue(key, out var lst))
                 portCurrentsByBranch[key] = lst = [];
             lst.Add(spec);
@@ -1416,6 +1426,7 @@ public sealed class HbEngine
             V, apft, N, lattice, f, _netlist, ifNodes, solveResult.PortTerms);
         foreach (var (key, spec) in pointPortCurrents)
         {
+            if (QuadraturePorts.Contains(key)) continue;
             if (!portCurrentsByBranch.TryGetValue(key, out var lst))
                 portCurrentsByBranch[key] = lst = [];
             lst.Add(spec);

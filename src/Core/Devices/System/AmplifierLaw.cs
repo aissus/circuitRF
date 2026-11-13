@@ -123,9 +123,10 @@ public sealed class AmplifierLaw
         if (!(s > 0)) { d = Complex.Zero; return Complex.One; }
         if (Kind == AmplifierLawKind.Rapp)
         {
-            double q = Math.Pow(s / SatInW, P);
-            double f = Math.Pow(1 + q, -1 / (2 * P));
-            d = new Complex(-0.5 * q * f / (1 + q), 0);
+            // In the log domain, so a large P (a hard clip) neither overflows q nor loses (1 + q)^(−1/2p).
+            double lq = P * Math.Log(s / SatInW), q = Math.Exp(lq);
+            double f = Math.Exp(-(lq > 0 ? lq + double.LogP1(Math.Exp(-lq)) : double.LogP1(q)) / (2 * P));
+            d = new Complex(-0.5 * f / (1 + Math.Exp(-lq)), 0);
             return new Complex(f, 0);
         }
         double v = s / SatInW, den = 1 + B * v;
@@ -143,7 +144,8 @@ public sealed class AmplifierLaw
 
     /// <summary>The input 1 dB compression point, dBm.</summary>
     public double Ip1dbDbm => Kind == AmplifierLawKind.Rapp
-        ? SatInDbm + 10 / P * Math.Log10(Math.Pow(10, P / 10) - 1)
+        // (10/P)·log10(10^(P/10) − 1), written so that a large P does not overflow: 1 + (10/P)·log10(1 − 10^(−P/10)).
+        ? SatInDbm + 1 + 10 / P * Math.Log10(-double.ExpM1(-P / 10 * Math.Log(10)))
         : SatInDbm + Db(Math.Pow(10, 1.0 / 20) - 1);
 
     /// <summary>The input third-order intercept the budget uses, dBm: Saleh's own third-order term with its AM-PM,

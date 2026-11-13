@@ -2083,7 +2083,8 @@ public static class ComponentTypeRegistry
             "The compression law. Tanh, the default, is the soft limiter on IP3: IM3, the 1 dB point (IIP3 - 8.96 dB) "
           + "and saturation (OIP3 - 3.92 dB) from the one number. Rapp and Saleh are bandpass laws on the envelope, set by "
           + "Psat, and IP3 is not read: Rapp's smoothness P (1 soft, 3 or more near a hard clip), Saleh's AM-AM peaking at "
-          + "Psat with the AM-PM PhiSat and PhiMax. A bandpass law makes no harmonics.",
+          + "Psat with the AM-PM PhiSat and PhiMax. One tone through a bandpass law makes no harmonics; several tones' "
+          + "products outside their own zone are the run's truncation.",
         (SymbolKind.Amp, "Psat") =>
             "A Rapp or Saleh law's saturated output power: Rapp's asymptote, Saleh's peak, reached 6.02 dB into compression. "
           + "Blank: 30 dBm. Not read by the Tanh law, whose saturation follows from IP3.",

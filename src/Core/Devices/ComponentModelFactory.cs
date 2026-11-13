@@ -2170,9 +2170,12 @@ public static class ComponentModelFactory
             : lawKind == AmplifierLawKind.Rapp ? AmplifierLaw.Rapp(psat, gain, P("P", 2.0))
             : AmplifierLaw.Saleh(psat, gain, P("PhiSat", 0.0) * 180 / Math.PI, P("PhiMax", 0.0) * 180 / Math.PI);   // radians here
 
+        // A bandpass law switched off by its Psat is a linear amplifier, not the tanh limiter on the line's IP3.
+        double ip3 = lawKind == AmplifierLawKind.Tanh ? P("IP3", 40.0) : 200.0;
+
         return new AmplifierModel(
             gainDb:   gain,
-            ip3Dbm:   P("IP3",    40.0),
+            ip3Dbm:   ip3,
             ip3Ref:   ip3Ref,
             zIn:      ImpedanceParam(parameters, "Zin",  50.0),
             zOut:     ImpedanceParam(parameters, "Zout", 50.0),
