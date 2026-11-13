@@ -74,6 +74,23 @@ public class SystemBlockElaborationTests
         Assert.Equal(0, ec.Nodes[nets + 1]);
     }
 
+    /// <summary>A freshly placed DAC elaborates at the tile's defaults: both returns on ground, Fs read through the
+    /// frequency unit, the pulse word through the enum path, a matched unilateral through of 0 dB.</summary>
+    [Fact]
+    public void AFreshlyPlacedDac_IsATwelveBitNrzConverterAt122MHz()
+    {
+        var ec = Elaborate(SymbolKind.Dac);
+        var m  = Assert.IsType<DacModel>(ec.Model);
+        Assert.Equal(4, ec.Nodes.Length);
+        Assert.Equal(0, ec.Nodes[1]);
+        Assert.Equal(0, ec.Nodes[3]);
+        Assert.Equal((12, 1.0, 122.88e6, DacPulse.Nrz), (m.Bits, m.FullScale, m.SampleRateHz, m.Pulse));
+        var s = m.SAt(2 * System.Math.PI * 1e6);
+        Assert.Equal(1.0, s[1, 0].Real, 12);
+        Assert.Equal(System.Numerics.Complex.Zero, s[0, 1]);
+        Assert.Equal(System.Numerics.Complex.Zero, s[0, 0]);
+    }
+
     // Issue 55. The tile's "1 ns" is the proof that the time units reach the engine through the
     // schematic path (µs/ns glyphs, UnitNormalizer, the extractor's unit lift) and not only through
     // a hand-written netlist.

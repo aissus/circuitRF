@@ -19,8 +19,8 @@ namespace CircuitRF.Ui.Tests;
 /// </summary>
 public class SystemBlockComponentTests
 {
-    /// <summary>The eleven tiles this brief adds, the Delay that issue 55 added after it, the Combiner, and the four
-    /// polar-transmitter blocks. Every mechanical gate below runs over all of them.</summary>
+    /// <summary>The eleven tiles this brief adds, the Delay that issue 55 added after it, the Combiner, the four
+    /// polar-transmitter blocks and the DAC. Every mechanical gate below runs over all of them.</summary>
     public static readonly SymbolKind[] SystemBlocks =
     [
         SymbolKind.Balun, SymbolKind.Circulator, SymbolKind.Switch, SymbolKind.SwitchD,
@@ -28,6 +28,7 @@ public class SystemBlockComponentTests
         SymbolKind.Filter, SymbolKind.Atten, SymbolKind.Duplexer, SymbolKind.Delay,
         SymbolKind.Combiner,
         SymbolKind.EnvDetector, SymbolKind.Limiter, SymbolKind.PhaseMod, SymbolKind.SupplyAmp,
+        SymbolKind.Dac,
     ];
 
     public static TheoryData<SymbolKind> EachBlock()
@@ -408,6 +409,7 @@ public class SystemBlockComponentTests
     [InlineData(SymbolKind.Limiter,    "Limiter")]
     [InlineData(SymbolKind.PhaseMod,   "PhaseMod")]
     [InlineData(SymbolKind.SupplyAmp,  "SupplyAmp")]
+    [InlineData(SymbolKind.Dac,        "DAC")]
     public void EachTileNamesItsEngineComponent(SymbolKind kind, string expected)
         => Assert.Equal(expected, ComponentTypeRegistry.EngineReference(kind));
 
@@ -444,6 +446,7 @@ public class SystemBlockComponentTests
     [InlineData(SymbolKind.Limiter,    "Limiter")]
     [InlineData(SymbolKind.PhaseMod,   "Phase Modulator")]
     [InlineData(SymbolKind.SupplyAmp,  "Supply-Modulated Amplifier")]
+    [InlineData(SymbolKind.Dac,        "DAC")]
     public void EachTileIsNamedForWhatItIs_NotForItsAbbreviation(SymbolKind kind, string expected)
         => Assert.Equal(expected, ComponentTypeRegistry.DisplayName(kind));
 
@@ -482,6 +485,8 @@ public class SystemBlockComponentTests
     [InlineData("PhaseMod",   SymbolKind.PhaseMod)]
     [InlineData("sma",        SymbolKind.SupplyAmp)]
     [InlineData("SupplyAmp",  SymbolKind.SupplyAmp)]
+    [InlineData("dac",        SymbolKind.Dac)]
+    [InlineData("DAC",        SymbolKind.Dac)]
     public void TryParseCode_ResolvesEveryShortCode(string code, SymbolKind expected)
     {
         Assert.True(ComponentTypeRegistry.TryParseCode(code, out var kind, out _));
@@ -702,6 +707,8 @@ public class SystemBlockComponentTests
     [InlineData("constant envelope", SymbolKind.Limiter)]
     [InlineData("phase modulator", SymbolKind.PhaseMod)]
     [InlineData("polar",      SymbolKind.SupplyAmp)]
+    [InlineData("digital to analog", SymbolKind.Dac)]
+    [InlineData("zero-order hold", SymbolKind.Dac)]
     public void EachBlockIsFoundByTheWordAUserWouldSearchFor(string query, SymbolKind expected)
         => Assert.Contains(LibraryCatalog.Search(query), i => i.Kind == expected);
 

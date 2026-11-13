@@ -41,6 +41,7 @@ public static class NetExtractor
         SymbolKind.Filter, SymbolKind.Atten, SymbolKind.Duplexer, SymbolKind.Delay,
         SymbolKind.Combiner,
         SymbolKind.EnvDetector, SymbolKind.Limiter, SymbolKind.PhaseMod, SymbolKind.SupplyAmp,
+        SymbolKind.Dac,
     ];
 
     /// <param name="TestBench">The emitted Design model.</param>

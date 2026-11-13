@@ -696,6 +696,10 @@ public enum SymbolKind
     /// <summary>Supply-modulated amplifier (engine "SupplyAmp"): RF in (−300,0) and out (300,0), its output amplitude set
     /// by the baseband supply at VS (0,−300).</summary>
     SupplyAmp,
+
+    /// <summary>Digital-to-analog converter (engine "DAC"): a baseband rail's digital stream in at (−300,0), its analog
+    /// reconstruction out at (300,0).</summary>
+    Dac,
 }
 
 public enum PortConnectionState { Unconnected, Connected }

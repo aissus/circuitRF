@@ -204,6 +204,7 @@ public static class SymbolArtworkGenerator
         (SymbolKind.Limiter,         "limiter",           2),
         (SymbolKind.PhaseMod,        "phase-mod",         3),
         (SymbolKind.SupplyAmp,       "supply-amp",        3),
+        (SymbolKind.Dac,             "dac",               2),
         // NEW COMPONENT: add (SymbolKind.Xxx, "file-stem", representativePortCount) here, then re-run.
     };
 

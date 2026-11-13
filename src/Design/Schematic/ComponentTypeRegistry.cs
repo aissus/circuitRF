@@ -370,6 +370,12 @@ public static class ComponentTypeRegistry
             SearchTerms: ["Supply-modulated amplifier", "supply modulation", "polar", "EER", "envelope tracking",
                           "AM-AM", "AM-PM", "sma"],
             IsCommon: false),
+        // The DAC: a baseband rail's digital stream, converted (DacModel).
+        [SymbolKind.Dac]           = new("DAC", "DAC",
+            Category: ComponentCategory.System,
+            SearchTerms: ["DAC", "digital to analog", "digital-to-analog converter", "converter", "quantiser",
+                          "quantizer", "sample and hold", "zero-order hold", "digital transmitter"],
+            IsCommon: false),
         [SymbolKind.Duplexer]      = new("Duplexer", "DPX",
             Category: ComponentCategory.System,
             SearchTerms: ["Duplexer", "dpx", "diplexer", "TX", "RX", "antenna", "front end"],
@@ -1043,6 +1049,10 @@ public static class ComponentTypeRegistry
             "IN and OUT carry the RF carrier; VS, entering from above, is the baseband supply that sets the output "
           + "amplitude.",
 
+        SymbolKind.Dac =>
+            "IN takes the digital stream, a MOD_Source with Baseband=i or q and nothing else on the net; OUT gives its "
+          + "analog reconstruction at baseband. The two are not interchangeable.",
+
         SymbolKind.Combiner =>
             "The common port S comes first, then the paths 1 to N in order. The paths differ only by "
           + "their own IL[k] and Phase[k]; S is the port they combine into, or split from.",
@@ -1224,6 +1234,7 @@ public static class ComponentTypeRegistry
         SymbolKind.Limiter       => "Limiter",
         SymbolKind.PhaseMod      => "PhaseMod",
         SymbolKind.SupplyAmp     => "SupplyAmp",
+        SymbolKind.Dac           => "DAC",
         SymbolKind.Duplexer      => "Duplexer",
         SymbolKind.Combiner      => "Combiner",
         SymbolKind.Term          => "Port",  // engine Reference stays "Port" for .cnl compat
@@ -2163,6 +2174,25 @@ public static class ComponentTypeRegistry
         (SymbolKind.EnvDetector or SymbolKind.Limiter or SymbolKind.PhaseMod or SymbolKind.SupplyAmp, "Zout") =>
             "The impedance the output presents. Its open-circuit voltage is twice the block's law, so a matched "
           + "load reads the law itself.",
+        (SymbolKind.Dac, "Bits") =>
+            "Resolution N: 2^N levels across ±FS. Each bit adds 6.02 dB to the quantisation floor.",
+        (SymbolKind.Dac, "FS") =>
+            "Full scale, volts peak at the input: the codes span ±FS, and an input beyond it is held at the end code "
+          + "(clipping).",
+        (SymbolKind.Dac, "Fs") =>
+            "Sample rate. The stream is the rail at Fs; the output carries the signal through sinc(f/Fs) and its images "
+          + "at k*Fs ± f. Fs must put a whole number of samples in the record.",
+        (SymbolKind.Dac, "Mode") =>
+            "nrz holds each sample for the whole period (zero-order hold); rz holds it for Duty of the period and returns "
+          + "to zero, which lowers the signal by Duty and makes the images fall more slowly.",
+        (SymbolKind.Dac, "Duty") =>
+            "The RZ pulse's share of the sample period, above 0 and at most 1. Ignored for nrz.",
+        (SymbolKind.Dac, "Gain") =>
+            "Gain from the input's volts to the output's into a matched load, in dB.",
+        (SymbolKind.Dac, "Zin") =>
+            "The impedance the input presents to its stream's source.",
+        (SymbolKind.Dac, "Zout") =>
+            "The impedance the output presents. A matched load reads the converted signal times the gain.",
         (SymbolKind.Atten, "RL") =>
             "Return loss of both ports. The 200 dB default means exactly matched — no reflection "
           + "entry is stamped at all.",
@@ -2619,6 +2649,17 @@ public static class ComponentTypeRegistry
                         new("Zin",   "50",   "Ω",   false, UnitDimension.Resistance),
                         new("Zout",  "50",   "Ω",   false, UnitDimension.Resistance),
                         new("Zs",    "50",   "Ω",   false, UnitDimension.Resistance)];
+            // The DAC. Every default is the model's own, except Fs, which the model requires: a rate the tile seeds as
+            // MOD_Source's Fc is seeded.
+            case SymbolKind.Dac:
+                return [new("Bits",  "12",     "",    true,  UnitDimension.None),
+                        new("FS",    "1",      "V",   true,  UnitDimension.Voltage),
+                        new("Fs",    "122.88", "MHz", true,  UnitDimension.Frequency),
+                        new("Mode",  "nrz",    "",    false, UnitDimension.None),
+                        new("Duty",  "0.5",    "",    false, UnitDimension.None),
+                        new("Gain",  "0",      "dB",  false, UnitDimension.None),
+                        new("Zin",   "50",     "Ω",   false, UnitDimension.Resistance),
+                        new("Zout",  "50",     "Ω",   false, UnitDimension.Resistance)];
             // The combiner: N paths, every one at IL unless it states its own IL[k], and Phase[k] per path. The
             // indexed ones are not seeded — a freshly placed combiner is the ideal equal split — and are added as
             // rows when a path needs its own loss or phase, as a P1Tone's Z[k] is.
@@ -3872,6 +3913,7 @@ public static class ComponentTypeRegistry
             case "PM":     kind = SymbolKind.PhaseMod;     return true;
             case "SUPPLYAMP":
             case "SMA":    kind = SymbolKind.SupplyAmp;    return true;
+            case "DAC":    kind = SymbolKind.Dac;          return true;
             case "DUPLEXER":
             case "DPX":    kind = SymbolKind.Duplexer;     return true;
             case "COMBINER":
@@ -4229,6 +4271,12 @@ public static class ComponentTypeRegistry
     /// <summary>A MOD_Source's <c>Polar</c>: the RF source, or one half of a polar pair (ModSourceModel.Create reads them).</summary>
     private static readonly string[] PolarOptions = ["rf", "amp", "phase"];
 
+    /// <summary>A MOD_Source's <c>Baseband</c>: the RF source, or one rail of its signal at baseband.</summary>
+    private static readonly string[] BasebandOptions = ["rf", "i", "q"];
+
+    /// <summary>A DAC's <c>Mode</c>: its output pulse (DacModel's NRZ or RZ).</summary>
+    private static readonly string[] DacModeOptions = ["nrz", "rz"];
+
     /// <summary>The Tuner family's <c>BiasTee</c> switch. Not an enum anywhere — the engine
     /// string-compares the resolved value against "on" (<see cref="ComponentModelFactory"/>'s
     /// tuner branch), so these two spellings ARE the contract and there is no type to
@@ -4288,6 +4336,8 @@ public static class ComponentTypeRegistry
         (SymbolKind.Mixer or SymbolKind.MixerD, "NFType")         => MixerNfTypeOptions,
         // A MOD_Source's polar half (added as a row; no row is the RF source).
         (SymbolKind.ModSource, "Polar")                           => PolarOptions,
+        (SymbolKind.ModSource, "Baseband")                        => BasebandOptions,
+        (SymbolKind.Dac, "Mode")                                  => DacModeOptions,
         // The Tuner family (owner request, 2026-09-01). Both parameters accept a closed set of two
         // spellings and neither is a number, so a free-text box could only ever be got wrong — a
         // typo'd "ON " or "0" reads as the default with nothing said anywhere, which is exactly the

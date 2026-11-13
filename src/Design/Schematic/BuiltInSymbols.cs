@@ -148,6 +148,7 @@ public static class BuiltInSymbols
     private static readonly Symbol _limiter      = BuildLimiter();
     private static readonly Symbol _phaseMod     = BuildPhaseMod();
     private static readonly Symbol _supplyAmp    = BuildSupplyAmp();
+    private static readonly Symbol _dac          = BuildDac();
     private static readonly Symbol _duplexer      = BuildDuplexer();
 
     // Per-N cache for variadic box symbols (SDD and ZPort share body geometry).
@@ -284,6 +285,7 @@ public static class BuiltInSymbols
             case SymbolKind.Limiter:    return _limiter;
             case SymbolKind.PhaseMod:   return _phaseMod;
             case SymbolKind.SupplyAmp:  return _supplyAmp;
+            case SymbolKind.Dac:        return _dac;
             case SymbolKind.Duplexer:   return _duplexer;
             case SymbolKind.Combiner:   return _combinerCache.GetOrAdd(Math.Max(2, portCount), BuildCombiner);
             // The four dynamic ones answer here with their DEFAULT variant — the same contract
@@ -2255,6 +2257,18 @@ public static class BuiltInSymbols
         L(   0, -300,   0, -80),
         Txt("VS", 55, -215, fontSize: MixerPortFontSize),
     ], SymbolKind.SupplyAmp);
+
+    // ── The DAC ───────────────────────────────────────────────────────────────
+    // A square at the Delay's size split by its diagonal: D (the digital stream) on the input's side above it, A (the
+    // analog output) on the output's side below it, the converter's usual glyph.
+    private static Symbol BuildDac() => Sym([
+        RRect(0, 0, 200, 200, 12),
+        L(-96.5, 96.5, 96.5, -96.5),                  // corner to corner, ending on the rounded corners' arcs
+        Txt("D", -45, -45, fontSize: 70),
+        Txt("A", 45, 45, fontSize: 70),
+        L(-300, 0, -100, 0),
+        L( 100, 0,  300, 0),
+    ], SymbolKind.Dac);
 
     // ── Duplexer — a junction that splits into two filters ────────────────────
     // Pins: ANT (-300,0) · TX (+300,-100) · RX (+300,+100).

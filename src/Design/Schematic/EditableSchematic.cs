@@ -303,6 +303,7 @@ public static class SymbolPortDefs
             // one — the phase from below, as a mixer's LO enters, and the supply from above, as a supply does.
             case SymbolKind.EnvDetector:
             case SymbolKind.Limiter:
+            case SymbolKind.Dac:
                 return [("IN", -300f, 0f), ("OUT", 300f, 0f)];
             case SymbolKind.PhaseMod:
                 return [("IN", -300f, 0f), ("OUT", 300f, 0f), ("PH", 0f, 300f)];
