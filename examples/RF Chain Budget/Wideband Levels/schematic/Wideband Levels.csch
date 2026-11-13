@@ -1,0 +1,1033 @@
+{
+  "FormatVersion": 2,
+  "CellName": "Wideband Levels",
+  "GridSize": 100,
+  "GridSnap": true,
+  "AuthorGridDivisor": 20,
+  "Components": [
+    {
+      "InstanceName": "SRC",
+      "Symbol": "PnTone",
+      "X": 0,
+      "Y": 200,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [
+        {
+          "Name": "Freq[1]",
+          "Expression": "F1",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "Frequency"
+        },
+        {
+          "Name": "Pavl[1]",
+          "Expression": "Pin",
+          "Unit": "dBm",
+          "ShowOnSchematic": true,
+          "Dimension": "Power"
+        },
+        {
+          "Name": "Phase[1]",
+          "Expression": "0",
+          "Unit": "deg",
+          "ShowOnSchematic": false,
+          "Dimension": "Angle"
+        },
+        {
+          "Name": "Freq[2]",
+          "Expression": "F2",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "Frequency"
+        },
+        {
+          "Name": "Pavl[2]",
+          "Expression": "Pin",
+          "Unit": "dBm",
+          "ShowOnSchematic": true,
+          "Dimension": "Power"
+        },
+        {
+          "Name": "Phase[2]",
+          "Expression": "0",
+          "Unit": "deg",
+          "ShowOnSchematic": false,
+          "Dimension": "Angle"
+        },
+        {
+          "Name": "Z",
+          "Expression": "50",
+          "Unit": "Ohm",
+          "ShowOnSchematic": true,
+          "Dimension": "Resistance"
+        }
+      ],
+      "LabelOffsets": [
+        [
+          285,
+          -469
+        ]
+      ]
+    },
+    {
+      "InstanceName": "PRE",
+      "Symbol": "Snp",
+      "X": 800,
+      "Y": 0,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [
+        {
+          "Name": "NumPorts",
+          "Expression": "2",
+          "Unit": "",
+          "ShowOnSchematic": false,
+          "Dimension": "None"
+        },
+        {
+          "Name": "File",
+          "Expression": "\u0022Wideband preselector.s2p\u0022",
+          "Unit": "",
+          "ShowOnSchematic": false,
+          "Dimension": "None"
+        }
+      ]
+    },
+    {
+      "InstanceName": "LNA",
+      "Symbol": "Snp",
+      "X": 1900,
+      "Y": 0,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [
+        {
+          "Name": "NumPorts",
+          "Expression": "2",
+          "Unit": "",
+          "ShowOnSchematic": false,
+          "Dimension": "None"
+        },
+        {
+          "Name": "File",
+          "Expression": "\u0022Wideband LNA.s2p\u0022",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        }
+      ]
+    },
+    {
+      "InstanceName": "LNA_NL",
+      "Symbol": "Amp",
+      "X": 3000,
+      "Y": 0,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [
+        {
+          "Name": "Gain",
+          "Expression": "0",
+          "Unit": "dB",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "IP3",
+          "Expression": "11.901960800285135",
+          "Unit": "dBm",
+          "ShowOnSchematic": false,
+          "Dimension": "Power"
+        },
+        {
+          "Name": "IP3Ref",
+          "Expression": "Input",
+          "Unit": "",
+          "ShowOnSchematic": false,
+          "Dimension": "None"
+        }
+      ]
+    },
+    {
+      "InstanceName": "ISO_MIX",
+      "Symbol": "Circulator",
+      "X": 4100,
+      "Y": 0,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [
+        {
+          "Name": "Direction",
+          "Expression": "CW",
+          "Unit": "",
+          "ShowOnSchematic": false,
+          "Dimension": "None"
+        }
+      ]
+    },
+    {
+      "InstanceName": "ISO_MIX_R",
+      "Symbol": "Resistor",
+      "X": 4100,
+      "Y": 900,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [
+        {
+          "Name": "R",
+          "Expression": "50",
+          "Unit": "Ohm",
+          "ShowOnSchematic": true,
+          "Dimension": "Resistance"
+        }
+      ],
+      "LabelOffsets": [
+        [
+          260,
+          -325
+        ]
+      ]
+    },
+    {
+      "InstanceName": "MIX",
+      "Symbol": "Mixer",
+      "X": 5200,
+      "Y": 0,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [
+        {
+          "Name": "ConvGain",
+          "Expression": "-7",
+          "Unit": "dB",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "NF",
+          "Expression": "8",
+          "Unit": "dB",
+          "ShowOnSchematic": false,
+          "Dimension": "None"
+        },
+        {
+          "Name": "NFType",
+          "Expression": "ssb",
+          "Unit": "",
+          "ShowOnSchematic": false,
+          "Dimension": "None"
+        },
+        {
+          "Name": "IIP3",
+          "Expression": "10",
+          "Unit": "dBm",
+          "ShowOnSchematic": false,
+          "Dimension": "Power"
+        },
+        {
+          "Name": "Plo",
+          "Expression": "7",
+          "Unit": "dBm",
+          "ShowOnSchematic": true,
+          "Dimension": "Power"
+        }
+      ]
+    },
+    {
+      "InstanceName": "LO_MIX",
+      "Symbol": "P1Tone",
+      "X": 5200,
+      "Y": 900,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [
+        {
+          "Name": "Freq",
+          "Expression": "2380000000",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "Frequency"
+        },
+        {
+          "Name": "Pavl",
+          "Expression": "7",
+          "Unit": "dBm",
+          "ShowOnSchematic": true,
+          "Dimension": "Power"
+        },
+        {
+          "Name": "Z",
+          "Expression": "50",
+          "Unit": "Ohm",
+          "ShowOnSchematic": true,
+          "Dimension": "Resistance"
+        }
+      ],
+      "LabelOffsets": [
+        [
+          285,
+          -397
+        ]
+      ]
+    },
+    {
+      "InstanceName": "IFBPF",
+      "Symbol": "Filter",
+      "X": 6200,
+      "Y": 0,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [
+        {
+          "Name": "Response",
+          "Expression": "Butterworth",
+          "Unit": "",
+          "ShowOnSchematic": false,
+          "Dimension": "None"
+        },
+        {
+          "Name": "Form",
+          "Expression": "Bandpass",
+          "Unit": "",
+          "ShowOnSchematic": false,
+          "Dimension": "None"
+        },
+        {
+          "Name": "Order",
+          "Expression": "3",
+          "Unit": "",
+          "ShowOnSchematic": false,
+          "Dimension": "None"
+        },
+        {
+          "Name": "Fc",
+          "Expression": "1",
+          "Unit": "GHz",
+          "ShowOnSchematic": false,
+          "Dimension": "Frequency"
+        },
+        {
+          "Name": "F1",
+          "Expression": "60",
+          "Unit": "MHz",
+          "ShowOnSchematic": false,
+          "Dimension": "Frequency"
+        },
+        {
+          "Name": "F2",
+          "Expression": "80",
+          "Unit": "MHz",
+          "ShowOnSchematic": false,
+          "Dimension": "Frequency"
+        },
+        {
+          "Name": "Ripple",
+          "Expression": "0.1",
+          "Unit": "dB",
+          "ShowOnSchematic": false,
+          "Dimension": "None"
+        },
+        {
+          "Name": "Astop",
+          "Expression": "40",
+          "Unit": "dB",
+          "ShowOnSchematic": false,
+          "Dimension": "None"
+        },
+        {
+          "Name": "IL",
+          "Expression": "1",
+          "Unit": "dB",
+          "ShowOnSchematic": false,
+          "Dimension": "None"
+        }
+      ]
+    },
+    {
+      "InstanceName": "IFA",
+      "Symbol": "Amp",
+      "X": 7200,
+      "Y": 0,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [
+        {
+          "Name": "Gain",
+          "Expression": "25",
+          "Unit": "dB",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "NF",
+          "Expression": "4",
+          "Unit": "dB",
+          "ShowOnSchematic": false,
+          "Dimension": "None"
+        },
+        {
+          "Name": "IP3",
+          "Expression": "30",
+          "Unit": "dBm",
+          "ShowOnSchematic": true,
+          "Dimension": "Power"
+        },
+        {
+          "Name": "IP3Ref",
+          "Expression": "Output",
+          "Unit": "",
+          "ShowOnSchematic": false,
+          "Dimension": "None"
+        }
+      ]
+    },
+    {
+      "InstanceName": "RL",
+      "Symbol": "Resistor",
+      "X": 8000,
+      "Y": 200,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [
+        {
+          "Name": "R",
+          "Expression": "50",
+          "Unit": "Ohm",
+          "ShowOnSchematic": true,
+          "Dimension": "Resistance"
+        }
+      ],
+      "LabelOffsets": [
+        [
+          260,
+          -325
+        ]
+      ]
+    },
+    {
+      "InstanceName": "GND1",
+      "Symbol": "Ground",
+      "X": 0,
+      "Y": 400,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [],
+      "ShowTypeLabel": false,
+      "ShowInstanceName": false
+    },
+    {
+      "InstanceName": "GND2",
+      "Symbol": "Ground",
+      "X": 4100,
+      "Y": 1100,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [],
+      "ShowTypeLabel": false,
+      "ShowInstanceName": false
+    },
+    {
+      "InstanceName": "GND3",
+      "Symbol": "Ground",
+      "X": 5200,
+      "Y": 1100,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [],
+      "ShowTypeLabel": false,
+      "ShowInstanceName": false
+    },
+    {
+      "InstanceName": "GND4",
+      "Symbol": "Ground",
+      "X": 8000,
+      "Y": 400,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [],
+      "ShowTypeLabel": false,
+      "ShowInstanceName": false
+    },
+    {
+      "InstanceName": "VAR1",
+      "Symbol": "Var",
+      "X": 0,
+      "Y": -1400,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [
+        {
+          "Name": "temp",
+          "Expression": "16.85",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "Frf",
+          "Expression": "2450000000",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "F1",
+          "Expression": "2449500000",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "F2",
+          "Expression": "2450500000",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "Pin",
+          "Expression": "-70",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "Flo1",
+          "Expression": "2380000000",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "nodeix",
+          "Expression": "0",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        }
+      ]
+    },
+    {
+      "InstanceName": "MEAS1",
+      "Symbol": "Meas",
+      "X": 1600,
+      "Y": -2900,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [
+        {
+          "Name": "P1_0",
+          "Expression": "dB(HBL.V(\u0022in\u0022,\u0022(1,0,0)\u0022)) \u002B 10",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "P1_1",
+          "Expression": "dB(HBL.V(\u0022n_PRE\u0022,\u0022(1,0,0)\u0022)) \u002B 10",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "P3_1",
+          "Expression": "dB(HBL.V(\u0022n_PRE\u0022,\u0022(2,-1,0)\u0022)) \u002B 10",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "P1_2",
+          "Expression": "dB(HBL.V(\u0022n_LNA\u0022,\u0022(1,0,0)\u0022)) \u002B 10",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "P3_2",
+          "Expression": "dB(HBL.V(\u0022n_LNA\u0022,\u0022(2,-1,0)\u0022)) \u002B 10",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "P1_3",
+          "Expression": "dB(HBL.V(\u0022n_MIX\u0022,\u0022(1,0,-1)\u0022)) \u002B 10",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "P3_3",
+          "Expression": "dB(HBL.V(\u0022n_MIX\u0022,\u0022(2,-1,-1)\u0022)) \u002B 10",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "P1_4",
+          "Expression": "dB(HBL.V(\u0022n_IFBPF\u0022,\u0022(1,0,-1)\u0022)) \u002B 10",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "P3_4",
+          "Expression": "dB(HBL.V(\u0022n_IFBPF\u0022,\u0022(2,-1,-1)\u0022)) \u002B 10",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "P1_5",
+          "Expression": "dB(HBL.V(\u0022out\u0022,\u0022(1,0,-1)\u0022)) \u002B 10",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "P3_5",
+          "Expression": "dB(HBL.V(\u0022out\u0022,\u0022(2,-1,-1)\u0022)) \u002B 10",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "Psig_sim",
+          "Expression": "(P1_0)*(nodeix - 1)*(nodeix - 2)*(nodeix - 3)*(nodeix - 4)*(nodeix - 5)/-120 \u002B (P1_1)*(nodeix - 0)*(nodeix - 2)*(nodeix - 3)*(nodeix - 4)*(nodeix - 5)/24 \u002B (P1_2)*(nodeix - 0)*(nodeix - 1)*(nodeix - 3)*(nodeix - 4)*(nodeix - 5)/-12 \u002B (P1_3)*(nodeix - 0)*(nodeix - 1)*(nodeix - 2)*(nodeix - 4)*(nodeix - 5)/12 \u002B (P1_4)*(nodeix - 0)*(nodeix - 1)*(nodeix - 2)*(nodeix - 3)*(nodeix - 5)/-24 \u002B (P1_5)*(nodeix - 0)*(nodeix - 1)*(nodeix - 2)*(nodeix - 3)*(nodeix - 4)/120",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "IM3_sim",
+          "Expression": "(-300)*(nodeix - 1)*(nodeix - 2)*(nodeix - 3)*(nodeix - 4)*(nodeix - 5)/-120 \u002B (-300)*(nodeix - 0)*(nodeix - 2)*(nodeix - 3)*(nodeix - 4)*(nodeix - 5)/24 \u002B (P3_2)*(nodeix - 0)*(nodeix - 1)*(nodeix - 3)*(nodeix - 4)*(nodeix - 5)/-12 \u002B (P3_3)*(nodeix - 0)*(nodeix - 1)*(nodeix - 2)*(nodeix - 4)*(nodeix - 5)/12 \u002B (P3_4)*(nodeix - 0)*(nodeix - 1)*(nodeix - 2)*(nodeix - 3)*(nodeix - 5)/-24 \u002B (P3_5)*(nodeix - 0)*(nodeix - 1)*(nodeix - 2)*(nodeix - 3)*(nodeix - 4)/120",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "Psig_calc",
+          "Expression": "(-70)*(nodeix - 1)*(nodeix - 2)*(nodeix - 3)*(nodeix - 4)*(nodeix - 5)/-120 \u002B (-70.99010745596057)*(nodeix - 0)*(nodeix - 2)*(nodeix - 3)*(nodeix - 4)*(nodeix - 5)/24 \u002B (-53.33027378191325)*(nodeix - 0)*(nodeix - 1)*(nodeix - 3)*(nodeix - 4)*(nodeix - 5)/-12 \u002B (-60.33027378191325)*(nodeix - 0)*(nodeix - 1)*(nodeix - 2)*(nodeix - 4)*(nodeix - 5)/12 \u002B (-61.330274358701054)*(nodeix - 0)*(nodeix - 1)*(nodeix - 2)*(nodeix - 3)*(nodeix - 5)/-24 \u002B (-36.330274358701054)*(nodeix - 0)*(nodeix - 1)*(nodeix - 2)*(nodeix - 3)*(nodeix - 4)/120",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "IM3_calc",
+          "Expression": "(-300)*(nodeix - 1)*(nodeix - 2)*(nodeix - 3)*(nodeix - 4)*(nodeix - 5)/-120 \u002B (-300)*(nodeix - 0)*(nodeix - 2)*(nodeix - 3)*(nodeix - 4)*(nodeix - 5)/24 \u002B (-183.79474294631)*(nodeix - 0)*(nodeix - 1)*(nodeix - 3)*(nodeix - 4)*(nodeix - 5)/-12 \u002B (-182.66558792781484)*(nodeix - 0)*(nodeix - 1)*(nodeix - 2)*(nodeix - 4)*(nodeix - 5)/12 \u002B (-183.66558850460268)*(nodeix - 0)*(nodeix - 1)*(nodeix - 2)*(nodeix - 3)*(nodeix - 5)/-24 \u002B (-156.3560019244532)*(nodeix - 0)*(nodeix - 1)*(nodeix - 2)*(nodeix - 3)*(nodeix - 4)/120",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "Noise_calc",
+          "Expression": "(-107.44306205647467)*(nodeix - 1)*(nodeix - 2)*(nodeix - 3)*(nodeix - 4)*(nodeix - 5)/-120 \u002B (-107.7066933109081)*(nodeix - 0)*(nodeix - 2)*(nodeix - 3)*(nodeix - 4)*(nodeix - 5)/24 \u002B (-89.33678255498002)*(nodeix - 0)*(nodeix - 1)*(nodeix - 3)*(nodeix - 4)*(nodeix - 5)/-12 \u002B (-93.52324617250703)*(nodeix - 0)*(nodeix - 1)*(nodeix - 2)*(nodeix - 4)*(nodeix - 5)/12 \u002B (-94.47788317715688)*(nodeix - 0)*(nodeix - 1)*(nodeix - 2)*(nodeix - 3)*(nodeix - 5)/-24 \u002B (-69.15821163363671)*(nodeix - 0)*(nodeix - 1)*(nodeix - 2)*(nodeix - 3)*(nodeix - 4)/120",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "SNR_calc",
+          "Expression": "(37.44306205647467)*(nodeix - 1)*(nodeix - 2)*(nodeix - 3)*(nodeix - 4)*(nodeix - 5)/-120 \u002B (36.716585854947525)*(nodeix - 0)*(nodeix - 2)*(nodeix - 3)*(nodeix - 4)*(nodeix - 5)/24 \u002B (36.00650877306677)*(nodeix - 0)*(nodeix - 1)*(nodeix - 3)*(nodeix - 4)*(nodeix - 5)/-12 \u002B (33.19297239059378)*(nodeix - 0)*(nodeix - 1)*(nodeix - 2)*(nodeix - 4)*(nodeix - 5)/12 \u002B (33.14760881845583)*(nodeix - 0)*(nodeix - 1)*(nodeix - 2)*(nodeix - 3)*(nodeix - 5)/-24 \u002B (32.82793727493566)*(nodeix - 0)*(nodeix - 1)*(nodeix - 2)*(nodeix - 3)*(nodeix - 4)/120",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "Margin_calc",
+          "Expression": "(51.05036378287607)*(nodeix - 1)*(nodeix - 2)*(nodeix - 3)*(nodeix - 4)*(nodeix - 5)/-120 \u002B (51.05036378287607)*(nodeix - 0)*(nodeix - 2)*(nodeix - 3)*(nodeix - 4)*(nodeix - 5)/24 \u002B (55.26973458219838)*(nodeix - 0)*(nodeix - 1)*(nodeix - 3)*(nodeix - 4)*(nodeix - 5)/-12 \u002B (51.2051570729508)*(nodeix - 0)*(nodeix - 1)*(nodeix - 2)*(nodeix - 4)*(nodeix - 5)/12 \u002B (51.205157072950804)*(nodeix - 0)*(nodeix - 1)*(nodeix - 2)*(nodeix - 3)*(nodeix - 5)/-24 \u002B (50.05036378287607)*(nodeix - 0)*(nodeix - 1)*(nodeix - 2)*(nodeix - 3)*(nodeix - 4)/120",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "Psig_0_err",
+          "Expression": "P1_0 - -70",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "Psig_1_err",
+          "Expression": "P1_1 - -70.99010745596057",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "Psig_2_err",
+          "Expression": "P1_2 - -53.33027378191325",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "IM3_2_err",
+          "Expression": "P3_2 - -183.79474294631",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "Psig_3_err",
+          "Expression": "P1_3 - -60.33027378191325",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "IM3_3_err",
+          "Expression": "P3_3 - -182.66558792781484",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "Psig_4_err",
+          "Expression": "P1_4 - -61.330274358701054",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "IM3_4_err",
+          "Expression": "P3_4 - -183.66558850460268",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "Psig_5_err",
+          "Expression": "P1_5 - -36.330274358701054",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "IM3_5_err",
+          "Expression": "P3_5 - -156.3560019244532",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        }
+      ]
+    }
+  ],
+  "Wires": [
+    {
+      "Points": [
+        [
+          4100,
+          300
+        ],
+        [
+          4100,
+          700
+        ]
+      ]
+    },
+    {
+      "Points": [
+        [
+          0,
+          0
+        ],
+        [
+          0,
+          -200
+        ],
+        [
+          400,
+          -200
+        ],
+        [
+          400,
+          0
+        ],
+        [
+          600,
+          0
+        ]
+      ]
+    },
+    {
+      "Points": [
+        [
+          6400,
+          0
+        ],
+        [
+          6900,
+          0
+        ]
+      ]
+    },
+    {
+      "Points": [
+        [
+          3300,
+          0
+        ],
+        [
+          3800,
+          0
+        ]
+      ]
+    },
+    {
+      "Points": [
+        [
+          4400,
+          0
+        ],
+        [
+          4900,
+          0
+        ]
+      ]
+    },
+    {
+      "Points": [
+        [
+          2100,
+          0
+        ],
+        [
+          2700,
+          0
+        ]
+      ]
+    },
+    {
+      "Points": [
+        [
+          5500,
+          0
+        ],
+        [
+          6000,
+          0
+        ]
+      ]
+    },
+    {
+      "Points": [
+        [
+          1000,
+          0
+        ],
+        [
+          1700,
+          0
+        ]
+      ]
+    },
+    {
+      "Points": [
+        [
+          7500,
+          0
+        ],
+        [
+          7800,
+          0
+        ],
+        [
+          7800,
+          -200
+        ],
+        [
+          8000,
+          -200
+        ],
+        [
+          8000,
+          0
+        ]
+      ]
+    }
+  ],
+  "NetLabels": [
+    {
+      "X": 5200,
+      "Y": 700,
+      "Name": "lo_MIX",
+      "SegmentIndex": 0,
+      "AlongT": 0,
+      "OffsetX": 0,
+      "OffsetY": 0
+    },
+    {
+      "X": 5200,
+      "Y": 300,
+      "Name": "lo_MIX",
+      "SegmentIndex": 0,
+      "AlongT": 0,
+      "OffsetX": 0,
+      "OffsetY": 0
+    },
+    {
+      "X": 200,
+      "Y": -200,
+      "Name": "in",
+      "OwnerWireIndex": 1,
+      "SegmentIndex": 1,
+      "AlongT": 0.5,
+      "OffsetX": 0,
+      "OffsetY": 0
+    },
+    {
+      "X": 1300,
+      "Y": 0,
+      "Name": "n_PRE",
+      "OwnerWireIndex": 7,
+      "SegmentIndex": 0,
+      "AlongT": 0.42857142857142855,
+      "OffsetX": 0,
+      "OffsetY": 0
+    },
+    {
+      "X": 2400,
+      "Y": 0,
+      "Name": "n_LNA_sp",
+      "OwnerWireIndex": 5,
+      "SegmentIndex": 0,
+      "AlongT": 0.5,
+      "OffsetX": 0,
+      "OffsetY": 0
+    },
+    {
+      "X": 3500,
+      "Y": 0,
+      "Name": "n_LNA",
+      "OwnerWireIndex": 3,
+      "SegmentIndex": 0,
+      "AlongT": 0.4,
+      "OffsetX": 0,
+      "OffsetY": 0
+    },
+    {
+      "X": 4600,
+      "Y": 0,
+      "Name": "n_LNA_rf",
+      "OwnerWireIndex": 4,
+      "SegmentIndex": 0,
+      "AlongT": 0.4,
+      "OffsetX": 0,
+      "OffsetY": 0
+    },
+    {
+      "X": 4100,
+      "Y": 500,
+      "Name": "ISO_MIX_t",
+      "OwnerWireIndex": 0,
+      "SegmentIndex": 0,
+      "AlongT": 0.5,
+      "OffsetX": 0,
+      "OffsetY": 0
+    },
+    {
+      "X": 5700,
+      "Y": 0,
+      "Name": "n_MIX",
+      "OwnerWireIndex": 6,
+      "SegmentIndex": 0,
+      "AlongT": 0.4,
+      "OffsetX": 0,
+      "OffsetY": 0
+    },
+    {
+      "X": 6600,
+      "Y": 0,
+      "Name": "n_IFBPF",
+      "OwnerWireIndex": 2,
+      "SegmentIndex": 0,
+      "AlongT": 0.4,
+      "OffsetX": 0,
+      "OffsetY": 0
+    },
+    {
+      "X": 7600,
+      "Y": 0,
+      "Name": "out",
+      "OwnerWireIndex": 8,
+      "SegmentIndex": 0,
+      "AlongT": 0.3333333333333333,
+      "OffsetX": 0,
+      "OffsetY": 0
+    }
+  ],
+  "Dots": [],
+  "CanvasObjects": [],
+  "View": {
+    "PanX": 0,
+    "PanY": 0,
+    "Zoom": 1
+  },
+  "Analyses": [
+    {
+      "Type": "hb",
+      "Name": "HBL",
+      "Enabled": true,
+      "ToneExpr": "0",
+      "NumFreqsExpr": "3",
+      "ToneExprs": [
+        "F1",
+        "F2",
+        "Flo1"
+      ],
+      "ToneUnits": [
+        "Hz",
+        "Hz",
+        "Hz"
+      ],
+      "MaxMixOrderExpr": "6",
+      "MaxHarmonicExpr": "3",
+      "FFTOverSampleExpr": "1",
+      "TolExpr": "1e-12",
+      "DriveSteppingExpr": "IfNecessary",
+      "GuardHarmonicExpr": "0",
+      "LambdaExpr": "1",
+      "MaxIterExpr": "100"
+    },
+    {
+      "Type": "dc",
+      "Name": "DCN",
+      "Enabled": true
+    },
+    {
+      "Type": "sweep",
+      "Name": "SWN",
+      "Enabled": true,
+      "PsaVarName": "nodeix",
+      "PsaValues": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5
+      ],
+      "PsaInnerName": "DCN"
+    }
+  ]
+}

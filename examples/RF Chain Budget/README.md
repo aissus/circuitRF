@@ -26,6 +26,10 @@ n258 (24.25 to 27.5 GHz), whose stages scale with the frequency. See [The 26 GHz
 And a transmitter: **`Linear TX.cchain`**, a 3.5 GHz chain for a 100 MHz NR carrier at 30 kHz subcarrier spacing, from an
 IQ modulator to a PA with Rapp's law and a band filter. See [The linear transmitter](#the-linear-transmitter).
 
+And **`Wideband.cchain`**, a 2.45 GHz receiver of two measured modules whose ports reflect into each other, a preselector
+that passes the mixer's image, and a 70 MHz IF: its budget is taken with mismatch, counts the image's noise, and shows its
+response across ±30 MHz. See [The wideband receiver](#the-wideband-receiver).
+
 The formulas, the parts and the benches are in *Reference ▸ RF Chain Budget*.
 
 ## The chains
@@ -244,7 +248,9 @@ delivers. The Envelope and Demo sources are also at 2302 K, the noise MIX1 deliv
 2028.93 °C), so the SNR they measure is the whole chain's, node by node; the 1-Tone bench's source is at 290 K, the
 temperature its NF is stated at.
 
-**Images.** The budget takes each image as filtered; a blocker at an image's offset shows how well. Blocker 1, at
+**Images.** The filters in front of both mixers reject their images, so neither image's noise moves the NF (the second's,
+which comes through the RF filter and the roofing filter at 2407.2 MHz and 1792.8 MHz, would add 6×10⁻⁵ dB, under the
+0.001 dB the budget counts an image from). A blocker at an image's offset shows how much of its signal. Blocker 1, at
 −40 dBm, sits on MIX1's image, 700 MHz below the signal at 1.75 GHz. The RF filter takes 55.4 dB off it beyond its IL,
 and after MIX1 it is on the IF itself, at 350 MHz and then at 21.4 MHz: at the output 25.4 dB under the signal, which it
 was 30 dB over at the input. Blocker 2, at −50 dBm, sits 1 MHz inside MIX2's image band, 41.8 MHz below the signal. The
@@ -318,6 +324,58 @@ back-off, and the budget's estimate rises with its cubic. Set `Law` to Saleh wit
 its intercept takes the AM-PM into its third-order term. Set the IQ modulator's `PhaseImb` to 0 and `GainImb` to 0 and
 the image goes; set `IsoLO_IF` to 200 and so does the LO.
 
+## The wideband receiver
+
+`Wideband.cchain` is built of two modules as their data sheets give them, two Touchstone files beside it (illustrative
+data, of this example's own), and two System blocks:
+
+| Stage | Part | Gain | NF | Intercept |
+|---|---|---|---|---|
+| PRE | `SnP`, `Wideband preselector.s2p`: a 3rd-order 0.5 dB Chebyshev band filter for 2.2 to 2.6 GHz, LC resonators of Q 150; its ports reflect −12.3 dB at 2.45 GHz | −0.99 dB | 0.73 dB | |
+| LNA | `SnP`, `Wideband LNA.s2p`: an amplifier module with noise data, its ports reflecting −9.1 and −9.9 dB; `IIP3` stated | 16.90 dB | 0.85 dB | IIP3 −5 dBm |
+| MIX | `Mixer`, LO 2.38 GHz at 7 dBm: a 70 MHz IF | −7 dB | 8 dB SSB | IIP3 10 dBm |
+| IFBPF | `Filter`, 3rd-order Butterworth, 60 to 80 MHz | −1 dB | 1 dB | |
+| IFA | `Amp` | 25 dB | 4 dB | OIP3 30 dBm |
+
+Its system inputs have **with mismatch** ticked, and its Link tab's **Response** row asks for ±30 MHz in 61 points.
+
+**The image.** With the LO 70 MHz below the signal, the mixer's image is at 2.31 GHz, inside the preselector's band:
+the LNA's noise reaches the mixer there as well as at the signal, and the budget counts it. It adds 2.21 dB: the NF is
+4.62 dB, 2.41 dB without the image. The Notes say so, and so does the level diagram's key. A preselector whose band
+stops short of 2.31 GHz takes it back. The cascade table's F−1 shares sum to 58 %: the rest is the source's own noise at
+the image, which is no stage's.
+
+**The mismatch.** Matched, the budget multiplies the modules' gains between 50 Ω: 32.91 dB and an NF of 5.15 dB. The
+preselector's output reflects into the LNA's input, and the LNA's noise parameters see the preselector's S22 as their
+source, not 50 Ω; with mismatch the chain is the two files' exact cascade, 33.67 dB and 4.62 dB. Untick **with mismatch**
+to see the difference.
+
+**The response.** The **Response** tab budgets this one design from 2.42 to 2.48 GHz with the LO held at 2.38 GHz: the IF
+moves from 40 to 100 MHz through the IF filter, whose skirts take the gain from 33.67 dB at the carrier to 8.70 dB 30 MHz
+above it and −2.59 dB 30 MHz below, the NF rising to 18.27 and 29.40 dB. The image moves the other way, from 2.34 to 2.28 GHz, onto the preselector's lower
+skirt, so its share of the noise changes across the band too. A carrier sweep, by contrast, would design the chain again
+at every carrier, the LO moving with it.
+
+![The wideband receiver's Response tab: gain and NF, the output signal and noise, the intercepts and the compression points over ±30 MHz with the LO fixed](pictures/response-wideband.png)
+
+Its level diagram carries the image in its key and in the noise floor, which steps up at the mixer by what the image
+adds:
+
+![The wideband receiver's level diagram: the signal from −70 dBm to −36.3 dBm, the noise floor stepping up at the mixer, and the key's image noise, +2.21 dB of NF at 2.31 GHz](pictures/level-diagram-wideband.png)
+
+**Its benches**, each against the budget with the image and the mismatch in it:
+
+- **`Wideband 1-Tone`**: harmonic-balance noise with the LO running, the image sideband in the run behind the isolator in
+  front of the mixer: the NF on the budget to 2×10⁻⁵ dB and the gain to −1.1×10⁻⁴ dB (the drive), every stage's NF from
+  the run's shares to 3×10⁻⁵ dB. The run's files reflect as the budget's do.
+- **`Wideband 2-Tone`**: two tones 50 dB under the predicted IIP3: the IIP3 on the budget to 2.2×10⁻⁴ dB and the OIP3 to
+  7×10⁻⁴ dB, the intercept sum taking each stage's gain to it with the mismatch in it.
+- **`Wideband Levels`**: the signal and its IM3 at every node from the LNA's output on, on the budget to 7×10⁻⁴ and
+  1.4×10⁻³ dB. Two nodes read off it, and by the mismatch: a node's voltage is the wave going forward and the one the next
+  file reflects, and the budget's level is the forward wave into 50 Ω. The input reads 0.29 dB low, the preselector's
+  input reflection; the node between the preselector and the LNA 2.44 dB high, the LNA's.
+- **`Wideband Envelope`**: the SNR in the carrier's 4.5 MHz 0.14 dB under the budget, one noise record's statistics.
+
 ## What the displays show
 
 Every number below is the simulation minus the budget.
@@ -371,6 +429,8 @@ factor of 1.41, the load's own noise, which the budget leaves out, is an eighth 
 | Blockers | 3 s | | 1 s | |
 | Demo | 2 min 20 s | | 1 min 45 s, 3 min | |
 | TX | | | | 35 s to 1 min |
+
+The wideband receiver's: 1-Tone 2 s, 2-Tone 25 s, Levels 30 s, Envelope 38 s.
 
 The link's harmonic-balance and envelope benches are slow for their eight elements, each a source of its own, and the
 envelope one for its 50 MHz NR carrier, ten times the others' (measured on a loaded machine).

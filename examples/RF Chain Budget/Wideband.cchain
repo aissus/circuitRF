@@ -1,0 +1,70 @@
+{
+  "FormatVersion": 4,
+  "FrequencyHz": 2450000000,
+  "BandwidthHz": 4500000,
+  "InputPowerDbm": -70,
+  "TemperatureK": 290,
+  "RequiredSnrDb": 10,
+  "Stages": [
+    {
+      "Name": "PRE",
+      "Part": "SnP",
+      "Parameters": {
+        "File": "Wideband preselector.s2p",
+        "In": "1",
+        "Out": "2"
+      }
+    },
+    {
+      "Name": "LNA",
+      "Part": "SnP",
+      "Parameters": {
+        "File": "Wideband LNA.s2p",
+        "In": "1",
+        "Out": "2",
+        "IIP3": "-5"
+      }
+    },
+    {
+      "Name": "MIX",
+      "Part": "Mixer",
+      "Parameters": {
+        "ConvGain": "-7",
+        "NF": "8",
+        "NFType": "ssb",
+        "IIP3": "10",
+        "Plo": "7",
+        "Flo": "2.38 GHz"
+      }
+    },
+    {
+      "Name": "IFBPF",
+      "Part": "Filter",
+      "Parameters": {
+        "Response": "Butterworth",
+        "Form": "Bandpass",
+        "Order": "3",
+        "F1": "60 MHz",
+        "F2": "80 MHz",
+        "IL": "1"
+      }
+    },
+    {
+      "Name": "IFA",
+      "Part": "Amp",
+      "Parameters": {
+        "Gain": "25",
+        "NF": "4",
+        "IP3": "30",
+        "IP3Ref": "Output"
+      }
+    }
+  ],
+  "Response": {
+    "From": -30000000,
+    "To": 30000000,
+    "Points": 61,
+    "Offset": true
+  },
+  "Mismatch": true
+}

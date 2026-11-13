@@ -41,7 +41,7 @@ public sealed class ChainBudgetExampleTests(ITestOutputHelper output) : IDisposa
     public const string Folder = "RF Chain Budget";
     public static string Workspace => Path.Combine(PalaceBackendTests.RepoRoot(), "examples", Folder);
 
-    private static readonly string[] Chains = ["Superhet", "Array", "Front End", "Dual Conversion", "26 GHz Link", "Linear TX"];
+    private static readonly string[] Chains = ["Superhet", "Array", "Front End", "Dual Conversion", "26 GHz Link", "Linear TX", "Wideband"];
 
     /// <summary>The benches Transfer writes for a shipped chain: a dual-conversion chain's mostly once per conversion.</summary>
     private static IReadOnlyList<ChainBenchText> Benches(string root, string chain)
@@ -66,6 +66,7 @@ public sealed class ChainBudgetExampleTests(ITestOutputHelper output) : IDisposa
     [InlineData("Front End")]
     [InlineData("Dual Conversion")]
     [InlineData("Linear TX")]
+    [InlineData("Wideband")]
     public void TheShippedBenches_AreWhatTransferWritesToday(string chain)
     {
         CopyDirectory(Workspace, _ws);
@@ -623,6 +624,59 @@ public sealed class ChainBudgetExampleTests(ITestOutputHelper output) : IDisposa
         var c = ChainBenches.Conversions(d, ChainBudget.Evaluate(d), "Dual Conversion")!.Single(x => x.Chain == $"Dual Conversion {conv}");
         var t = c.Budget.Totals!;
         return 10 * Math.Log10(1 + ChainBudget.T0 / ((c.Design.TemperatureK + t.TeK) * Math.Pow(10, t.GainDb / 10)));
+    }
+
+    // ── the wideband receiver: an image passed, two modules' mismatch, a response ──
+
+    /// <summary>
+    /// The wideband receiver's 1-Tone bench, harmonic-balance noise with its LO running: the preselector passes the mixer's
+    /// image, the preselector's and the LNA's files reflect into each other, and the budget, with both counted, is the run's
+    /// NF and gain, stage by stage.
+    /// </summary>
+    [Fact]
+    public void Wideband_1Tone_TheImageAndTheMismatchOnTheBudget()
+    {
+        var r = ChainBudget.Evaluate(ChainDesignIo.LoadFromFile(Path.Combine(Workspace, "Wideband.cchain")));
+        Assert.True(Assert.Single(r.Images).Counted);
+        var ds = Simulate("Wideband 1-Tone");
+        Assert.InRange(M(ds, "G_err"), -5e-4, 5e-4);
+        Assert.InRange(M(ds, "NF_err"), -2e-4, 2e-4);
+        foreach (string s in new[] { "PRE", "LNA", "MIX", "IFBPF", "IFA" })
+        {
+            output.WriteLine($"NF at {s}: {M(ds, $"NF_{s}_sim"):F6} simulated, {M(ds, $"NF_{s}_calc"):F6} budget");
+            Assert.InRange(M(ds, $"NF_{s}_sim") - M(ds, $"NF_{s}_calc"), -2e-4, 2e-4);
+        }
+        output.WriteLine($"Wideband: G {M(ds, "G_calc"):F4} dB, NF {M(ds, "NF_calc"):F4} dB, the image {r.ImageNfDb:F4} dB; IP1dB_err {M(ds, "IP1dB_err"):G4}");
+    }
+
+    /// <summary>
+    /// The wideband receiver's levels and intercepts. From the LNA's output on, every node's signal and IM3 sit on the
+    /// budget; the input and the node between the preselector and the LNA read their voltage, which holds the wave the
+    /// next file reflects as well as the one going forward, so they read off the budget's forward level by that
+    /// reflection (−0.29 and +2.44 dB), which the README says.
+    /// </summary>
+    [Fact]
+    [Trait("Category", "Benchmark")]
+    public void Wideband_LevelsAnd2Tone_OnTheBudget()
+    {
+        var lev = Simulate("Wideband Levels");
+        for (int k = 2; k <= 5; k++)
+        {
+            Assert.InRange(M(lev, $"Psig_{k}_err"), -2e-3, 2e-3);
+            Assert.InRange(M(lev, $"IM3_{k}_err"), -3e-3, 3e-3);
+        }
+        Assert.InRange(M(lev, "Psig_1_err"), 2, 3);
+        var two = Simulate("Wideband 2-Tone");
+        Assert.InRange(M(two, "IIP3_err"), -1e-3, 1e-3);
+        Assert.InRange(M(two, "OIP3_err"), -1e-3, 1e-3);
+    }
+
+    [Fact]
+    [Trait("Category", "Benchmark")]
+    public void Wideband_Envelope_TheSnrOnTheBudget()
+    {
+        var ds = Simulate("Wideband Envelope");
+        Assert.InRange(M(ds, "SNR_err"), -0.35, 0.35);
     }
 
     // ── helpers ──────────────────────────────────────────────────────────────
