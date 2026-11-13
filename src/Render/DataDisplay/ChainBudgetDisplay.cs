@@ -452,17 +452,26 @@ public static class ChainBudgetDisplay
                          ("OIP3_calc", "OIP3_lo_sim", "OIP3, 20 dB below it, dBm")),
                 ];
             default:
+            {
+                // A chain from a stream also has the budget's EVM floor, and its ACLR adds the stream's own share.
+                bool stream = d.Stages.Count > 0 && ChainParts.IsFront(d.Stages[0].Part);
+                List<TraceConfig> pe = [Over(src, "Pout_calc", "Pin", "linear budget, dBm", C(1), false), Over(src, "Pout_sim", "Pin", "simulated, dBm", C(1), true),
+                                        Over(src, "EVM_sim", "Pin", "EVM, %", C(2), true)];
+                List<(string, string)> op = [("Pout_op_calc", "output, dBm: budget"), ("Pout_op_sim", "simulated"), ("ACLR_op_calc", "ACLR, the worse side, dBc: estimate"),
+                                             ("ACLR_op_sim", "simulated"), ("EVM_op_sim", "EVM, %")];
+                if (stream)
+                {
+                    pe.Add(Over(src, "EVM_calc", "Pin", "EVM floor, budget, %", C(2), false));
+                    op.Insert(4, ("EVM_op_calc", "EVM, %: budget's floor"));
+                    op[5] = ("EVM_op_sim", "simulated");
+                }
                 return
                 [
                     Rect("Adjacent-channel ratio against the drive", "Pin, dBm", "dBc", 0, 0, 560, 300,
-                         [Over(src, "ACLR_calc", "Pin", "estimate, 2·(Pout − OIP3) − 4.77 dB", C(1), false),
+                         [Over(src, "ACLR_calc", "Pin", stream ? "estimate: 2·(Pout − OIP3) − 4.77 dB and the stream's own" : "estimate, 2·(Pout − OIP3) − 4.77 dB", C(1), false),
                           Over(src, "ACLR_L_sim", "Pin", "lower, simulated", C(3), true), Over(src, "ACLR_U_sim", "Pin", "upper, simulated", C(5), true)]),
-                    Rect("Output power and EVM against the drive", "Pin, dBm", "dBm, %", 560 + Gap, 0, 560, 300,
-                         [Over(src, "Pout_calc", "Pin", "linear budget, dBm", C(1), false), Over(src, "Pout_sim", "Pin", "simulated, dBm", C(1), true),
-                          Over(src, "EVM_sim", "Pin", "EVM, %", C(2), true)]),
-                    At(Table("At the operating point", src,
-                             [("Pout_op_calc", "output, dBm: budget"), ("Pout_op_sim", "simulated"), ("ACLR_op_calc", "ACLR, the worse side, dBc: estimate"),
-                              ("ACLR_op_sim", "simulated"), ("EVM_op_sim", "EVM, %")], first: 280), y),
+                    Rect("Output power and EVM against the drive", "Pin, dBm", "dBm, %", 560 + Gap, 0, 560, 300, [.. pe]),
+                    At(Table("At the operating point", src, [.. op], first: 280), y),
                     new PlotContainerConfig
                     {
                         PlotType = PlotType.Rect, Left = 0, Top = y + H + Gap, Width = 620, Height = 360,
@@ -472,6 +481,7 @@ public static class ChainBudgetDisplay
                                                     Expression = $"ENVT.PSD[{Array.IndexOf(ChainBenches.TxEnvelopeStepsDb, 0.0)}, \"Iout\", :]" }],
                     },
                 ];
+            }
         }
     }
 

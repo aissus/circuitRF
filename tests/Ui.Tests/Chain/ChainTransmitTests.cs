@@ -194,6 +194,106 @@ public sealed class ChainTransmitTests(ITestOutputHelper output) : IDisposable
         Assert.Contains(ChainBudget.Evaluate(d).Refusals, x => x.Contains("direction", StringComparison.Ordinal));
     }
 
+    /// <summary>A zero-IF digital transmitter: a DAC pair, a low-pass per rail, an IQ modulator at 3.5 GHz.</summary>
+    private static ChainDesign Digital() => new()
+    {
+        Direction = ChainDesign.Transmit, FrequencyHz = 0, BandwidthHz = 19.08e6, InputPowerDbm = -10, TemperatureK = 0,
+        Stages =
+        [
+            S("DAC", "DAC", ("Bits", "8"), ("FS", "0.32"), ("Fs", "122.88 MHz")),
+            S("LPF", "Filter", ("Response", "Butterworth"), ("Form", "Lowpass"), ("Order", "5"), ("Fc", "49.152 MHz"), ("IL", "0")),
+            S("IQ", "IQMod", ("ConvGain", "-7"), ("NF", ""), ("IIP3", "200"), ("Flo", "3.5 GHz"), ("Sideband", "Upper")),
+            S("PA", "Amp", ("Gain", "20"), ("NF", ""), ("IP3", "200")),
+        ],
+    };
+
+    /// <summary>The DAC's floor is a noise temperature: the output's SNR in the bandwidth is the textbook SQNR,
+    /// 6.02·N + 1.76 − BO + 10·log10(Fs/B), worked here from N, FS, the drive and the rate; the IQ modulator fed by the
+    /// rails gains 3.01 dB over one mixer's conversion; a DAC chain may sit at 0 Hz, no other may.</summary>
+    [Fact]
+    public void ADacsFloor_IsTheTextbookSqnr_AndTheRailsGain3dB()
+    {
+        var d = Digital();
+        var r = ChainBudget.Evaluate(d);
+        Assert.Empty(r.Refusals);
+        double bo = 20 * Math.Log10(0.32 / Math.Sqrt(2 * 50 * 1e-3 * Lin(-10)));
+        double sqnr = 6.0206 * 8 + 1.7609 - bo + Db(122.88e6 / 19.08e6);
+        Assert.InRange(r.Totals!.SnrDb - sqnr, -1e-3, 1e-3);
+        Assert.Equal(-7 + Db(2), r.Stages[2].Stage.GainDb, 9);
+        Assert.Equal(-7 + Db(2) + 20, r.Totals.GainDb, 9);
+        var x = ChainTransmit.Read(r)!;
+        // The droop's EVM for a centred band: (π²/(6·√180))·(B/Fs)², and the image of the band's edge, (B/2)/(Fs − B/2).
+        double droop = Math.PI * Math.PI / (6 * Math.Sqrt(180)) * Math.Pow(19.08 / 122.88, 2);
+        Assert.InRange(x.EvmFloorPct - 100 * Math.Sqrt(Math.Pow(10, -sqnr / 10) + droop * droop), -2e-3, 2e-3);
+        Assert.Equal(20 * Math.Log10(9.54 / (122.88 - 9.54)), DacSpec.Read(d.Stages[0]).ImageDb(0, 19.08e6), 9);
+        var rx = Digital();
+        rx.Stages.RemoveAt(0);
+        rx.Stages.Insert(0, S("AMP", "Amp", ("Gain", "0")));
+        Assert.Contains(ChainBudget.Evaluate(rx).Refusals, s => s.Contains("0 Hz only for a DAC", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void WhatAStreamRefuses()
+    {
+        static IReadOnlyList<string> No(Action<ChainDesign> edit) { var d = Digital(); edit(d); return ChainBudget.Evaluate(d).Refusals; }
+        Assert.Contains(No(d => d.Direction = ChainDesign.Receive), s => s.Contains("a transmitter's", StringComparison.Ordinal));
+        Assert.Contains(No(d => { var x = d.Stages[0]; d.Stages.RemoveAt(0); d.Stages.Insert(1, x); }), s => s.Contains("first stage", StringComparison.Ordinal));
+        Assert.Contains(No(d => d.Stages.RemoveAt(2)), s => s.Contains("has none after it", StringComparison.Ordinal));
+        Assert.Contains(No(d => d.Stages.Insert(1, S("MIX", "Mixer", ("Flo", "1 GHz")))), s => s.Contains("is none of them", StringComparison.Ordinal));
+        Assert.Contains(No(d => d.Stages[2].Parameters["Sideband"] = "Lower"), s => s.Contains("conjugate", StringComparison.Ordinal));
+        Assert.Contains(No(d => d.Stages[0].Parameters["Bits"] = "40"), s => s.Contains("Bits is 1 to 32", StringComparison.Ordinal));
+        Assert.Contains(No(d => { d.FrequencyHz = 3.5e9; d.Stages[0] = S("POL", "PolarTx", ("Ks", "0")); }), s => s.Contains("Ks is above 0", StringComparison.Ordinal));
+        Assert.Contains(No(d => { d.FrequencyHz = 3.5e9; d.Stages[0] = S("POL", "PolarTx", ("Order", "0")); }), s => s.Contains("Order is 1 to 10", StringComparison.Ordinal));
+    }
+
+    /// <summary>A chain from a stream has its Envelope bench and its PA's only, and says why; its Envelope bench drives
+    /// the stream and places the first stage as its System blocks.</summary>
+    [Fact]
+    public void AStream_TransfersToItsEnvelopeBench()
+    {
+        var d = Digital();
+        d.Stages[3] = S("PA", "Amp", ("Gain", "20"), ("Law", "Rapp"), ("Psat", "40"));
+        var why = new List<string>();
+        Assert.Equal([ChainBench.Envelope, ChainBench.Pa], ChainBenches.BenchesFor(d, why));
+        Assert.Contains(why, s => s.Contains("harmonic balance cannot run", StringComparison.Ordinal));
+        var env = ChainBenches.Build(d, ChainBudget.Evaluate(d), "D").Single(b => b.Kind == ChainBench.Envelope).Netlist;
+        foreach (string line in new[] { "Baseband=i", "Baseband=q", "DAC:DAC_I  bi", "DAC:DAC_Q  bq", "Filter:LPF_Q  q_DAC", "Mixer:IQ_Q  q_LPF", "Accuracy=standard", "EVM_calc =" })
+            Assert.Contains(line, env, StringComparison.Ordinal);
+        Assert.DoesNotContain("Coupler:IQ_HI", env, StringComparison.Ordinal);
+
+        var p = new ChainDesign
+        {
+            Direction = ChainDesign.Transmit, FrequencyHz = 3.5e9, BandwidthHz = 19.08e6, InputPowerDbm = 0, TemperatureK = 0,
+            Stages = [S("POL", "PolarTx", ("Ks", "10"), ("Fam", "80 MHz"), ("dT", "-1 ns"))],
+        };
+        Assert.Equal([ChainBench.Envelope], ChainBenches.BenchesFor(p));
+        var pol = ChainBenches.Build(p, ChainBudget.Evaluate(p), "P").Single().Netlist;
+        // The phase the later: its own lowpass's DC group delay, 2/(2π·80 MHz), and 1 ns more on the phase path.
+        Assert.Contains("Delay:POL_DPM  POL_pm  0  POL_rf  0  T=4.97887357729738", pol, StringComparison.Ordinal);
+        foreach (string line in new[] { "Polar=amp", "Polar=phase", "PhaseMod:POL_PM", "SupplyAmp:POL  POL_rf  0  out  0  POL_vs  0  Ks=10", "Filter:POL_FAM  POL_am  0  POL_vs" })
+            Assert.Contains(line, pol, StringComparison.Ordinal);
+    }
+
+    /// <summary>The polar stage's mismatch term is the polar pull request's first-order formula, π·B·dT/√12 over the band,
+    /// its in-band and adjacent shares the model's constants; its output is Ks² times its input.</summary>
+    [Fact]
+    public void APolarStage_ItsMismatchOnTheFirstOrderFormula()
+    {
+        var p = new ChainDesign
+        {
+            Direction = ChainDesign.Transmit, FrequencyHz = 3.5e9, BandwidthHz = 20e6, InputPowerDbm = 0, TemperatureK = 0,
+            Stages = [S("POL", "PolarTx", ("Ks", "10"), ("Fam", "0"), ("dT", "2 ns"))],
+        };
+        var x = ChainTransmit.Read(ChainBudget.Evaluate(p))!;
+        double whole = Math.PI * 20e6 * 2e-9 / Math.Sqrt(12);
+        Assert.Equal(20, x.PoutDbm, 9);
+        Assert.Equal(100 * Math.Sqrt(0.436) * whole, x.EvmFloorPct, 9);
+        Assert.Equal(Db(0.215 * whole * whole), x.AclrDbc, 9);
+        // A Vsat that the envelope's peaks reach costs gain: the mean of tanh² under the linear law.
+        p.Stages[0].Parameters["Vsat"] = "0.5";
+        Assert.InRange(ChainTransmit.Read(ChainBudget.Evaluate(p))!.PoutDbm, 10, 19.9);
+    }
+
     /// <summary>An amplifier whose law is the default writes nothing it did not before: not into the .cchain from the
     /// window, not onto its line on a bench.</summary>
     [Fact]

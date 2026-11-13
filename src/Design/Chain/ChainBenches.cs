@@ -37,6 +37,10 @@
 // modulator's image and LO, the noise in band and in a receive band), 2-Tone (the IM3 against the level), Envelope (an
 // NR carrier's output, ACLR and EVM) and PA (the PA alone at its own input: AM-AM, AM-PM, efficiency).
 //
+// A transmit chain from a stream (a DAC or a polar transmitter first) has the Envelope bench and the PA's only: its
+// sources are a stream at baseband, MOD_Source rails or a polar pair, and harmonic balance has no stream (a DAC is
+// refused there by name). Its Envelope bench writes the first stage as its System blocks (EmitStream).
+//
 // Every measurement row reads ONE analysis, so a CLI run of one analysis (`circuitrf hb … -a SW1`) still evaluates its
 // own rows. `temp = 16.85` puts every part at 290 K, the temperature a noise figure is stated at.
 //
@@ -153,7 +157,11 @@ public static class ChainBenches
         // and the PA's own (its AM-AM, AM-PM and efficiency, one fundamental at its input).
         if (d.IsTransmit)
         {
-            List<ChainBench> tx = [ChainBench.OneTone, ChainBench.TwoTone, ChainBench.Envelope];
+            bool stream = d.Stages.Count > 0 && ChainParts.IsFront(d.Stages[0].Part);
+            if (stream)
+                why?.Add($"The chain starts from a stream ({d.Stages[0].Name}), which harmonic balance cannot run: its benches are " +
+                         "the envelope's, and there are no 1-Tone or 2-Tone benches.");
+            List<ChainBench> tx = stream ? [ChainBench.Envelope] : [ChainBench.OneTone, ChainBench.TwoTone, ChainBench.Envelope];
             if (PaStage(d) >= 0) tx.Add(ChainBench.Pa);
             else why?.Add("The chain has no amplifier that compresses, so there is no PA bench.");
             return tx;
@@ -649,6 +657,7 @@ public static class ChainBenches
 
         public ChainBenchText Emit()
         {
+            if (d.IsTransmit && ChainParts.IsFront(d.Stages[0].Part) && (bench == ChainBench.Envelope || diagram)) return EmitStream();
             if (bench == ChainBench.Steering) return EmitSteering();
             if (bench == ChainBench.Combiners) return EmitCombiners();
             if (bench == ChainBench.Canceller) return EmitCanceller();
@@ -1960,18 +1969,27 @@ public static class ChainBenches
                 default:
                 {
                     var (mhz, _, bocc) = TxCarrier(d.BandwidthHz);
-                    EnvelopeFits((d.FrequencyHz, mhz * 1e6));
+                    // A stream's run has one fundamental, the carrier, and the stream beside it at baseband: no LO to fit. Its
+                    // delays and filters want the standard step (a fraction of a step is interpolated), and its EVM whole
+                    // symbols clear of the record's ends: 0.25 ms, as the System Design examples run, holds three 15 kHz ones.
+                    bool stream = ChainParts.IsFront(d.Stages[0].Part);
+                    if (!stream) EnvelopeFits((d.FrequencyHz, mhz * 1e6));
                     double[] steps = TxEnvelopeStepsDb;
                     var pins = steps.Select(x => Math.Round(pop + x, 6)).ToArray();
                     int kop = Array.IndexOf(steps, 0.0);
-                    _analyses.Add($"analysis ENVT type=env Stop=0.1e-3 Step=auto Accuracy=draft MaxHarm=1 MaxMixOrder={Math.Max(2, 1 + 2 * mix)} " +
-                                  "Segments=auto Warmup=auto Start=0 Tol=1e-6 SaveWaveforms=no");
+                    _analyses.Add(stream
+                        ? "analysis ENVT type=env Stop=0.25e-3 Step=auto Accuracy=standard MaxHarm=1 Segments=auto Warmup=auto Start=0 Tol=1e-6 SaveWaveforms=no"
+                        : $"analysis ENVT type=env Stop=0.1e-3 Step=auto Accuracy=draft MaxHarm=1 MaxMixOrder={Math.Max(2, 1 + 2 * mix)} " +
+                          "Segments=auto Warmup=auto Start=0 Tol=1e-6 SaveWaveforms=no");
                     _analyses.Add($"analysis SWE type=parametric_sweep Var=Pin Values={string.Join(",", pins.Select(F))} Inner=ENVT");
+                    // A stream's budget at each drive is the budget again there: its floor, its back-off and its share of the
+                    // adjacent channel each move with it.
+                    var at = stream ? pins.Select(p => { var c = d.Clone(); c.InputPowerDbm = p; return ChainTransmit.Read(ChainBudget.Evaluate(c))!; }).ToArray() : null;
                     double aclr(double pin) => 2 * (pin + g - Finite(_t.Oip3Dbm, double.PositiveInfinity)) - ChainTransmit.AclrConstantDb;
-                    _meas.Add($"Pout_calc = {SweepCube("Pin", pins, k => G(pins[k] + g))}");
+                    _meas.Add($"Pout_calc = {SweepCube("Pin", pins, k => G(at is null ? pins[k] + g : at[k].PoutDbm))}");
                     _meas.Add("Pout_sim = ENVT.Pavg_dBm[:, \"Iout\"]");
                     _meas.Add("Comp_sim = Pout_calc - Pout_sim");
-                    _meas.Add($"ACLR_calc = {SweepCube("Pin", pins, k => G(aclr(pins[k])))}");
+                    _meas.Add($"ACLR_calc = {SweepCube("Pin", pins, k => G(at is null ? aclr(pins[k]) : at[k].AclrDbc))}");
                     _meas.Add("ACLR_L_sim = ENVT.ACLR[:, \"Iout\", 0, \"ACPR1L\"]");
                     _meas.Add("ACLR_U_sim = ENVT.ACLR[:, \"Iout\", 0, \"ACPR1U\"]");
                     _meas.Add("EVM_sim = ENVT.EVM_pct[:, \"Iout\", 0]");
@@ -1982,10 +2000,138 @@ public static class ChainBenches
                     _meas.Add($"ACLR_op_sim = max(ENVT.ACLR[{kop}, \"Iout\", 0, \"ACPR1L\"], ENVT.ACLR[{kop}, \"Iout\", 0, \"ACPR1U\"])");
                     _meas.Add("ACLR_op_err = ACLR_op_sim - ACLR_op_calc");
                     _meas.Add($"EVM_op_sim = ENVT.EVM_pct[{kop}, \"Iout\", 0]");
+                    if (at is not null)
+                    {
+                        _meas.Add($"EVM_calc = {SweepCube("Pin", pins, k => G(at[k].EvmFloorPct))}");
+                        _meas.Add($"EVM_op_calc = {G(tx.EvmFloorPct)}");
+                    }
                     _vars.Add($"Bocc = {G(bocc)}");
                     break;
                 }
             }
+        }
+
+        /// <summary>
+        /// A transmit chain from a stream: its Envelope bench, and its drawing. The stream's sources sit at baseband about
+        /// the carrier, and the chain's first stage is its System blocks. A DAC: two MOD_Source rails (Baseband=i and q),
+        /// each through its own DAC and its own copy of every stage up to the IQ modulator, which takes them as its I and Q,
+        /// with no hybrid. A polar transmitter: a polar pair (Polar=amp and phase), the amplitude through a Delay of dT and
+        /// the Butterworth lowpass into a Supply-Modulated Amplifier's supply, the phase turning a limited CW carrier in a
+        /// Phase Modulator (Kp = 1 rad/V: the phase half plays 2φ open circuit, φ into a match), delayed by the lowpass's DC
+        /// group delay and by |dT| when the phase is the later. Then the rest of the chain, as every bench places it. The
+        /// run has one fundamental, the carrier, the stream's k = 0 beside it.
+        /// </summary>
+        private ChainBenchText EmitStream()
+        {
+            var first = d.Stages[0];
+            bool dac = first.Part == ChainParts.Dac;
+            int iq = dac ? d.Stages.FindIndex(st => st.Part == ChainParts.IqMod) : 0;
+            // The carrier the stream is about: the IQ modulator's LO, or the polar chain's own frequency; the stream sits at
+            // the chain's frequency from it (0 at zero IF).
+            double fc = dac ? ChainValue.Or(d.Stages[iq].Get("Flo"), 0) : d.FrequencyHz;
+            var (mhz, scs, _) = TxCarrier(d.BandwidthHz);
+            string sig = $"Carrier[1]=\"NR;BW={mhz}MHz;SCS={scs}kHz;Mod=64QAM;Off={F(dac ? d.FrequencyHz / 1e6 : 0)};P=0;Seed=1\"  Record=0.0005";
+            // The drawing names its values; a bench drives from its variables.
+            string frf = diagram ? $"{G(fc)} Hz" : "Frf", pin = diagram ? F(d.InputPowerDbm) : "Pin";
+            if (!diagram) { _vars.Add($"Frf = {G(fc)}"); TxVars(); }
+            var v1 = new int[1 + Mixers]; v1[0] = 1;
+            var v3 = new int[v1.Length];
+            int lo = 1, next;
+            double f = d.FrequencyHz;
+            string cur;
+            if (dac)
+            {
+                var ends = new string[2];
+                for (int k = 0; k < 2; k++)
+                {
+                    string rail = k == 0 ? "i" : "q", R = k == 0 ? "I" : "Q", prev = $"b{rail}";
+                    _x = 0; _y = k * BranchPitch;
+                    Line($"MOD_Source:S{R}  {prev}  0  Fc={frf}  Pavg={pin} dBm  Z=50 Ohm  Baseband={rail}  {sig}");
+                    Place($"S{R}", _x, _y + 200);
+                    _x += Lead;
+                    double fr = f; int lr = lo;
+                    for (int j = 0; j < iq; j++)
+                    {
+                        var st = d.Stages[j];
+                        string name = $"{st.Name}_{R}", o = $"{rail}_{st.Name}";
+                        _stage = j;
+                        if (j == 0) { Line($"DAC:{name}  {prev}  0  {o}  0{Params(st)}"); Inline(name, 300); }
+                        else Stage(st, name, prev, o, ref fr, [.. v1], [.. v3], ref lr, 1, 1);
+                        _stage = -1;
+                        prev = o;
+                    }
+                    ends[k] = prev;
+                }
+                _y = 0;
+                var mod = d.Stages[iq];
+                cur = iq == d.Stages.Count - 1 ? "out" : $"n_{mod.Name}";
+                _stage = iq;
+                IqMod(mod, mod.Name, ends[0], cur, rails: ends[1]);
+                _stage = -1;
+                Convert(mod, ChainValue.Or(mod.Get("Flo"), 0), ref f, lo++, v1, v3);
+                next = iq + 1;
+            }
+            else
+            {
+                var p = PolarSpec.Read(first);
+                string n = first.Name;
+                cur = d.Stages.Count == 1 ? "out" : $"n_{n}";
+                _stage = 0;
+                // The phase path on the top row: a CW carrier, limited, turned by the phase half, delayed to match.
+                _x = 0; _y = 0;
+                Line($"P1Tone:LO_{n}  {n}_lo  0  Freq={frf}  Pavl=0 dBm  Z=50 Ohm");
+                Place($"LO_{n}", _x, _y + 200);
+                _x += Lead;
+                Line($"Limiter:{n}_LIM  {n}_lo  0  {n}_cw  0  Pout=0 dBm");
+                Inline($"{n}_LIM", 300);
+                Line($"PhaseMod:{n}_PM  {n}_cw  0  {n}_pm  0  {n}_ph  0  Kp=1");
+                Line($"MOD_Source:SP  {n}_ph  0  Fc={frf}  Pavg={pin} dBm  Z=50 Ohm  Polar=phase  {sig}");
+                Inline($"{n}_PM", 300);
+                Place("SP", _x - Lead - 300, _y + 900);
+                string rf = $"{n}_pm";
+                double align = p.AlignS + Math.Max(0, -p.DelayS);
+                if (align > 0)
+                {
+                    Line($"Delay:{n}_DPM  {rf}  0  {n}_rf  0  T={G(align * 1e9)} ns");
+                    Inline($"{n}_DPM", 300);
+                    rf = $"{n}_rf";
+                }
+                Line($"SupplyAmp:{n}  {rf}  0  {cur}  0  {n}_vs  0  Ks={F(p.Ks)}" + (p.VsatV > 0 ? $"  Vsat={F(p.VsatV)}" : ""));
+                Inline(n, 300);
+                double xs = _x;
+                // The amplitude path on the row below, into the supply: the half, its mismatch, the lowpass.
+                _x = 0; _y = BranchPitch;
+                var am = new List<(string Inst, string Line)>();
+                if (p.DelayS > 0) am.Add(($"{n}_DAM", $"Delay:{n}_DAM  {{0}}  0  {{1}}  0  T={G(p.DelayS * 1e9)} ns"));
+                if (p.FamHz > 0) am.Add(($"{n}_FAM", $"Filter:{n}_FAM  {{0}}  0  {{1}}  0  Response=Butterworth  Form=Lowpass  Order={p.Order}  Fc={G(p.FamHz / 1e6)} MHz"));
+                string net = am.Count > 0 ? $"{n}_am" : $"{n}_vs";
+                Line($"MOD_Source:SA  {net}  0  Fc={frf}  Pavg={pin} dBm  Z=50 Ohm  Polar=amp  {sig}");
+                Place("SA", _x, _y + 200);
+                _x += Lead;
+                for (int k = 0; k < am.Count; k++)
+                {
+                    string o = k == am.Count - 1 ? $"{n}_vs" : $"{n}_am{k + 1}";
+                    Line(string.Format(CultureInfo.InvariantCulture, am[k].Line, net, o));
+                    Inline(am[k].Inst, 300);
+                    net = o;
+                }
+                _x = xs; _y = 0;
+                _stage = -1;
+                next = 1;
+            }
+            // The rest of the chain, on the top row.
+            for (int j = next; j < d.Stages.Count; j++)
+            {
+                var st = d.Stages[j];
+                string net = j == d.Stages.Count - 1 ? "out" : $"n_{st.Name}";
+                _stage = j;
+                Stage(st, st.Name, cur, net, ref f, v1, v3, ref lo, 1, 1);
+                _stage = -1;
+                cur = net;
+            }
+            Load(1);
+            if (!diagram) Measurements([], [], [], [], v1, v3, f, 1);
+            return Text();
         }
 
         /// <summary>
@@ -2067,7 +2213,9 @@ public static class ChainBenches
         /// </summary>
         /// <param name="isolate">An isolator after it, the bench's: its output node then sees a match, so that node's
         /// voltage is the forward wave at its image and LO, which the filter after it reflects.</param>
-        private List<string> IqMod(ChainStage s, string name, string a, string b, bool isolate = false)
+        /// <param name="rails">A DAC's Q rail: then <paramref name="a"/> is its I rail, and each goes straight to its mixer,
+        /// with no hybrid.</param>
+        private List<string> IqMod(ChainStage s, string name, string a, string b, bool isolate = false, string? rails = null)
         {
             string o = isolate ? $"{name}_c" : b;
             var iq = IqModSpec.Read(s);
@@ -2078,14 +2226,18 @@ public static class ChainBenches
             // The Combiner's path phase is e^(jφ), the hybrid's coupled port +90°: the sum sideband adds with the LO's Q
             // path at +90°, the difference with it at −90°.
             double phase = (ChainParts.IsUpper(s) ? 90 : -90) + iq.PhaseImbDeg;
-            Line($"Coupler:{name}_HI  {a}  0  {name}_i  0  {name}_q  0  {name}_t  0  Coupling=3.0103 dB  Phase=90 deg  Z0=50 Ohm");
-            Line($"R:{name}_RT  {name}_t  0  R=50 Ohm");
+            string ni = rails is null ? $"{name}_i" : a, nq = rails ?? $"{name}_q";
+            if (rails is null)
+            {
+                Line($"Coupler:{name}_HI  {a}  0  {name}_i  0  {name}_q  0  {name}_t  0  Coupling=3.0103 dB  Phase=90 deg  Z0=50 Ohm");
+                Line($"R:{name}_RT  {name}_t  0  R=50 Ohm");
+            }
             Line($"P1Tone:LO_{name}  {name}_lo  0  Freq={G(flo)}  Pavl={G(iq.PloDbm + 10 * Math.Log10(2))} dBm  Z=50 Ohm");
             // The LO's split is a Combiner used from its common port: its path phases are flat and it stays passive at any
             // phase, where a 90° hybrid set off quadrature does not.
             Line($"Combiner:{name}_HL  {name}_lo  0  {name}_li  0  {name}_lq  0  N=2  Phase[2]={G(phase)} deg  Z0=50 Ohm");
-            Line($"Mixer:{name}_I  {name}_i  0  {name}_li  0  {name}_oi  0  {Mix(0)}");
-            Line($"Mixer:{name}_Q  {name}_q  0  {name}_lq  0  {name}_oq  0  {Mix(iq.GainImbDb)}");
+            Line($"Mixer:{name}_I  {ni}  0  {name}_li  0  {name}_oi  0  {Mix(0)}");
+            Line($"Mixer:{name}_Q  {nq}  0  {name}_lq  0  {name}_oq  0  {Mix(iq.GainImbDb)}");
             Line($"Combiner:{name}_S  {o}  0  {name}_oi  0  {name}_oq  0  N=2  Z0=50 Ohm");
             if (isolate)
             {
@@ -2093,8 +2245,11 @@ public static class ChainBenches
                 Line($"R:ISO_{name}_R  ISO_{name}_t  0  R=50 Ohm");
             }
             double x0 = _x;
-            Place($"{name}_HI", x0 + 300, _y + 100);
-            Place($"{name}_RT", x0 + 600, _y + 900);
+            if (rails is null)
+            {
+                Place($"{name}_HI", x0 + 300, _y + 100);
+                Place($"{name}_RT", x0 + 600, _y + 900);
+            }
             Place($"{name}_I", x0 + 1300, _y);
             Place($"{name}_Q", x0 + 1300, _y + 700);
             Place($"LO_{name}", x0 + 300, _y + 1900);
@@ -2102,7 +2257,7 @@ public static class ChainBenches
             Place($"{name}_S", x0 + 2200, _y + 300);
             _x = x0 + 2500 + Lead;
             if (isolate) { Inline($"ISO_{name}", 300); Place($"ISO_{name}_R", _x - Lead - 300, _y + 900); }
-            return [$"{name}_RT", $"{name}_I", $"{name}_Q"];
+            return rails is null ? [$"{name}_RT", $"{name}_I", $"{name}_Q"] : [$"{name}_I", $"{name}_Q"];
         }
 
     }
